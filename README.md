@@ -7,7 +7,7 @@ A concolic executor into a fuzzer skeleton.
 ### Build
 ```
 cd qemu
-./configure --prefix=`pwd`/../inst --target-list=i386-linux-user,x86_64-linux-user
+./configure --prefix=`pwd`/../build --target-list=i386-linux-user,x86_64-linux-user
 make -j4
 ```
 ### Run
