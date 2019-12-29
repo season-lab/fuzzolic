@@ -57,12 +57,164 @@ static void smt_destroy(void)
     Z3_del_context(smt_solver.ctx);
 }
 
-static Z3_ast smt_new_symbolic(const char * name, size_t n_bytes)
+static Z3_ast smt_new_symbol(const char *name, size_t n_bits)
 {
-    Z3_sort bv_sort = Z3_mk_bv_sort(smt_solver.ctx, 8 * n_bytes);
+    Z3_sort bv_sort = Z3_mk_bv_sort(smt_solver.ctx, n_bits);
     Z3_symbol s_name = Z3_mk_string_symbol(smt_solver.ctx, name);
     Z3_ast s = Z3_mk_const(smt_solver.ctx, s_name, bv_sort);
     return s;
+}
+
+static Z3_ast smt_new_const(uint64_t value, size_t n_bits)
+{
+    Z3_sort bv_sort = Z3_mk_bv_sort(smt_solver.ctx, n_bits);
+    Z3_ast s = Z3_mk_unsigned_int(smt_solver.ctx, value, bv_sort);
+    return s;
+}
+
+static void smt_query_check(Z3_solver solver, Z3_ast query, uint8_t preserve_solver)
+{
+    Z3_model m = 0;
+    Z3_ast not_f;
+
+    /* save the current state of the context */
+    if (preserve_solver)
+        Z3_solver_push(smt_solver.ctx, solver);
+
+    //not_f = Z3_mk_not(smt_solver.ctx, query);
+    Z3_solver_assert(smt_solver.ctx, solver, query);
+
+    switch (Z3_solver_check(smt_solver.ctx, solver))
+    {
+    case Z3_L_FALSE:
+        printf("Query is UNSAT\n");
+        break;
+    case Z3_L_UNDEF:
+        /* Z3 failed to prove/disprove f. */
+        printf("unknown\n");
+        m = Z3_solver_get_model(smt_solver.ctx, solver);
+        if (m != 0)
+        {
+            Z3_model_inc_ref(smt_solver.ctx, m);
+            /* m should be viewed as a potential counterexample. */
+            printf("potential counterexample:\n%s\n", Z3_model_to_string(smt_solver.ctx, m));
+        }
+        break;
+    case Z3_L_TRUE:
+        /* disproved */
+        printf("Query is SAT\n");
+        m = Z3_solver_get_model(smt_solver.ctx, solver);
+        if (m)
+        {
+            Z3_model_inc_ref(smt_solver.ctx, m);
+            /* the model returned by Z3 is a counterexample */
+            printf("counterexample:\n%s\n", Z3_model_to_string(smt_solver.ctx, m));
+        }
+        break;
+    }
+    if (m)
+        Z3_model_dec_ref(smt_solver.ctx, m);
+
+    /* restore scope */
+    if (preserve_solver)
+        Z3_solver_pop(smt_solver.ctx, solver, 1);
+}
+
+static Z3_ast smt_query_to_z3(Expr *query, uintptr_t is_const)
+{
+    if (is_const)
+        return smt_new_const((uintptr_t)query, 64);
+
+    if (query == NULL)
+        return Z3_mk_true(smt_solver.ctx);
+
+    Z3_ast op1 = NULL;
+    Z3_ast op2 = NULL;
+    Z3_ast r = NULL;
+    switch (query->opkind)
+    {
+        case RESERVED:
+            ABORT("Invalid opkind (RESERVER). There is a bug somewhere :(");
+        case IS_SYMBOLIC:
+            // ToDo: get name and size from the struct
+            r = smt_new_symbol("input", 64);
+            break;
+        case IS_CONST:
+            r = smt_new_const((uintptr_t)query->op1, 64);
+            break;
+        //
+        case NEG:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            r = Z3_mk_bvneg(smt_solver.ctx, op1);
+            break;
+        //
+        case ADD:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const);
+            r = Z3_mk_bvadd(smt_solver.ctx, op1, op2);
+            break;
+        case SUB:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const);
+            r = Z3_mk_bvsub(smt_solver.ctx, op1, op2);
+            break;
+        //
+        case EQ:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const);
+            r = Z3_mk_eq(smt_solver.ctx, op1, op2);
+            break;
+        case NE:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const);
+            r = Z3_mk_not(smt_solver.ctx, Z3_mk_eq(smt_solver.ctx, op1, op2));
+            break;
+        //
+        case ZEXT:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            unsigned n = (uintptr_t) query->op2;
+            op1 = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
+            op2 = smt_new_const(0, 64 - n);
+            r = Z3_mk_concat(smt_solver.ctx, op1, op2);
+            break;
+        //
+        case CONCAT8:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const);
+            r = Z3_mk_concat(smt_solver.ctx, op1, op2);
+            break;
+        case EXTRACT8:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            unsigned high = ((((uintptr_t) query->op2) + 1) * 8) - 1;
+            unsigned low = ((uintptr_t) query->op2) * 8;
+            r = Z3_mk_extract(smt_solver.ctx, high, low, op1);
+            break;
+        default:
+            ABORT("Unknown expr opkind: %u", query->opkind);
+    }
+
+    //printf("%s\n", Z3_ast_to_string(smt_solver.ctx, r));
+    return r;
+}
+
+static void smt_query(Expr *query)
+{
+    print_expr(query);
+
+    Z3_solver solver = Z3_mk_solver(smt_solver.ctx);
+    Z3_solver_inc_ref(smt_solver.ctx, solver);
+
+    SAYF("Translating query to Z3...\n");
+    Z3_ast z3_query = smt_query_to_z3(query, 0);
+
+    SAYF("DONE: Translating query to Z3\n");
+    const char * z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
+    SAYF("%s\n", z3_query_str);
+
+    SAYF("Running a query...\n");
+    smt_query_check(solver, z3_query, 0);
+
+    Z3_solver_dec_ref(smt_solver.ctx, solver);
 }
 
 static int need_to_clean = 1;
@@ -82,12 +234,6 @@ static void cleanup(void)
         shmctl(query_shm_id, IPC_RMID, NULL);
 
     //SAYF("Deleted POOL_SHM_ID=%d QUERY_SHM_ID=%d\n", expr_pool_shm_id, query_shm_id);
-}
-
-static void run_query(Expr *query)
-{
-    SAYF("\nRunning a query: %p\n", *next_query);
-    print_expr(*next_query);
 }
 
 void sig_handler(int signo)
@@ -147,7 +293,7 @@ int main(int argc, char *argv[])
                 SAYF("Reached final query. Exiting...\n");
                 exit(0);
             }
-            run_query(*next_query);
+            smt_query(*next_query);
             next_query++;
         }
     }

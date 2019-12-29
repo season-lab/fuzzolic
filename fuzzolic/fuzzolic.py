@@ -15,6 +15,8 @@ if __name__ == "__main__":
         print 'ERROR: invalid binary'
         sys.exit(1)
 
-    os.system(DIR + '/../solver/solver &')
-    os.system(
-        DIR + '/../tracer/x86_64-linux-user/qemu-x86_64 -symbolic ' + sys.argv[1])
+    cmd  = DIR + '/../solver/solver &'
+    cmd += ' ' + DIR + '/../tracer/x86_64-linux-user/qemu-x86_64 -symbolic ' + sys.argv[1]
+    cmd += ' && wait'
+
+    os.system(cmd)
