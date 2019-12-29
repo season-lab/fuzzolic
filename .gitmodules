@@ -1,4 +1,0 @@
-[submodule "qemu"]
-	path = qemu
-	url = git@github.com:season-lab/qemu.git
-	branch = symbolic
