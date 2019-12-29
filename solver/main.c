@@ -13,10 +13,10 @@
 #include "../qemu/tcg/symbolic/symbolic-struct.h"
 
 static int expr_pool_shm_id = -1;
-static Expr *pool;
+Expr *pool;
 
 static int query_shm_id = -1;
-static uintptr_t *next_query;
+static Expr **next_query;
 
 static void del_shm(void)
 {
@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
     // remove on exit
     atexit(del_shm);
 
-    pool = shmat(expr_pool_shm_id, NULL, 0);
+    pool = shmat(expr_pool_shm_id, EXPR_POOL_ADDR, 0);
     if (!pool)
         PFATAL("shmat() failed");
 
@@ -83,10 +83,11 @@ int main(int argc, char *argv[])
                 SAYF("Reached final query. Exiting...\n");
                 exit(0);
             }
-            SAYF("Running a query: %lu\n", *next_query);
+
+            SAYF("Running a query: %p\n", *next_query);
+            print_expr(*next_query);
             next_query++;
         }
-        MEM_BARRIER();
     }
 
     return 0;
