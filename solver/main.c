@@ -10,7 +10,7 @@
 #define USE_COLOR
 #include "debug.h"
 
-#include "../qemu/tcg/symbolic/symbolic-struct.h"
+#include "../tracer/tcg/symbolic/symbolic-struct.h"
 
 static int expr_pool_shm_id = -1;
 Expr *pool;
