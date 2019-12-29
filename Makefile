@@ -1,5 +1,8 @@
 COUNT=3850
 
+run:
+	./fuzzolic/fuzzolic.py tests/simple-if
+
 all: clean
 	./tracer/x86_64-linux-user/qemu-x86_64 -symbolic -d in_asm,op_opt,out_asm ./tests/simple-if 2> asm_in_out.log
 	grep 'IN: foo' -A $(COUNT) asm_in_out.log | head -n $(COUNT)
@@ -12,6 +15,7 @@ configure:
 	cd tracer && ./configure --prefix=`pwd`/../build --target-list=i386-linux-user,x86_64-linux-user
 
 build:
+	cd solver && make build
 	cd tracer && make
 
 core:

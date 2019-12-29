@@ -49,7 +49,7 @@ int main(int argc, char *argv[])
     if (query_shm_id < 0)
         PFATAL("shmget() failed");
 
-    SAYF("POOL_SHM_ID=%d QUERY_SHM_ID=%d\n", expr_pool_shm_id, query_shm_id);
+    //SAYF("POOL_SHM_ID=%d QUERY_SHM_ID=%d\n", expr_pool_shm_id, query_shm_id);
 
     // remove on exit
     atexit(del_shm);
@@ -84,7 +84,7 @@ int main(int argc, char *argv[])
                 exit(0);
             }
 
-            SAYF("Running a query: %p\n", *next_query);
+            SAYF("\nRunning a query: %p\n", *next_query);
             print_expr(*next_query);
             next_query++;
         }

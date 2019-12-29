@@ -1,3 +1,5 @@
-all:
-	gcc -o solver main.c
+all: build
 	./solver
+
+build:
+	gcc -o solver main.c
