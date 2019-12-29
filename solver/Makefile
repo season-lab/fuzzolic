@@ -1,5 +1,6 @@
-all: build
+build:
+	gcc -o solver main.c -lz3
+
+run: build
 	./solver
 
-build:
-	gcc -o solver main.c

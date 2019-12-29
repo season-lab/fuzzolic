@@ -179,10 +179,14 @@
 
 /* Just print stuff to the appropriate stream. */
 
+#ifndef SAYF_PREFIX
+#define SAYF_PREFIX ""
+#endif
+
 #ifdef MESSAGES_TO_STDOUT
-#  define SAYF(x...) printf(x)
+#  define SAYF(format, ...) printf(format, __VA_ARGS__)
 #else
-#  define SAYF(x...) fprintf(stderr, x)
+#  define SAYF(x...) fprintf(stderr, SAYF_PREFIX x)
 #endif /* ^MESSAGES_TO_STDOUT */
 
 /* Show a prefixed warning. */
