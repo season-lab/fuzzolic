@@ -20,3 +20,7 @@ core:
 
 clean:
 	rm qemu_basic_2019* || echo
+
+clean-shared:
+	ipcrm -a
+	ipcrm -m XXX
