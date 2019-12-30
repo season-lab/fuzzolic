@@ -38,7 +38,7 @@ static void exitf(const char *message)
 
 static void smt_error_handler(Z3_context c, Z3_error_code e)
 {
-    printf("Error code: %d\n", e);
+    printf("Error code %d: %s\n", e, Z3_get_error_msg(c, e));
     exitf("incorrect use of Z3");
 }
 
@@ -57,11 +57,14 @@ static void smt_destroy(void)
     Z3_del_context(smt_solver.ctx);
 }
 
+static Z3_ast cached_input = NULL;
 static Z3_ast smt_new_symbol(const char *name, size_t n_bits)
 {
+    if (cached_input) return cached_input;
     Z3_sort bv_sort = Z3_mk_bv_sort(smt_solver.ctx, n_bits);
     Z3_symbol s_name = Z3_mk_string_symbol(smt_solver.ctx, name);
     Z3_ast s = Z3_mk_const(smt_solver.ctx, s_name, bv_sort);
+    cached_input = s;
     return s;
 }
 
@@ -101,7 +104,6 @@ static void smt_query_check(Z3_solver solver, Z3_ast query, uint8_t preserve_sol
         }
         break;
     case Z3_L_TRUE:
-        /* disproved */
         printf("Query is SAT\n");
         m = Z3_solver_get_model(smt_solver.ctx, solver);
         if (m)
@@ -118,6 +120,12 @@ static void smt_query_check(Z3_solver solver, Z3_ast query, uint8_t preserve_sol
     /* restore scope */
     if (preserve_solver)
         Z3_solver_pop(smt_solver.ctx, solver, 1);
+}
+
+static inline void smt_print_ast_sort(Z3_ast e)
+{
+    Z3_sort sort = Z3_get_sort(smt_solver.ctx, e);
+    printf("Sort: %s\n", Z3_sort_to_string(smt_solver.ctx, sort));
 }
 
 static Z3_ast smt_query_to_z3(Expr *query, uintptr_t is_const)
@@ -158,16 +166,57 @@ static Z3_ast smt_query_to_z3(Expr *query, uintptr_t is_const)
             op2 = smt_query_to_z3(query->op2, query->op2_is_const);
             r = Z3_mk_bvsub(smt_solver.ctx, op1, op2);
             break;
+        case AND:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const);
+            //printf("AND\n");
+            //smt_print_ast_sort(op1);
+            //smt_print_ast_sort(op2);
+            if (Z3_get_sort_kind(smt_solver.ctx, Z3_get_sort(smt_solver.ctx, op1)) == Z3_BOOL_SORT)
+            {
+                Z3_ast args[2] = {op1, op2};
+                r = Z3_mk_and(smt_solver.ctx, 2, args);
+            }
+            else
+                r = Z3_mk_bvand(smt_solver.ctx, op1, op2);
+            break;
         //
         case EQ:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const);
+            //printf("EQ\n");
+            //smt_print_ast_sort(op1);
+            //smt_print_ast_sort(op2);
             r = Z3_mk_eq(smt_solver.ctx, op1, op2);
             break;
         case NE:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const);
+            //printf("NE\n");
+            //smt_print_ast_sort(op1);
+            //smt_print_ast_sort(op2);
             r = Z3_mk_not(smt_solver.ctx, Z3_mk_eq(smt_solver.ctx, op1, op2));
+            break;
+        //
+        case LTU:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const);
+            r = Z3_mk_bvult(smt_solver.ctx, op1, op2);
+            break;
+        case LEU:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const);
+            r = Z3_mk_bvule(smt_solver.ctx, op1, op2);
+            break;
+        case GEU:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const);
+            r = Z3_mk_bvuge(smt_solver.ctx, op1, op2);
+            break;
+        case GTU:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const);
+            r = Z3_mk_bvugt(smt_solver.ctx, op1, op2);
             break;
         //
         case ZEXT:
@@ -175,7 +224,7 @@ static Z3_ast smt_query_to_z3(Expr *query, uintptr_t is_const)
             unsigned n = (uintptr_t) query->op2;
             op1 = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
             op2 = smt_new_const(0, 64 - n);
-            r = Z3_mk_concat(smt_solver.ctx, op1, op2);
+            r = Z3_mk_concat(smt_solver.ctx, op2, op1);
             break;
         //
         case CONCAT8:
@@ -199,7 +248,7 @@ static Z3_ast smt_query_to_z3(Expr *query, uintptr_t is_const)
 
 static void smt_query(Expr *query)
 {
-    print_expr(query);
+    //print_expr(query);
 
     Z3_solver solver = Z3_mk_solver(smt_solver.ctx);
     Z3_solver_inc_ref(smt_solver.ctx, solver);
@@ -208,8 +257,11 @@ static void smt_query(Expr *query)
     Z3_ast z3_query = smt_query_to_z3(query, 0);
 
     SAYF("DONE: Translating query to Z3\n");
+#if 0
+    Z3_set_ast_print_mode(smt_solver.ctx, Z3_PRINT_LOW_LEVEL);
     const char * z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
     SAYF("%s\n", z3_query_str);
+#endif
 
     SAYF("Running a query...\n");
     smt_query_check(solver, z3_query, 0);
@@ -241,6 +293,43 @@ void sig_handler(int signo)
     cleanup();
     exit(0);
 }
+#if 0
+static void test(void)
+{
+    Z3_ast input = smt_new_symbol("input", 64);
+
+    Z3_ast b0 = Z3_mk_extract(smt_solver.ctx, 7, 0, input);
+    Z3_ast b1 = Z3_mk_extract(smt_solver.ctx, 15, 8, input);
+    Z3_ast b2 = Z3_mk_extract(smt_solver.ctx, 23, 16, input);
+    Z3_ast b3 = Z3_mk_extract(smt_solver.ctx, 31, 24, input);
+
+    Z3_ast r = Z3_mk_concat(smt_solver.ctx, b1, b0);
+    r = Z3_mk_concat(smt_solver.ctx, b2, r);
+    r = Z3_mk_concat(smt_solver.ctx, b3, r);
+
+    //r = Z3_mk_extract(smt_solver.ctx, 31, 0, r);
+
+    Z3_ast zero32 = smt_new_const(0, 32);
+    Z3_ast merged = Z3_mk_concat(smt_solver.ctx, zero32, r);
+
+    Z3_ast deadbeef = smt_new_const(0xdeadbeef, 64);
+
+    r = Z3_mk_bvsub(smt_solver.ctx, merged, deadbeef);
+
+    Z3_ast zero64 = smt_new_const(0, 64);
+    Z3_ast z3_query = Z3_mk_eq(smt_solver.ctx, r, zero64);
+
+    Z3_solver solver = Z3_mk_solver(smt_solver.ctx);
+    Z3_solver_inc_ref(smt_solver.ctx, solver);
+
+    const char * z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
+    SAYF("%s\n", z3_query_str);
+
+    smt_query_check(solver, z3_query, 0);
+
+    Z3_solver_dec_ref(smt_solver.ctx, solver);
+}
+#endif
 
 int main(int argc, char *argv[])
 {
