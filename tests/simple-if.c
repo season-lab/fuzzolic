@@ -1,6 +1,10 @@
-char DATA[128];
+#include <unistd.h>
+#include <stdio.h>
 
-int foo(int p){
+int foo(void){
+    int p;
+    read(0, &p, sizeof(p));
+    //printf("Input: %x\n", p);
     if (p == 0xDEADBEEF)
         printf("Got me!\n");
     else
@@ -8,11 +12,6 @@ int foo(int p){
 }
 
 int main() {
-    int a = 10;
-    a = a + 20;
-    DATA[20] = a;
-    char * m = malloc(0xABC);
-    m[10] = a;
-    foo(0);
+    foo();
     return 0;
 }

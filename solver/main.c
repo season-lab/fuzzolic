@@ -57,14 +57,21 @@ static void smt_destroy(void)
     Z3_del_context(smt_solver.ctx);
 }
 
+static Expr * cached_input_expr = NULL;
 static Z3_ast cached_input = NULL;
-static Z3_ast smt_new_symbol(const char *name, size_t n_bits)
+static Z3_ast smt_new_symbol(const char *name, size_t n_bits, Expr * e)
 {
-    if (cached_input) return cached_input;
+    // ToDo: support more than one input
+    if (cached_input) {
+        assert(e->op1 == cached_input_expr->op1 && e->op2 == cached_input_expr->op2);
+        return cached_input;
+    }
+
     Z3_sort bv_sort = Z3_mk_bv_sort(smt_solver.ctx, n_bits);
     Z3_symbol s_name = Z3_mk_string_symbol(smt_solver.ctx, name);
     Z3_ast s = Z3_mk_const(smt_solver.ctx, s_name, bv_sort);
     cached_input = s;
+    cached_input_expr = e;
     return s;
 }
 
@@ -73,6 +80,31 @@ static Z3_ast smt_new_const(uint64_t value, size_t n_bits)
     Z3_sort bv_sort = Z3_mk_bv_sort(smt_solver.ctx, n_bits);
     Z3_ast s = Z3_mk_unsigned_int(smt_solver.ctx, value, bv_sort);
     return s;
+}
+
+static uint32_t file_next_id = 0;
+static void smt_dump_solution(Z3_model m)
+{
+    assert(cached_input);
+    size_t input_size = (size_t) cached_input_expr->op2;
+
+    char * test_case_name = malloc(16);
+    snprintf(test_case_name, 16, "test_case_%u.dat", file_next_id++);
+    FILE * fp = fopen(test_case_name, "w");
+    for (long i = input_size - 1; i >= 0; i--)
+    {
+        Z3_ast input_slice = Z3_mk_extract(smt_solver.ctx, (8 * (i + 1)) - 1, 8 * i, cached_input);
+        Z3_ast solution;
+        Z3_bool successfulEval = Z3_model_eval(smt_solver.ctx, m, input_slice, /*model_completion=*/ Z3_TRUE, &solution);
+        assert(successfulEval && "Failed to evaluate model");
+        assert(Z3_get_ast_kind(smt_solver.ctx, solution) == Z3_NUMERAL_AST && "Evaluated expression has wrong sort");
+        int solution_byte = 0;
+        Z3_bool successGet = Z3_get_numeral_int(smt_solver.ctx, solution, &solution_byte);
+        printf("Solution[%ld]: %x\n", input_size - i - 1, solution_byte);
+        fwrite(&solution_byte, sizeof(char), 1, fp);
+    }
+    fclose(fp);
+    free(test_case_name);
 }
 
 static void smt_query_check(Z3_solver solver, Z3_ast query, uint8_t preserve_solver)
@@ -109,8 +141,8 @@ static void smt_query_check(Z3_solver solver, Z3_ast query, uint8_t preserve_sol
         if (m)
         {
             Z3_model_inc_ref(smt_solver.ctx, m);
-            /* the model returned by Z3 is a counterexample */
-            printf("counterexample:\n%s\n", Z3_model_to_string(smt_solver.ctx, m));
+            smt_dump_solution(m);
+            //printf("solution:\n %s\n", Z3_model_to_string(smt_solver.ctx, m));
         }
         break;
     }
@@ -143,9 +175,11 @@ static Z3_ast smt_query_to_z3(Expr *query, uintptr_t is_const)
     {
         case RESERVED:
             ABORT("Invalid opkind (RESERVER). There is a bug somewhere :(");
-        case IS_SYMBOLIC:
+        case IS_SYMBOLIC:;
             // ToDo: get name and size from the struct
-            r = smt_new_symbol("input", 64);
+            char * input_name = malloc(16);
+            snprintf(input_name, 16, "input_%lu", (uintptr_t)query->op1);
+            r = smt_new_symbol(input_name, 8 * (uintptr_t)query->op2, query);
             break;
         case IS_CONST:
             r = smt_new_const((uintptr_t)query->op1, 64);
