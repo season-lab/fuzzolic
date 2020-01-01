@@ -19,6 +19,9 @@ configure:
 kill-solver:
 	killall -SIGINT solver || echo "No solver still alive to kill"
 
+build: build-solver build-tracer
+	echo "Built."
+
 build-solver:
 	cd solver && make build
 
