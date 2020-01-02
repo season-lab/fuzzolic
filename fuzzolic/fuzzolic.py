@@ -2,61 +2,12 @@
 
 import os
 import sys
-import json
-
-DIR = os.path.dirname(os.path.realpath(__file__))
-
-
-def get_config_str(data, key, config):
-    if key in data:
-        addr = data[key]
-        config[key] = addr
-
-
-def get_config_addr(data, key, config):
-    if key in data:
-        addr = data[key]
-        addr = int(addr, 16)
-        config[key] = addr
-
-
-def read_config(binary):
-    config = {}
-    if not os.path.exists(binary + '.json'):
-        print 'Configuration file for ' + BINARY + ' is missing.'
-        sys.exit(1)
-    with open(binary + '.json', 'r') as cfgfile:
-        data = json.load(cfgfile)
-        get_config_str(data, 'SYMBOLIC_EXEC_START_ADDR', config)
-        get_config_str(data, 'SYMBOLIC_EXEC_STOP_ADDR', config)
-        get_config_str(data, 'SYMBOLIC_INJECT_INPUT_MODE', config)
-        get_config_str(data, 'SYMBOLIC_EXEC_REG_NAME', config)
-        get_config_str(data, 'SYMBOLIC_EXEC_REG_INSTR_ADDR', config)
-        get_config_str(data, 'SYMBOLIC_EXEC_BUFFER_ADDR', config)
-        get_config_str(data, 'SYMBOLIC_EXEC_BUFFER_INSTR_ADDR', config)
-    return config
-
-
-def run(binary, conf):
-
-    cmd = '('
-    for c in config:
-        cmd += 'export ' + c + '=' + config[c] + '; '
-    cmd += 'env | grep SYMBOLIC; '
-
-    cmd += DIR + '/../solver/solver &'
-    cmd += ' ' + DIR + \
-        '/../tracer/x86_64-linux-user/qemu-x86_64 -symbolic ' + binary
-    cmd += ' && wait'
-    cmd += ')'
-
-    os.system(cmd)
-
+import executor
 
 if __name__ == "__main__":
 
-    if len(sys.argv) != 2:
-        print 'Usage: ' + sys.argv[0] + ' <binary>'
+    if len(sys.argv) != 3:
+        print 'Usage: ' + sys.argv[0] + ' <binary> <seed>'
         sys.exit(1)
 
     binary = sys.argv[1]
@@ -64,5 +15,15 @@ if __name__ == "__main__":
         print 'ERROR: invalid binary'
         sys.exit(1)
 
-    config = read_config(binary)
-    run(binary, config)
+    binary = sys.argv[1]
+    if not os.path.exists(binary):
+        print 'ERROR: invalid binary'
+        sys.exit(1)
+
+    seed = sys.argv[2]
+    if not os.path.exists(seed):
+        print 'ERROR: invalid seed'
+        sys.exit(1)
+
+    fuzzolic_executor = executor.Executor(binary, seed, "./")
+    fuzzolic_executor.run()

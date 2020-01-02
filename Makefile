@@ -1,7 +1,7 @@
 COUNT=3850
 
-all: build-tracer build-solver kill-solver
-	cat tests/simple_if_input_ko.dat | ./fuzzolic/fuzzolic.py tests/simple-if
+all: build-tracer build-solver kill-solver clean-work-dir
+	./fuzzolic/fuzzolic.py tests/simple-if tests/simple_if_input_ko.dat
 
 simpleif: clean
 	./solver/solver >/dev/null &
@@ -15,6 +15,9 @@ native:
 
 configure:
 	cd tracer && ./configure --prefix=`pwd`/../build --target-list=i386-linux-user,x86_64-linux-user
+
+clean-work-dir:
+	rm -rf fuzzolic_working_dir
 
 kill-solver:
 	killall -SIGINT solver || echo "No solver still alive to kill"

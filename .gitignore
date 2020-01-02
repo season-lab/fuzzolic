@@ -1,2 +1,3 @@
 asm_in_out.log
 .vscode
+*.pyc
