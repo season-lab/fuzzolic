@@ -107,7 +107,7 @@ static void     smt_dump_solution(Z3_model m)
         int     solution_byte = 0;
         Z3_bool successGet =
             Z3_get_numeral_int(smt_solver.ctx, solution, &solution_byte);
-        printf("Solution[%ld]: %x\n", input_size - i - 1, solution_byte);
+        printf("Solution[%ld]: %x\n", i, solution_byte);
         fwrite(&solution_byte, sizeof(char), 1, fp);
     }
     fclose(fp);
@@ -288,7 +288,7 @@ static Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const)
 
 static void smt_query(Expr* query)
 {
-    print_expr(query);
+    // print_expr(query);
 
     Z3_solver solver = Z3_mk_solver(smt_solver.ctx);
     Z3_solver_inc_ref(smt_solver.ctx, solver);
@@ -297,7 +297,7 @@ static void smt_query(Expr* query)
     Z3_ast z3_query = smt_query_to_z3(query, 0);
 
     SAYF("DONE: Translating query to Z3\n");
-#if 1
+#if 0
     Z3_set_ast_print_mode(smt_solver.ctx, Z3_PRINT_LOW_LEVEL);
     const char * z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
     SAYF("%s\n", z3_query_str);

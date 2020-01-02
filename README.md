@@ -17,7 +17,9 @@ Vanilla QEMU:
 ```
 QEMU with symbolic mode:
 ```
-./tracer/x86_64-linux-user/qemu-x86_64 -symbolic <path_to_binary> <bianry_args>
+./tracer/x86_64-linux-user/qemu-x86_64 -symbolic <path_to_binary> <binary_args>
 ```
-To inject symbolic inputs during the binary execution, see `tracer/tcg/symbolic/config.h`.
+To configure the symbolic engine (needed to run correctly), a json file has to be created for the binary. 
+See examples: `tests/simple-if.json`
+
 
