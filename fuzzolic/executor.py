@@ -126,12 +126,14 @@ class Executor(object):
         if self.config['SYMBOLIC_INJECT_INPUT_MODE'] == 'READ_FD_0':
             cmd += 'cat ' + testcase + ' | '
 
+        if self.config['SYMBOLIC_INJECT_INPUT_MODE'] == 'REG':  # ToDo
+            cmd += 'cat ' + testcase + ' | '
+
         cmd += ' ' + SCRIPT_DIR + \
             '/../tracer/x86_64-linux-user/qemu-x86_64 -symbolic ' + self.working_dir \
             + '/' + self.binary
 
-        if self.config['SYMBOLIC_INJECT_INPUT_MODE'] == 'REG' \
-                or self.config['SYMBOLIC_INJECT_INPUT_MODE'] == 'BUFFER':
+        if self.config['SYMBOLIC_INJECT_INPUT_MODE'] == 'BUFFER':
             cmd += ' ' + testcase
 
         cmd += ' >' + run_dir + '/tracer.log 2>&1'
@@ -154,7 +156,8 @@ class Executor(object):
 
             # check whether this a duplicate test case
             discard = False
-            known_tests = glob.glob(self.__get_test_cases_dir() + "/test_case_*.dat")
+            known_tests = glob.glob(
+                self.__get_test_cases_dir() + "/test_case_*.dat")
             for kt in known_tests:
                 if filecmp.cmp(kt, t):
                     print "Discarding " + t + ' since it is a duplicate'

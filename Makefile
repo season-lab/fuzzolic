@@ -13,6 +13,9 @@ native:
 	cat tests/simple_if_input_ko.dat | ./tracer/x86_64-linux-user/qemu-x86_64 -d in_asm,op_opt,out_asm ./tests/simple-if 2> asm_in_out.log
 	grep 'IN: foo' -A 200 asm_in_out.log | head -n 200
 
+all-concrete:
+	(./solver/solver & export SYMBOLIC_EXEC_START_ADDR=0x40054d SYMBOLIC_EXEC_STOP_ADDR=0x400612 SYMBOLIC_INJECT_INPUT_MODE=READ_FD_0; cat tests/all_concrete_d.dat | ./tracer/x86_64-linux-user/qemu-x86_64 -symbolic -d in_asm,op_opt,out_asm ./tests/all-concrete 2>asm_in_out.log; wait)
+
 configure:
 	cd tracer && ./configure --prefix=`pwd`/../build --target-list=i386-linux-user,x86_64-linux-user
 

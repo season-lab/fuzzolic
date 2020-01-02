@@ -90,7 +90,11 @@ static void     smt_dump_solution(Z3_model m)
     char* test_case_name = malloc(16);
     snprintf(test_case_name, 16, "test_case_%u.dat", file_next_id++);
     FILE* fp = fopen(test_case_name, "w");
+#if 1
+    for (long i = 0; i < input_size; i++) {
+#else
     for (long i = input_size - 1; i >= 0; i--) {
+#endif
         Z3_ast  input_slice = Z3_mk_extract(smt_solver.ctx, (8 * (i + 1)) - 1,
                                            8 * i, cached_input);
         Z3_ast  solution;
@@ -284,7 +288,7 @@ static Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const)
 
 static void smt_query(Expr* query)
 {
-    // print_expr(query);
+    print_expr(query);
 
     Z3_solver solver = Z3_mk_solver(smt_solver.ctx);
     Z3_solver_inc_ref(smt_solver.ctx, solver);
@@ -293,7 +297,7 @@ static void smt_query(Expr* query)
     Z3_ast z3_query = smt_query_to_z3(query, 0);
 
     SAYF("DONE: Translating query to Z3\n");
-#if 0
+#if 1
     Z3_set_ast_print_mode(smt_solver.ctx, Z3_PRINT_LOW_LEVEL);
     const char * z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
     SAYF("%s\n", z3_query_str);

@@ -3,7 +3,10 @@
 
 #define N 512
 
-int foo(int input) {
+int foo() {
+
+    int input;
+    read(0, &input, sizeof(input));
 
     int sum = 0;
     int i, j, k;
@@ -23,5 +26,5 @@ int foo(int input) {
 }
 
 int main() {
-    foo(0);
+    foo();
 }
