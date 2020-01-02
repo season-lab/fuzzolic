@@ -29,8 +29,11 @@ def read_config(binary):
         data = json.load(cfgfile)
         get_config_str(data, 'SYMBOLIC_EXEC_START_ADDR', config)
         get_config_str(data, 'SYMBOLIC_EXEC_STOP_ADDR', config)
+        get_config_str(data, 'SYMBOLIC_INJECT_INPUT_MODE', config)
         get_config_str(data, 'SYMBOLIC_EXEC_REG_NAME', config)
-        get_config_str(data, 'SYMBOLIC_EXEC_REG_ADDR', config)
+        get_config_str(data, 'SYMBOLIC_EXEC_REG_INSTR_ADDR', config)
+        get_config_str(data, 'SYMBOLIC_EXEC_BUFFER_ADDR', config)
+        get_config_str(data, 'SYMBOLIC_EXEC_BUFFER_INSTR_ADDR', config)
     return config
 
 

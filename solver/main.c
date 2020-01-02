@@ -36,7 +36,7 @@ static void exitf(const char* message)
 
 static void smt_error_handler(Z3_context c, Z3_error_code e)
 {
-    printf("Error code: %s\n",  Z3_get_error_msg(e));
+    printf("Error code: %s\n", Z3_get_error_msg(e));
     exitf("incorrect use of Z3");
 }
 
