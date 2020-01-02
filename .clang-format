@@ -1,0 +1,20 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+UseTab: Never
+TabWidth: 4
+BreakBeforeBraces: Linux
+AllowShortIfStatementsOnASingleLine: false
+ColumnLimit: 80
+SortIncludes: false
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+
+# this requires clang-formnat >= 9.0
+AlignConsecutiveMacros: true
+
+AlignEscapedNewlines: Right
+AlignOperands: true
+AlignTrailingComments: true
+DerivePointerAlignment: false
+PointerAlignment: Left
+IndentCaseLabels: true
