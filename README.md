@@ -2,14 +2,16 @@
 
 A concolic executor into a fuzzer skeleton.
 
-## QEMU
+## Build
 
-### Build
+### QEMU
 ```
 cd tracer
 ./configure --prefix=`pwd`/../build --target-list=i386-linux-user,x86_64-linux-user
 make -j4
 ```
+### Z3
+Install Z3 normally.
 
 ## Run
 ```
