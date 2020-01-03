@@ -1,10 +1,11 @@
-#!/usr/bin/python2.7
+#!/usr/bin/python3
 
 import os
 import sys
 import json
 import glob
 import filecmp
+import subprocess
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -14,18 +15,15 @@ class Executor(object):
     def __init__(self, binary, initial_seed, working_dir):
 
         if not os.path.exists(binary):
-            print 'ERROR: invalid binary.'
-            sys.exit(1)
+            sys.exit('ERROR: invalid binary')
         self.binary = binary
 
         if not os.path.exists(working_dir):
-            print 'ERROR: invalid working directory.'
-            sys.exit(1)
+            sys.exit('ERROR: invalid working directory')
         self.working_dir = os.path.abspath(working_dir)
 
         if not os.path.exists(initial_seed):
-            print 'ERROR: invalid initial seed.'
-            sys.exit(1)
+            sys.exit('ERROR: invalid initial seed')
         self.initial_seed = initial_seed
 
         self.__load_config()
@@ -44,8 +42,7 @@ class Executor(object):
     def __load_config(self):
         config = {}
         if not os.path.exists(self.binary + '.json'):
-            print 'Configuration file for ' + self.binary + ' is missing.'
-            sys.exit(1)
+            sys.exit('Configuration file for %s is missing' % self.binary)
         with open(self.binary + '.json', 'r') as cfgfile:
             data = json.load(cfgfile)
             self.__get_config_str(data, 'SYMBOLIC_EXEC_START_ADDR', config)
@@ -106,8 +103,8 @@ class Executor(object):
     def fuzz_one(self, testcase):
 
         run_dir, run_id = self.__get_run_dir()
-        print '\nRunning using testcase: ' + testcase
-        print 'Running directory: ' + run_dir
+        print('\nRunning using testcase: %s' % testcase)
+        print('Running directory: %s' % run_dir)
 
         cmd = '('
 
@@ -160,12 +157,12 @@ class Executor(object):
                 self.__get_test_cases_dir() + "/test_case_*.dat")
             for kt in known_tests:
                 if filecmp.cmp(kt, t):
-                    print "Discarding " + t + ' since it is a duplicate'
+                    print('Discarding %s since it is a duplicate' % t)
                     discard = True
                     break
 
             if not discard:
-                print "Importing " + t
+                print("Importing %s" % t)
                 self.__import_test_case(
                     t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')
                 k += 1
