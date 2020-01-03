@@ -118,14 +118,16 @@ class Executor(object):
 
         env = os.environ.copy()
         for c in self.config:
-            assert c not in env
+            #assert c not in env
             env[c] = self.config[c]
 
         self.__check_shutdown_flag()
 
         # launch solver
         p_solver_log = open(run_dir + '/solver.log', 'w')
-        p_solver_args = [SOLVER_BIN]
+        p_solver_args = []
+        p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
+        p_solver_args += [SOLVER_BIN]
         p_solver = subprocess.Popen(p_solver_args,
                                     stdout=p_solver_log,
                                     stderr=subprocess.STDOUT,
@@ -137,7 +139,10 @@ class Executor(object):
 
         # launch tracer
         p_tracer_log = open(run_dir + '/tracer.log', 'w')
-        p_tracer_args = [TRACER_BIN]
+        p_tracer_args = []
+        p_tracer_args += ['stdbuf', '-o0']  # No buffering on stdout
+                                            # this may lead to additional queries!
+        p_tracer_args += [TRACER_BIN]
         p_tracer_args += ['-symbolic']
         p_tracer_args += [self.working_dir + '/' + self.binary]
 
