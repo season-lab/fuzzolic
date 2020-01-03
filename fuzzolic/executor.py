@@ -6,8 +6,16 @@ import json
 import glob
 import filecmp
 import subprocess
+import time
+import signal
+
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+SOLVER_BIN = SCRIPT_DIR + '/../solver/solver'
+TRACER_BIN = SCRIPT_DIR + '/../tracer/x86_64-linux-user/qemu-x86_64'
+SOLVER_WAIT_TIME_AT_STARTUP = 0.0005
+SOLVER_TIMEOUT = 10
+SHUTDOWN = False
 
 
 class Executor(object):
@@ -102,44 +110,59 @@ class Executor(object):
 
     def fuzz_one(self, testcase):
 
+        self.__check_shutdown_flag()
+
         run_dir, run_id = self.__get_run_dir()
         print('\nRunning using testcase: %s' % testcase)
         print('Running directory: %s' % run_dir)
 
-        cmd = '('
-
+        env = os.environ.copy()
         for c in self.config:
-            cmd += 'export ' + c + '=' + self.config[c] + '; '
-        cmd += 'env | grep SYMBOLIC >' + run_dir + '/tracer.log 2>&1; '
+            assert c not in env
+            env[c] = self.config[c]
+
+        self.__check_shutdown_flag()
 
         # launch solver
-        cmd += 'cd ' + run_dir + ' && '
-        cmd += SCRIPT_DIR + '/../solver/solver'
-        cmd += ' >' + run_dir + '/solver.log 2>&1 &'
+        p_solver_log = open(run_dir + '/solver.log', 'w')
+        p_solver_args = [SOLVER_BIN]
+        p_solver = subprocess.Popen(p_solver_args,
+                                    stdout=p_solver_log,
+                                    stderr=subprocess.STDOUT,
+                                    cwd=run_dir,
+                                    env=env)
+
+        # wait a few moments to let the solver setup setup shared memories
+        time.sleep(SOLVER_WAIT_TIME_AT_STARTUP)
 
         # launch tracer
-        cmd += 'cd ' + run_dir + ' && '
+        p_tracer_log = open(run_dir + '/tracer.log', 'w')
+        p_tracer_args = [TRACER_BIN]
+        p_tracer_args += ['-symbolic']
+        p_tracer_args += [self.working_dir + '/' + self.binary]
 
-        if self.config['SYMBOLIC_INJECT_INPUT_MODE'] == 'READ_FD_0':
-            cmd += 'cat ' + testcase + ' | '
+        p_tracer = subprocess.Popen(p_tracer_args,
+                                    stdout=p_tracer_log,
+                                    stderr=subprocess.STDOUT,
+                                    stdin=subprocess.PIPE,
+                                    cwd=run_dir,
+                                    env=env)
 
-        if self.config['SYMBOLIC_INJECT_INPUT_MODE'] == 'REG':  # ToDo
-            cmd += 'cat ' + testcase + ' | '
+        # emit testcate on stdin
+        if self.config['SYMBOLIC_INJECT_INPUT_MODE'] in ('READ_FD_0', 'REG', 'BUFFER'):
+            with open(testcase, "rb") as f:
+                p_tracer.stdin.write(f.read())
+                p_tracer.stdin.close()
 
-        cmd += ' ' + SCRIPT_DIR + \
-            '/../tracer/x86_64-linux-user/qemu-x86_64 -symbolic ' + self.working_dir \
-            + '/' + self.binary
+        p_tracer.wait()
 
-        if self.config['SYMBOLIC_INJECT_INPUT_MODE'] == 'BUFFER':
-            cmd += ' ' + testcase
-
-        cmd += ' >' + run_dir + '/tracer.log 2>&1'
-
-        cmd += ' && wait'
-        cmd += ')'
-
-        # run it
-        os.system(cmd)
+        p_solver.wait(SOLVER_TIMEOUT)
+        if p_solver.poll() is None:
+            p_solver.send_signal(signal.SIGINT)
+            p_solver.wait(SOLVER_TIMEOUT)
+            if p_solver.poll() is None:
+                print('Solver will be killed.')
+                p_solver.send_signal(signal.SIGKILL)
 
         # remove test case from queue dir
         os.system('rm ' + testcase)
@@ -148,6 +171,7 @@ class Executor(object):
         files = list(filter(os.path.isfile, glob.glob(
             run_dir + "/test_case_*.dat")))
         files.sort(key=lambda x: os.path.getmtime(x))
+
         k = 0
         for t in files:
 
@@ -193,9 +217,16 @@ class Executor(object):
 
         return queued_inputs[0]
 
+    def __check_shutdown_flag(self):
+        if SHUTDOWN:
+            sys.exit("Forcefully terminating...")
+
     def run(self):
 
+        self.__check_shutdown_flag()
         testcase = self.__pick_testcase(True)
         while testcase:
             self.fuzz_one(testcase)
+            self.__check_shutdown_flag()
             testcase = self.__pick_testcase()
+            self.__check_shutdown_flag()
