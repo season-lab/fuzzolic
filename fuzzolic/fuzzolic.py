@@ -7,7 +7,7 @@ import signal
 import argparse
 
 
-def handler(signo, strakframe):
+def handler(signo, stackframe):
     print("Aborting....")
     executor.SHUTDOWN = True
 
