@@ -1,6 +1,6 @@
 # fuzzolic
 
-A concolic executor into a fuzzer skeleton.
+fuzzing + concolic = fuzzolic :)
 
 ## Build
 
