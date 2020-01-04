@@ -8,6 +8,7 @@ import filecmp
 import subprocess
 import time
 import signal
+import configparser
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -20,11 +21,12 @@ SHUTDOWN = False
 
 class Executor(object):
 
-    def __init__(self, binary, initial_seed, working_dir):
+    def __init__(self, binary, initial_seed, working_dir, binary_args, debug):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
         self.binary = binary
+        self.binary_args = binary_args
 
         if not os.path.exists(working_dir):
             sys.exit('ERROR: invalid working directory')
@@ -33,6 +35,8 @@ class Executor(object):
         if not os.path.exists(initial_seed):
             sys.exit('ERROR: invalid initial seed')
         self.initial_seed = initial_seed
+
+        self.debug = debug
 
         self.__load_config()
 
@@ -49,23 +53,21 @@ class Executor(object):
 
     def __load_config(self):
         config = {}
-        if not os.path.exists(self.binary + '.json'):
+        if not os.path.exists(self.binary + '.fuzzolic'):
             sys.exit('Configuration file for %s is missing' % self.binary)
-        with open(self.binary + '.json', 'r') as cfgfile:
-            data = json.load(cfgfile)
-            self.__get_config_str(data, 'SYMBOLIC_EXEC_START_ADDR', config)
-            self.__get_config_str(data, 'SYMBOLIC_EXEC_STOP_ADDR', config)
-            self.__get_config_str(data, 'SYMBOLIC_INJECT_INPUT_MODE', config)
-            self.__get_config_str(data, 'SYMBOLIC_EXEC_REG_NAME', config)
-            self.__get_config_str(data, 'SYMBOLIC_EXEC_REG_INSTR_ADDR', config)
-            self.__get_config_str(data, 'SYMBOLIC_EXEC_BUFFER_ADDR', config)
-            self.__get_config_str(
-                data, 'SYMBOLIC_EXEC_BUFFER_INSTR_ADDR', config)
+        with open(self.binary + '.fuzzolic', 'r') as cfgfile:
+            for line in cfgfile:
+                line = line.rstrip('\n').strip()
+                if line.startswith('#'): continue
+                pivot = line.index('=')
+                key = line[:pivot]
+                value = line[pivot + 1:]
+                config[key] = value
         self.config = config
 
     def __get_root_dir(self):
         # root dir
-        root_dir = self.working_dir + '/fuzzolic_working_dir'
+        root_dir = self.working_dir + '/workdir'
         if not os.path.exists(root_dir):
             os.system('mkdir ' + root_dir)
         return root_dir
@@ -141,10 +143,11 @@ class Executor(object):
         p_tracer_log = open(run_dir + '/tracer.log', 'w')
         p_tracer_args = []
         p_tracer_args += ['stdbuf', '-o0']  # No buffering on stdout
-                                            # this may lead to additional queries!
+        # this may lead to additional queries!
         p_tracer_args += [TRACER_BIN]
         p_tracer_args += ['-symbolic']
         p_tracer_args += [self.working_dir + '/' + self.binary]
+        p_tracer_args += self.binary_args
 
         p_tracer = subprocess.Popen(p_tracer_args,
                                     stdout=p_tracer_log,
@@ -232,6 +235,8 @@ class Executor(object):
         testcase = self.__pick_testcase(True)
         while testcase:
             self.fuzz_one(testcase)
+            if self.debug:
+                return
             self.__check_shutdown_flag()
             testcase = self.__pick_testcase()
             self.__check_shutdown_flag()

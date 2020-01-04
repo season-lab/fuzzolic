@@ -15,6 +15,9 @@ Install Z3 normally.
 
 ## Run
 ```
-./fuzzolic/fuzzolic.py <binary> <seed>
+./fuzzolic/fuzzolic.py <seed> <binary> [<args> ...]
 ```
-To configure the symbolic exploration, a JSON file (`<binary>.json`) should define a few parameters for the current binary. See as an example `tests/simple-if.json`.
+To run the symbolic exploration, a configuration file (`<binary>.fuzzoli`) must exist. 
+See as an example `tests/simple-if.fuzzolic`.
+
+Results are stored in `./workdir`.
