@@ -50,4 +50,4 @@ clean-shared:
 	ipcrm -m XXX
 
 print-tests:
-	python utils/print_test_cases.py workdir
+	python utils/print_test_cases.py workdir/tests

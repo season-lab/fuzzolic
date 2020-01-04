@@ -87,8 +87,10 @@ static void     smt_dump_solution(Z3_model m)
     assert(cached_input);
     size_t input_size = (size_t)cached_input_expr->op2;
 
-    char* test_case_name = malloc(16);
-    snprintf(test_case_name, 16, "test_case_%u.dat", file_next_id++);
+    char test_case_name[128];
+    int n = snprintf(test_case_name, sizeof(test_case_name), "test_case_%u.dat", file_next_id++);
+    assert(n > 0 && n < sizeof(test_case_name) && "test case name too long");
+    //SAYF("Dumping solution into %s\n", test_case_name);
     FILE* fp = fopen(test_case_name, "w");
 #if 1
     for (long i = 0; i < input_size; i++) {
@@ -111,7 +113,6 @@ static void     smt_dump_solution(Z3_model m)
         fwrite(&solution_byte, sizeof(char), 1, fp);
     }
     fclose(fp);
-    free(test_case_name);
 }
 
 static void smt_query_check(Z3_solver solver, Z3_ast query,
@@ -164,7 +165,7 @@ static void smt_query_check(Z3_solver solver, Z3_ast query,
 static inline void smt_print_ast_sort(Z3_ast e)
 {
     Z3_sort sort = Z3_get_sort(smt_solver.ctx, e);
-    printf("Sort: %s\n", Z3_sort_to_string(smt_solver.ctx, sort));
+    //printf("Sort: %s\n", Z3_sort_to_string(smt_solver.ctx, sort));
 }
 
 static Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const)
@@ -288,7 +289,7 @@ static Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const)
 
 static void smt_query(Expr* query)
 {
-    // print_expr(query);
+    //print_expr(query);
 
     Z3_solver solver = Z3_mk_solver(smt_solver.ctx);
     Z3_solver_inc_ref(smt_solver.ctx, solver);

@@ -14,7 +14,7 @@ def main():
         sys.exit("Invalid working director")
 
     files = list(filter(os.path.isfile,
-                        glob.glob(working_dir + "/tests/test_case_*.dat")))
+                        glob.glob(working_dir + "/test_case_*.dat")))
     files.sort(key=lambda x: os.path.getmtime(x))
 
     for f in files:
