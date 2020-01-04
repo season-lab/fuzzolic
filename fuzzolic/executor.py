@@ -114,14 +114,15 @@ class Executor(object):
 
         self.__check_shutdown_flag()
 
+
         # launch solver
         p_solver_log = open(run_dir + '/solver.log', 'w')
         p_solver_args = []
         p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
         p_solver_args += [SOLVER_BIN]
         p_solver = subprocess.Popen(p_solver_args,
-                                    stdout=p_solver_log,
-                                    stderr=subprocess.STDOUT,
+                                    stdout=p_solver_log if not self.debug else None,
+                                    stderr=subprocess.STDOUT if not self.debug else None,
                                     cwd=run_dir,
                                     env=env)
 
@@ -139,8 +140,8 @@ class Executor(object):
         p_tracer_args += self.binary_args
 
         p_tracer = subprocess.Popen(p_tracer_args,
-                                    stdout=p_tracer_log,
-                                    stderr=subprocess.STDOUT,
+                                    stdout=p_tracer_log if not self.debug else None,
+                                    stderr=subprocess.STDOUT if not self.debug else None,
                                     stdin=subprocess.PIPE,
                                     cwd=run_dir,
                                     env=env)

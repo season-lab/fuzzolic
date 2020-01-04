@@ -109,7 +109,8 @@ static void     smt_dump_solution(Z3_model m)
         int     solution_byte = 0;
         Z3_bool successGet =
             Z3_get_numeral_int(smt_solver.ctx, solution, &solution_byte);
-        printf("Solution[%ld]: %x\n", i, solution_byte);
+        if (solution_byte)
+            printf("Solution[%ld]: %x\n", i, solution_byte);
         fwrite(&solution_byte, sizeof(char), 1, fp);
     }
     fclose(fp);
