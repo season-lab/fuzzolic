@@ -40,17 +40,6 @@ class Executor(object):
 
         self.__load_config()
 
-    def __get_config_str(self, data, key, config):
-        if key in data:
-            addr = data[key]
-            config[key] = addr
-
-    def __get_config_addr(self, data, key, config):
-        if key in data:
-            addr = data[key]
-            addr = int(addr, 16)
-            config[key] = addr
-
     def __load_config(self):
         config = {}
         if not os.path.exists(self.binary + '.fuzzolic'):
