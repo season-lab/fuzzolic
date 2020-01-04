@@ -154,11 +154,13 @@ class Executor(object):
 
         p_tracer.wait()
 
-        p_solver.wait(SOLVER_TIMEOUT)
-        if p_solver.poll() is None:
-            p_solver.send_signal(signal.SIGINT)
+        try:
             p_solver.wait(SOLVER_TIMEOUT)
-            if p_solver.poll() is None:
+        except subprocess.TimeoutExpired:
+            p_solver.send_signal(signal.SIGINT)
+            try:
+                p_solver.wait(SOLVER_TIMEOUT)
+            except subprocess.TimeoutExpired:
                 print('Solver will be killed.')
                 p_solver.send_signal(signal.SIGKILL)
 

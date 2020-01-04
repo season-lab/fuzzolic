@@ -2,7 +2,7 @@ COUNT=3850
 
 all: build-tracer build-solver kill-solver clean-work-dir
 	./fuzzolic/fuzzolic.py tests/simple_if_input_ko.dat tests/simple-if
-	./utils/print_test_cases.py workdir
+	./utils/print_test_cases.py workdir/tests
 
 simpleif: clean-core kill-solver
 	bash -c "export `cat tests/simple-if.fuzzolic` && ./solver/solver >/dev/null & cat tests/simple_if_input_ko.dat | ./tracer/x86_64-linux-user/qemu-x86_64 -symbolic -d in_asm,op_opt,out_asm ./tests/simple-if 2> asm_in_out.log; wait"
@@ -18,7 +18,7 @@ all-concrete: clean-core kill-solver
 
 all-concrete-full: build-tracer build-solver kill-solver clean-work-dir
 	time -p ./fuzzolic/fuzzolic.py tests/all_concrete_ko.dat tests/all-concrete
-	./utils/print_test_cases.py workdir
+	./utils/print_test_cases.py workdir/tests
 
 configure:
 	cd tracer && ./configure --prefix=`pwd`/../build --target-list=i386-linux-user,x86_64-linux-user
