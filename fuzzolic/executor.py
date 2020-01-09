@@ -47,7 +47,8 @@ class Executor(object):
         with open(self.binary + '.fuzzolic', 'r') as cfgfile:
             for line in cfgfile:
                 line = line.rstrip('\n').strip()
-                if line.startswith('#'): continue
+                if line.startswith('#'):
+                    continue
                 pivot = line.index('=')
                 key = line[:pivot]
                 value = line[pivot + 1:]
@@ -114,55 +115,90 @@ class Executor(object):
 
         self.__check_shutdown_flag()
 
-
         # launch solver
-        p_solver_log = open(run_dir + '/solver.log', 'w')
-        p_solver_args = []
-        p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
-        p_solver_args += [SOLVER_BIN]
-        p_solver = subprocess.Popen(p_solver_args,
-                                    stdout=p_solver_log if not self.debug else None,
-                                    stderr=subprocess.STDOUT if not self.debug else None,
-                                    cwd=run_dir,
-                                    env=env)
+        if self.debug != 'no_solver':
+            p_solver_log = open(run_dir + '/solver.log', 'w')
+            p_solver_args = []
+            p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
+            p_solver_args += [SOLVER_BIN]
+            p_solver = subprocess.Popen(p_solver_args,
+                                        stdout=p_solver_log if not self.debug else None,
+                                        stderr=subprocess.STDOUT if not self.debug else None,
+                                        cwd=run_dir,
+                                        env=env)
 
-        # wait a few moments to let the solver setup setup shared memories
-        time.sleep(SOLVER_WAIT_TIME_AT_STARTUP)
+            # wait a few moments to let the solver setup setup shared memories
+            time.sleep(SOLVER_WAIT_TIME_AT_STARTUP)
 
         # launch tracer
         p_tracer_log = open(run_dir + '/tracer.log', 'w')
         p_tracer_args = []
-        p_tracer_args += ['stdbuf', '-o0']  # No buffering on stdout
-        # this may lead to additional queries!
+
+        if self.debug != 'gdb':
+            p_tracer_args += ['stdbuf', '-o0']  # No buffering on stdout
+        else:
+            p_tracer_args += ['gdb']
+
         p_tracer_args += [TRACER_BIN]
-        p_tracer_args += ['-symbolic']
-        p_tracer_args += [self.working_dir + '/' + self.binary]
-        p_tracer_args += self.binary_args
+
+        if self.debug != 'gdb':
+            p_tracer_args += ['-symbolic']
+            if self.debug == 'trace':
+                p_tracer_args += ['-d']
+                p_tracer_args += ['in_asm,op_opt']  # 'in_asm,op_opt,out_asm'
+
+        if self.debug != 'gdb':
+            p_tracer_args += [self.working_dir + '/' + self.binary]
+            p_tracer_args += self.binary_args
+
+        # print(p_tracer_args)
 
         p_tracer = subprocess.Popen(p_tracer_args,
                                     stdout=p_tracer_log if not self.debug else None,
                                     stderr=subprocess.STDOUT if not self.debug else None,
-                                    stdin=subprocess.PIPE,
+                                    stdin=subprocess.PIPE,  # if self.debug != 'gdb' else None,
                                     cwd=run_dir,
-                                    env=env)
+                                    env=env,
+                                    bufsize=0 if self.debug == 'gdb' else -1,
+                                    #universal_newlines=True if self.debug == 'gdb' else False
+                                    )
 
         # emit testcate on stdin
-        if self.config['SYMBOLIC_INJECT_INPUT_MODE'] in ('READ_FD_0', 'REG', 'BUFFER'):
-            with open(testcase, "rb") as f:
-                p_tracer.stdin.write(f.read())
-                p_tracer.stdin.close()
+        if self.debug != 'gdb':
+            if self.config['SYMBOLIC_INJECT_INPUT_MODE'] in ('READ_FD_0', 'REG', 'BUFFER'):
+                with open(testcase, "rb") as f:
+                    p_tracer.stdin.write(f.read())
+                    p_tracer.stdin.close()
+        else:
+            gdb_cmd = 'run -symbolic ' + self.working_dir + \
+                '/' + self.binary + ' < ' + testcase + "\n"
+            # print(gdb_cmd)
+            p_tracer.stdin.write(gdb_cmd.encode())
+            for line in sys.stdin:
+                #print("Sending to gdb: " + line)
+                p_tracer.stdin.write(line.encode())
+                if 'quit' in line or line.startswith('q'):
+                    print("Closing stdin in gdb")
+                    break
+            p_tracer.stdin.close()
 
         p_tracer.wait()
 
-        try:
-            p_solver.wait(SOLVER_TIMEOUT)
-        except subprocess.TimeoutExpired:
+        if p_tracer.returncode != 0:
+            returncode_str = "(SIGSEGV)" if p_tracer.returncode == -11 else ""
+            print("ERROR: tracer has returned code %d %s" % (p_tracer.returncode, returncode_str))
             p_solver.send_signal(signal.SIGINT)
+
+        if self.debug != 'no_solver':
             try:
                 p_solver.wait(SOLVER_TIMEOUT)
             except subprocess.TimeoutExpired:
-                print('Solver will be killed.')
-                p_solver.send_signal(signal.SIGKILL)
+                p_solver.send_signal(signal.SIGINT)
+                try:
+                    p_solver.wait(SOLVER_TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    print('Solver will be killed.')
+                    p_solver.send_signal(signal.SIGKILL)
 
         # remove test case from queue dir
         os.system('rm ' + testcase)
