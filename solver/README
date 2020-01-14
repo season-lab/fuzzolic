@@ -4,3 +4,7 @@ L2: [INPUT TO STATE] prendo costanti basandomi su pattern da expr su ultimo bran
 L3: [RELAXED INPUT TO STATE] prendo costanti da expr su ultimo branch e sostituisco byte presi dalle costanti
 L4: [CHECKSUM PATCHING]
 L5: [SMT]
+
+
+
+LK: SAT/UNSAT based on hash path constraints
