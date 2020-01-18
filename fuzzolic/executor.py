@@ -121,6 +121,8 @@ class Executor(object):
             p_solver_args = []
             p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
             p_solver_args += [SOLVER_BIN]
+            p_solver_args += [testcase]
+            p_solver_args += [self.__get_test_cases_dir()]
             p_solver = subprocess.Popen(p_solver_args,
                                         stdout=p_solver_log if not self.debug else None,
                                         stderr=subprocess.STDOUT if not self.debug else None,

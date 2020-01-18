@@ -7,12 +7,13 @@
 #include <unistd.h>
 
 #include <z3.h>
+#define Z3_VERSION 487
 
 #define USE_COLOR
 #include "debug.h"
 
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
-#define EXPR_QUEUE_POLLING_TIME_NS   5000
+#define EXPR_QUEUE_POLLING_TIME_NS 5000
 
 #include "../tracer/tcg/symbolic/symbolic-struct.h"
 
@@ -34,9 +35,17 @@ static void exitf(const char* message)
     exit(1);
 }
 
+#if Z3_VERSION <= 441
+static void smt_error_handler(Z3_context c)
+#else
 static void smt_error_handler(Z3_context c, Z3_error_code e)
+#endif
 {
-    printf("Error code: %s\n", Z3_get_error_msg(e));
+#if Z3_VERSION <= 441
+    printf("Error code: %s\n", Z3_get_error_msg(smt_solver.ctx));
+#else
+    printf("Error code: %s\n", Z3_get_error_msg(smt_solver.ctx, e));
+#endif
     exitf("incorrect use of Z3");
 }
 
@@ -88,9 +97,10 @@ static void     smt_dump_solution(Z3_model m)
     size_t input_size = (size_t)cached_input_expr->op2;
 
     char test_case_name[128];
-    int n = snprintf(test_case_name, sizeof(test_case_name), "test_case_%u.dat", file_next_id++);
+    int n = snprintf(test_case_name, sizeof(test_case_name), "test_case_%u.dat",
+                     file_next_id++);
     assert(n > 0 && n < sizeof(test_case_name) && "test case name too long");
-    //SAYF("Dumping solution into %s\n", test_case_name);
+    // SAYF("Dumping solution into %s\n", test_case_name);
     FILE* fp = fopen(test_case_name, "w");
 #if 1
     for (long i = 0; i < input_size; i++) {
@@ -166,7 +176,7 @@ static void smt_query_check(Z3_solver solver, Z3_ast query,
 static inline void smt_print_ast_sort(Z3_ast e)
 {
     Z3_sort sort = Z3_get_sort(smt_solver.ctx, e);
-    //printf("Sort: %s\n", Z3_sort_to_string(smt_solver.ctx, sort));
+    // printf("Sort: %s\n", Z3_sort_to_string(smt_solver.ctx, sort));
 }
 
 static Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const)
@@ -177,9 +187,10 @@ static Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const)
     if (query == NULL)
         return Z3_mk_true(smt_solver.ctx);
 
-    Z3_ast op1 = NULL;
-    Z3_ast op2 = NULL;
-    Z3_ast r   = NULL;
+    Z3_ast   op1 = NULL;
+    Z3_ast   op2 = NULL;
+    Z3_ast   r   = NULL;
+    unsigned n   = 0;
     switch (query->opkind) {
         case RESERVED:
             ABORT("Invalid opkind (RESERVER). There is a bug somewhere :(");
@@ -262,13 +273,18 @@ static Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const)
             break;
         //
         case ZEXT:
-            op1        = smt_query_to_z3(query->op1, query->op1_is_const);
-            unsigned n = (uintptr_t)query->op2;
-            op1        = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
-            op2        = smt_new_const(0, 64 - n);
-            r          = Z3_mk_concat(smt_solver.ctx, op2, op1);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            n   = (uintptr_t)query->op2;
+            op1 = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
+            op2 = smt_new_const(0, 64 - n);
+            r   = Z3_mk_concat(smt_solver.ctx, op2, op1);
             break;
-        //
+        case SEXT:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const);
+            n   = (uintptr_t)query->op2;
+            op1 = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
+            r   = Z3_mk_sign_ext(smt_solver.ctx, 64 - n, op1);
+            break;
         case CONCAT8:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const);
@@ -290,7 +306,7 @@ static Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const)
 
 static void smt_query(Expr* query)
 {
-    //print_expr(query);
+    print_expr(query);
 
     Z3_solver solver = Z3_mk_solver(smt_solver.ctx);
     Z3_solver_inc_ref(smt_solver.ctx, solver);
