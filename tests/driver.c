@@ -4,18 +4,22 @@
 
 int adcq(uint64_t);
 int adcl(uint32_t);
+int adcw(uint16_t);
+int adcb(uint8_t);
 
 typedef struct Testcase {
-    char * name;
+    const char* name;
     int (*f)(uintptr_t);
 } Testcase;
 
 Testcase tests[] = {
-    { .name = "adcq", .f = adcq },
-    { .name = "adcl", .f = (int (*)(uintptr_t)) adcl }
+    {.name = "adcq", .f = adcq},
+    {.name = "adcl", .f = (int (*)(uintptr_t))adcl},
+    {.name = "adcw", .f = (int (*)(uintptr_t))adcw},
+    {.name = "adcb", .f = (int (*)(uintptr_t))adcb},
 };
 
-void foo(Testcase * t)
+void foo(Testcase* t)
 {
     uint64_t p;
     read(0, &p, sizeof(p));
@@ -30,7 +34,7 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
-    const char * testcase_name = argv[1];
+    const char* testcase_name = argv[1];
 
     size_t i;
     for (i = 0; i < sizeof(tests) / sizeof(Testcase); i++) {

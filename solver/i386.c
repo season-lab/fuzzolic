@@ -6,6 +6,7 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width)
 {
     // from TCG cc_helper.c
     // src3 ? dst <= src1 : dst < src1;
+    // src3, dst, and src1 must be evaluated based on operation size
 
     Z3_ast dst = smt_query_to_z3(query->op1, query->op1_is_const, width);
     Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width);
@@ -47,7 +48,6 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width)
 #endif
         Z3_ast zero = smt_new_const(0, 64);
         Z3_ast cond = Z3_mk_not(ctx, Z3_mk_eq(ctx, smt_to_bv(src3), zero));
-        smt_print_ast_sort(cond);
         Z3_ast a    = Z3_mk_bvule(ctx, dst, src1);
         Z3_ast b    = Z3_mk_bvult(ctx, dst, src1);
         r           = Z3_mk_ite(ctx, cond, a, b);
@@ -229,9 +229,13 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
         case EFLAGS_ALL_ADCOX:
         case EFLAGS_ALL_RCL:
         case EFLAGS_C_ADD:
-        case EFLAGS_C_ADCB:
-        case EFLAGS_C_ADCW:
 #endif
+        case EFLAGS_C_ADCB:
+            r = eflags_c_adc(ctx, query, 1);
+            break;
+        case EFLAGS_C_ADCW:
+            r = eflags_c_adc(ctx, query, 2);
+            break;
         case EFLAGS_C_ADCL:
             r = eflags_c_adc(ctx, query, 4);
             break;
