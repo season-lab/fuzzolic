@@ -17,7 +17,7 @@ Install Z3 normally.
 ```
 ./fuzzolic/fuzzolic.py <seed> <binary> [<args> ...]
 ```
-To run the symbolic exploration, a configuration file (`<binary>.fuzzolic`) must exist. 
+To run the symbolic exploration, a configuration file (`<binary>.fuzzolic`) must exist.  
 See as an example `tests/simple-if.fuzzolic`.
 
 Results are stored in `./workdir`.
