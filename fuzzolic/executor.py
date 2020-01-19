@@ -21,7 +21,7 @@ SHUTDOWN = False
 
 class Executor(object):
 
-    def __init__(self, binary, initial_seed, working_dir, binary_args, debug):
+    def __init__(self, binary, initial_seed, working_dir, binary_args, debug, delta_solving):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
@@ -37,6 +37,7 @@ class Executor(object):
         self.initial_seed = initial_seed
 
         self.debug = debug
+        self.delta_solving = delta_solving
 
         self.__load_config()
 
@@ -123,6 +124,8 @@ class Executor(object):
             p_solver_args += [SOLVER_BIN]
             p_solver_args += [testcase]
             p_solver_args += [self.__get_test_cases_dir()]
+            if self.delta_solving:
+                p_solver_args += ['-d']
             p_solver = subprocess.Popen(p_solver_args,
                                         stdout=p_solver_log if not self.debug else None,
                                         stderr=subprocess.STDOUT if not self.debug else None,
@@ -147,7 +150,7 @@ class Executor(object):
             p_tracer_args += ['-symbolic']
             if self.debug == 'trace':
                 p_tracer_args += ['-d']
-                p_tracer_args += ['in_asm,op_opt']  # 'in_asm,op_opt,out_asm'
+                p_tracer_args += ['in_asm,op']  # 'in_asm,op_opt,out_asm'
 
         if self.debug != 'gdb':
             p_tracer_args += [self.working_dir + '/' + self.binary]

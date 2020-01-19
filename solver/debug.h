@@ -268,6 +268,17 @@
                                                                              \
   } while (0)
 
+#define ABORT(x...)                                                          \
+  do {                                                                       \
+                                                                             \
+    SAYF(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD                                \
+         "\n[-] PROGRAM ABORT : " cBRI   x);                                   \
+    SAYF(cLRD "\n    Stop location : " cRST "%s(), %s:%u\n\n", __FUNCTION__, \
+         __FILE__, __LINE__);                                                \
+    abort();                                                                 \
+                                                                             \
+  } while (0)
+
 /* Die while also including the output of perror(). */
 
 #ifdef TEST_BUILD

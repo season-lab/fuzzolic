@@ -27,6 +27,8 @@ def main():
     # action='store_true',
     parser.add_argument(
         '--debug', choices=['gdb', 'trace', 'out', 'no_solver'], help='enable debug mode')
+    parser.add_argument('--delta-solving', action='store_true',
+                        help='reuse bytes from testcase when no constraint fix them')
     parser.add_argument('--version', action='version',
                         version='%(prog)s pre-{\\alpha}^{\infty}')
     # positional args
@@ -48,11 +50,12 @@ def main():
 
     binary_args = args.args
     debug = args.debug
+    delta_solving = args.delta_solving
 
     signal.signal(signal.SIGINT, handler)
 
     fuzzolic_executor = executor.Executor(
-        binary, seed, os.getcwd(), binary_args, debug)
+        binary, seed, os.getcwd(), binary_args, debug, delta_solving)
     fuzzolic_executor.run()
 
 
