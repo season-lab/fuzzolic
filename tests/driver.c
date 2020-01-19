@@ -2,6 +2,11 @@
 #include <stdio.h>
 #include <stdint.h>
 
+int simple_if(uint32_t);
+
+int addq(uint64_t);
+
+// adc carry flag
 int adcq(uint64_t);
 int adcl(uint32_t);
 int adcw(uint16_t);
@@ -12,11 +17,17 @@ typedef struct Testcase {
     int (*f)(uintptr_t);
 } Testcase;
 
+#define F(x) ((int (*)(uintptr_t))x)
+
 Testcase tests[] = {
-    {.name = "adcq", .f = adcq},
-    {.name = "adcl", .f = (int (*)(uintptr_t))adcl},
-    {.name = "adcw", .f = (int (*)(uintptr_t))adcw},
-    {.name = "adcb", .f = (int (*)(uintptr_t))adcb},
+    {.name = "simple_if", .f = F(simple_if)},
+    //
+    {.name = "addq", .f = F(addq)},
+    //
+    {.name = "adcq", .f = F(adcq)},
+    {.name = "adcl", .f = F(adcl)},
+    {.name = "adcw", .f = F(adcw)},
+    {.name = "adcb", .f = F(adcb)},
 };
 
 void foo(Testcase* t)
@@ -30,7 +41,12 @@ void foo(Testcase* t)
 int main(int argc, char* argv[])
 {
     if (argc != 2) {
-        printf("%s {adcq, adcl}\n", argv[0]);
+        printf("%s {", argv[0]);
+        size_t i;
+        for (i = 0; i < sizeof(tests) / sizeof(Testcase); i++) {
+            printf("%s, ", tests[i].name);
+        }
+        printf("}\n");
         exit(1);
     }
 

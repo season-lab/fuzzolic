@@ -1,13 +1,12 @@
 COUNT=3850
 
 all: build-tracer build-solver kill-solver clean-work-dir
-	./fuzzolic/fuzzolic.py tests/simple_if_input_ko.dat tests/simple-if
+	./fuzzolic/fuzzolic.py tests/simple_if_0.dat tests/driver simple_if
 	./utils/print_test_cases.py workdir/tests
 
-simpleif: clean-core kill-solver
-	bash -c "env $(cat tests/simple-if.fuzzolic | xargs ) ./solver/solver >/dev/null &"
-	bash -c "cat tests/simple_if_input_ko.dat | env $(cat tests/simple-if.fuzzolic | xargs ) ./tracer/x86_64-linux-user/qemu-x86_64 -symbolic -d in_asm,op_opt,out_asm ./tests/simple-if 2> asm_in_out.log"
-	grep 'IN: foo' -A $(COUNT) asm_in_out.log | head -n $(COUNT)
+simpleif: build-tracer build-solver kill-solver clean-work-dir
+	time -p ./fuzzolic/fuzzolic.py --debug out tests/simple_if_0.dat tests/driver simple_if
+	./utils/print_test_cases.py workdir/tests
 
 native:
 	cat tests/simple_if_input_ko.dat | ./tracer/x86_64-linux-user/qemu-x86_64 -d in_asm,op_opt,out_asm ./tests/simple-if 2> asm_in_out.log
