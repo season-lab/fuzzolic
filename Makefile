@@ -13,11 +13,11 @@ native:
 	grep 'IN: foo' -A 200 asm_in_out.log | head -n 200
 
 all-concrete: clean-work-dir kill-solver
-	time -p ./fuzzolic/fuzzolic.py --debug out tests/all_concrete_ko.dat tests/all-concrete
+	time -p ./fuzzolic/fuzzolic.py --debug out tests/all_concrete_0.dat tests/driver all_concrete
 	./utils/print_test_cases.py workdir/tests
 
 all-concrete-full: build-tracer build-solver kill-solver clean-work-dir
-	time -p ./fuzzolic/fuzzolic.py tests/all_concrete_ko.dat tests/all-concrete
+	time -p ./fuzzolic/fuzzolic.py tests/all_concrete_0.dat tests/driver all_concrete
 	./utils/print_test_cases.py workdir/tests
 
 strcmp-debug: clean-work-dir kill-solver

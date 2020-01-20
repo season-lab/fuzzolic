@@ -61,8 +61,27 @@ void foo(Testcase* t)
     read(0, data, t->input_size);
     int r;
     if (t->input_type == VAR) {
-        uint64_t p = *((uint64_t*)data);
-        r          = t->f(p);
+        switch (t->input_size) {
+            case 8:;
+                uint64_t q = *((uint64_t*)data);
+                r          = t->f(q);
+                break;
+            case 4:;
+                uint32_t l = *((uint32_t*)data);
+                r          = t->f(l);
+                break;
+            case 2:;
+                uint32_t w = *((uint16_t*)data);
+                r          = t->f(w);
+                break;
+            case 1:;
+                uint32_t b = *((uint8_t*)data);
+                r          = t->f(b);
+                break;
+            default:
+                assert("input size not supported");
+        }
+
     } else {
         r = t->f((uint64_t)data);
     }
