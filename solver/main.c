@@ -323,6 +323,27 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
             r = Z3_mk_not(smt_solver.ctx, Z3_mk_eq(smt_solver.ctx, smt_to_bv(op1), smt_to_bv(op2)));
             break;
         //
+        case LT:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+#if VERBOSE
+            printf("LT\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r = Z3_mk_bvslt(smt_solver.ctx, op1, op2);
+            break;
+        case GE:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+#if VERBOSE
+            printf("LT\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r = Z3_mk_bvsge(smt_solver.ctx, op1, op2);
+            break;
+        //
         case LTU:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);

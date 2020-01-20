@@ -6,6 +6,14 @@
 
 #define XMM_BITES 16
 
+/* eflags masks */
+#define CC_C    0x0001
+#define CC_P    0x0004
+#define CC_A    0x0010
+#define CC_Z    0x0040
+#define CC_S    0x0080
+#define CC_O    0x0800
+
 Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
                             size_t width);
 

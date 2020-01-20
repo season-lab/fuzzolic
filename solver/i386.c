@@ -8,11 +8,11 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width)
     // src3 ? dst <= src1 : dst < src1;
     // src3, dst, and src1 must be evaluated based on operation size
 
-    Z3_ast dst = smt_query_to_z3(query->op1, query->op1_is_const, width);
+    Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width);
     Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width);
 
     if (width < sizeof(uintptr_t)) {
-        dst = smt_bv_extract(dst, width);
+        dst  = smt_bv_extract(dst, width);
         src1 = smt_bv_extract(src1, width);
     }
 
@@ -58,10 +58,22 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width)
 
     return r;
 }
+#undef VERBOSE
 
-static inline Z3_ast eflags_all_adc(Z3_context ctx, Expr* query, size_t width)
+static inline Z3_ast lshift(Z3_context ctx, Z3_ast x, int n, size_t width)
+{
+    if (n >= 0) {
+        return Z3_mk_bvshl(ctx, x, smt_new_const(n, width * 8));
+    } else {
+        return Z3_mk_bvlshr(ctx, x, smt_new_const(-n, width * 8));
+    }
+}
+
+#define VERBOSE 0
+static inline Z3_ast eflags_all_add(Z3_context ctx, Expr* query, size_t width)
 {
 #if 0
+    // from TCG cc_helper.c
     int cf, pf, af, zf, sf, of;
     DATA_TYPE src2 = dst - src1;
 
@@ -74,96 +86,82 @@ static inline Z3_ast eflags_all_adc(Z3_context ctx, Expr* query, size_t width)
     return cf | pf | af | zf | sf | of;
 #endif
 
-    return NULL;
+    Z3_ast cf, pf, af, zf, sf, of;
 
-#if 0
-    size_t width = get_op_width(cc_op);
+    Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width);
+    Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width);
 
-    Expr* src2   = new_expr();
-    src2->opkind = SUB;
-
-    if (s_temps[dst_idx]) {
-        src2->op1 = s_temps[dst_idx];
-    } else {
-        src2->op1          = (Expr*)dst;
-        src2->op1_is_const = 1;
+    if (width < sizeof(uintptr_t)) {
+        dst  = smt_bv_extract(dst, width);
+        src1 = smt_bv_extract(src1, width);
     }
 
-    if (s_temps[src1_idx]) {
-        src2->op2 = s_temps[src1_idx];
-    } else {
-        src2->op2          = (Expr*)src1;
-        src2->op2_is_const = 1;
-    }
+    Z3_ast src2 = Z3_mk_bvsub(ctx, dst, src1);
+    Z3_ast zero = smt_new_const(0, width * 8);
 
-    Expr* cf         = new_expr();
-    cf->opkind       = LTU;
-    cf->op1          = src2->op1;
-    cf->op1_is_const = src2->op1_is_const;
-    cf->op2          = src2->op2;
-    cf->op2_is_const = src2->op2_is_const;
-
-    Expr* pf = new_expr();
-
-    Expr* af_partial         = new_expr();
-    af_partial->opkind       = XOR_3;
-    af_partial->op1          = src2->op1;
-    af_partial->op1_is_const = src2->op1_is_const;
-    af_partial->op2          = src2->op2;
-    af_partial->op2_is_const = src2->op2_is_const;
-    af_partial->op3          = src2;
-    Expr* af                 = new_expr();
-    af->opkind               = AND;
-    af->op1                  = af_partial;
-    af->op2                  = (Expr*)CC_A;
-    af->op2_is_const         = 1;
-
-    Expr* zf         = new_expr();
-    zf->opkind       = ITE_EQ_ZERO;
-    zf->op1          = src2->op1;
-    zf->op1_is_const = src2->op1_is_const;
-    zf->op2          = (Expr*)CC_Z;
-    zf->op2_is_const = 1;
-
-    int   shift_count        = 8 - (width * 8);
-    Expr* sf_partial         = new_expr();
-    sf_partial->opkind       = shift_count >= 0 ? SAL : SAR;
-    sf_partial->op1          = src2->op1;
-    sf_partial->op1_is_const = src2->op1_is_const;
-    sf_partial->op2          = (Expr*)(uintptr_t)shift_count;
-    sf_partial->op2_is_const = 1;
-    Expr* sf                 = new_expr();
-    sf->opkind               = AND;
-    sf->op1                  = sf_partial;
-    sf->op2                  = (Expr*)(uintptr_t)CC_S;
-    sf->op2_is_const         = 1;
-
-    // of = lshift((src1 ^ src2 ^ -1) & (src1 ^ dst), 12 - DATA_BITS) & CC_O;
-    Expr* of_partial_1 = new_expr();
-    
-    Expr* of_partial_2 = new_expr();
-    Expr* of = new_expr();
-
-    Expr* eflags_0 = new_expr();
-    Expr* eflags_1 = new_expr();
-    Expr* eflags_2 = new_expr();
-
-    eflags_0->opkind = OR_3;
-    eflags_0->op1    = cf;
-    eflags_0->op2    = pf;
-    eflags_0->op3    = eflags_1;
-
-    eflags_1->opkind = OR_3;
-    eflags_1->op1    = af;
-    eflags_1->op2    = zf;
-    eflags_1->op3    = eflags_1;
-
-    eflags_2->opkind = OR;
-    eflags_2->op1    = sf;
-    eflags_2->op2    = of;
-
-    s_temps[ret_idx] = eflags_0;
+#if VERBOSE
+    printf("EFLAGS_ALL_ADC\n");
+    smt_print_ast_sort(dst);
+    smt_print_ast_sort(src1);
 #endif
+
+    cf = Z3_mk_bvult(ctx, dst, src1);
+    cf = smt_to_bv(cf);
+#if VERBOSE
+    smt_print_ast_sort(cf);
+#endif
+
+    size_t i;
+    for (i = 0; i < 8; i++) { // PF is computed only on the LSB
+        Z3_ast bit = Z3_mk_extract(ctx, i, i, dst);
+        if (i == 0) {
+            pf = bit;
+        } else {
+            pf = Z3_mk_bvxor(ctx, pf, bit);
+        }
+    }
+    Z3_ast cond_pf = Z3_mk_eq(ctx, pf, smt_new_const(0, 1));
+    pf = Z3_mk_ite(ctx, cond_pf, zero, smt_new_const(CC_P, width * 8));
+#if VERBOSE
+    smt_print_ast_sort(pf);
+#endif
+
+    af = Z3_mk_bvxor(ctx, dst, src1);
+    af = Z3_mk_bvxor(ctx, af, src2);
+    af = Z3_mk_bvand(ctx, af, smt_new_const(CC_A, width * 8));
+#if VERBOSE
+    smt_print_ast_sort(af);
+#endif
+
+    Z3_ast cond_zf = Z3_mk_eq(ctx, dst, zero);
+    zf = Z3_mk_ite(ctx, cond_zf, smt_new_const(CC_Z, width * 8), zero);
+#if VERBOSE
+    smt_print_ast_sort(zf);
+#endif
+
+    sf = lshift(ctx, dst, 8 - (8 * width), width);
+    sf = Z3_mk_bvand(ctx, sf, smt_new_const(CC_S, width * 8));
+#if VERBOSE
+    smt_print_ast_sort(sf);
+#endif
+
+    Z3_ast of_a = Z3_mk_bvxor(ctx, src1, src2);
+    of_a = Z3_mk_bvxor(ctx, of_a, smt_new_const(-1, width * 8));
+    Z3_ast of_b = Z3_mk_bvxor(ctx, src1, dst);
+    of = Z3_mk_bvand(ctx, of_a, of_b);
+    of = lshift(ctx, dst, 12 - (8 * width), width);
+    of = Z3_mk_bvand(ctx, of, smt_new_const(CC_O, width * 8));
+#if VERBOSE
+    smt_print_ast_sort(of);
+#endif
+
+    Z3_ast r = Z3_mk_bvor(ctx, cf, pf);
+    r        = Z3_mk_bvor(ctx, r, af);
+    r        = Z3_mk_bvor(ctx, r, zf);
+    r        = Z3_mk_bvor(ctx, r, sf);
+    r        = Z3_mk_bvor(ctx, r, of);
+
+    return r;
 }
 
 Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
@@ -206,8 +204,10 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             r     = Z3_mk_concat(ctx, zeros, r);
             // smt_print_ast_sort(r);
             break;
-#if 0
         case EFLAGS_ALL_ADD:
+            r = eflags_all_add(ctx, query, (uintptr_t)query->op3);
+            break;
+#if 0
         case EFLAGS_ALL_ADCB:
         case EFLAGS_ALL_ADCW:
         case EFLAGS_ALL_ADCL:

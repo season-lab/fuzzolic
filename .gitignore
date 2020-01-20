@@ -3,3 +3,4 @@ asm_in_out.log
 *.pyc
 workdir
 build
+*.out
