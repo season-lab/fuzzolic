@@ -5,6 +5,7 @@
 int simple_if(uint32_t);
 
 int addq(uint64_t);
+int addl(uint32_t);
 
 // adc carry flag
 int adcq(uint64_t);
@@ -23,6 +24,7 @@ Testcase tests[] = {
     {.name = "simple_if", .f = F(simple_if)},
     //
     {.name = "addq", .f = F(addq)},
+    {.name = "addl", .f = F(addl)},
     //
     {.name = "adcq", .f = F(adcq)},
     {.name = "adcl", .f = F(adcl)},
@@ -52,12 +54,18 @@ int main(int argc, char* argv[])
 
     const char* testcase_name = argv[1];
 
-    size_t i;
+    size_t i, found = 0;
     for (i = 0; i < sizeof(tests) / sizeof(Testcase); i++) {
         if (strcmp(testcase_name, tests[i].name) == 0) {
             foo(&tests[i]);
+            found = 1;
             break;
         }
+    }
+
+    if (!found) {
+        printf("Testcase %s not available\n", testcase_name);
+        exit(1);
     }
 
     return 0;

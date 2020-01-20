@@ -146,11 +146,11 @@ static inline Z3_ast eflags_all_add(Z3_context ctx, Expr* query, size_t width)
 #endif
 
     Z3_ast of_a = Z3_mk_bvxor(ctx, src1, src2);
-    of_a = Z3_mk_bvxor(ctx, of_a, smt_new_const(-1, width * 8));
+    of_a        = Z3_mk_bvxor(ctx, of_a, smt_new_const(-1, width * 8));
     Z3_ast of_b = Z3_mk_bvxor(ctx, src1, dst);
-    of = Z3_mk_bvand(ctx, of_a, of_b);
-    of = lshift(ctx, dst, 12 - (8 * width), width);
-    of = Z3_mk_bvand(ctx, of, smt_new_const(CC_O, width * 8));
+    of          = Z3_mk_bvand(ctx, of_a, of_b);
+    of          = lshift(ctx, dst, 12 - (8 * width), width);
+    of          = Z3_mk_bvand(ctx, of, smt_new_const(CC_O, width * 8));
 #if VERBOSE
     smt_print_ast_sort(of);
 #endif

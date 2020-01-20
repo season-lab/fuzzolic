@@ -4,3 +4,4 @@ asm_in_out.log
 workdir
 build
 *.out
+*.log
