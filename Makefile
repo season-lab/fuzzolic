@@ -29,7 +29,7 @@ strcmp: clean-work-dir kill-solver
 	./utils/print_test_cases.py workdir/tests
 
 mystrcmp: clean-work-dir kill-solver
-	time -p ./fuzzolic/fuzzolic.py tests/strcmp_ko.dat tests/mystrcmp
+	time -p ./fuzzolic/fuzzolic.py tests/mystrcmp_0.dat tests/driver mystrcmp
 	./utils/print_test_cases.py workdir/tests
 
 configure:

@@ -4,6 +4,8 @@
 #include <assert.h>
 
 int simple_if(uint32_t);
+int mystrcmp(const char* s1);
+int all_concrete(uint32_t input);
 
 int addq(uint64_t);
 int addl(uint32_t);
@@ -36,6 +38,14 @@ Testcase tests[] = {
      .f          = F(simple_if),
      .input_type = VAR,
      .input_size = 8},
+    {.name       = "mystrcmp",
+     .f          = F(mystrcmp),
+     .input_type = BUFFER,
+     .input_size = 128},
+    {.name       = "all_concrete",
+     .f          = F(all_concrete),
+     .input_type = VAR,
+     .input_size = 4},
     //
     {.name = "addq", .f = F(addq), .input_type = VAR, .input_size = 8},
     {.name = "addl", .f = F(addl), .input_type = VAR, .input_size = 8},
@@ -48,7 +58,7 @@ Testcase tests[] = {
 
 void foo(Testcase* t)
 {
-    read(0, data, sizeof(t->input_size));
+    read(0, data, t->input_size);
     int r;
     if (t->input_type == VAR) {
         uint64_t p = *((uint64_t*)data);

@@ -1,12 +1,7 @@
-#include <unistd.h>
-#include <stdio.h>
+#include <stdint.h>
 
 #define N 512
-
-int foo() {
-
-    int input;
-    read(0, &input, sizeof(input));
+int all_concrete(uint32_t input) {
 
     int sum = 0;
     int i, j, k;
@@ -20,11 +15,7 @@ int foo() {
         if (data[1] == 'E')
             if (data[2] == 'A')
                 if (data[3] == 'D')
-                    printf("Got it! %d\n", sum);
+                    return 1;
 
     return 0;
-}
-
-int main() {
-    foo();
 }

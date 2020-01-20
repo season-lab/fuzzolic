@@ -1,7 +1,4 @@
-#include <unistd.h>
-#include <stdio.h>
-
-int mystrcmp(const char* s1, const char* s2)
+static int mystrcmp_internal(const char* s1, const char* s2)
 {
     while (*s1 && (*s1 == *s2)) {
         s1++;
@@ -10,19 +7,10 @@ int mystrcmp(const char* s1, const char* s2)
     return *(const unsigned char*)s1 - *(const unsigned char*)s2;
 }
 
-int foo(void)
+int mystrcmp(const char* s1)
 {
-    char data[128];
-    read(0, &data, sizeof(data));
-    // printf("Input: %s\n", data);
-    if (mystrcmp(data, "DEADBEEF") == 0)
-        printf("Got me!\n");
+    if (mystrcmp_internal(s1, "DEADBEEF") == 0)
+        return 1;
     else
-        printf("Got you!\n");
-}
-
-int main()
-{
-    foo();
-    return 0;
+        return 0;
 }
