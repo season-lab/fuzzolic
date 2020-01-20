@@ -7,8 +7,11 @@ int simple_if(uint32_t);
 int mystrcmp(const char* s1);
 int all_concrete(uint32_t input);
 
+// all flags add
 int addq(uint64_t);
 int addl(uint32_t);
+int addw(uint16_t);
+int addb(uint8_t);
 
 // adc carry flag
 int adcq(uint64_t);
@@ -49,6 +52,8 @@ Testcase tests[] = {
     //
     {.name = "addq", .f = F(addq), .input_type = VAR, .input_size = 8},
     {.name = "addl", .f = F(addl), .input_type = VAR, .input_size = 8},
+    {.name = "addw", .f = F(addw), .input_type = VAR, .input_size = 8},
+    {.name = "addb", .f = F(addb), .input_type = VAR, .input_size = 8},
     //
     {.name = "adcq", .f = F(adcq), .input_type = VAR, .input_size = 8},
     {.name = "adcl", .f = F(adcl), .input_type = VAR, .input_size = 8},

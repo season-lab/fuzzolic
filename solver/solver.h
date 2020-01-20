@@ -18,6 +18,7 @@ Z3_ast smt_new_const(uint64_t value, size_t n_bits);
 Z3_ast smt_new_symbol(const char* name, size_t n_bits, Expr* e);
 Z3_ast smt_bv_extract(Z3_ast e, size_t width);
 Z3_ast smt_to_bv(Z3_ast e);
+Z3_ast smt_to_bv_n(Z3_ast e, size_t width);
 
 #define CONST_EXTRACT(c, width) (-1)
 

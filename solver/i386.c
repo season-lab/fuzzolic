@@ -106,7 +106,7 @@ static inline Z3_ast eflags_all_add(Z3_context ctx, Expr* query, size_t width)
 #endif
 
     cf = Z3_mk_bvult(ctx, dst, src1);
-    cf = smt_to_bv(cf);
+    cf = smt_to_bv_n(cf, width);
 #if VERBOSE
     smt_print_ast_sort(cf);
 #endif
@@ -160,6 +160,11 @@ static inline Z3_ast eflags_all_add(Z3_context ctx, Expr* query, size_t width)
     r        = Z3_mk_bvor(ctx, r, zf);
     r        = Z3_mk_bvor(ctx, r, sf);
     r        = Z3_mk_bvor(ctx, r, of);
+
+    if (width < sizeof(uintptr_t)) {
+        Z3_ast zero = smt_new_const(0, (sizeof(uintptr_t) - width) * 8);
+        r = Z3_mk_concat(ctx, zero, r);
+    }
 
     return r;
 }

@@ -202,15 +202,20 @@ Z3_ast smt_bv_extract(Z3_ast e, size_t width)
     return Z3_mk_extract(smt_solver.ctx, high, low, e);
 }
 
-Z3_ast smt_to_bv(Z3_ast e) // cast boolean to a bitvector
+Z3_ast smt_to_bv_n(Z3_ast e, size_t width) // cast boolean to a bitvector
 {
     if (Z3_get_sort_kind(smt_solver.ctx, Z3_get_sort(smt_solver.ctx, e)) ==
         Z3_BOOL_SORT) {
-        return Z3_mk_ite(smt_solver.ctx, e, smt_new_const(1, 64),
-                         smt_new_const(0, 64));
+        return Z3_mk_ite(smt_solver.ctx, e, smt_new_const(1, width * 8),
+                         smt_new_const(0, width * 8));
     } else {
         return e;
     }
+}
+
+Z3_ast smt_to_bv(Z3_ast e)
+{
+    return smt_to_bv_n(e, 64);
 }
 
 #define VERBOSE 0
