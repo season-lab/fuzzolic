@@ -350,27 +350,27 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
     if (ea && ea->type == COSTANT_AND) {
         switch (ea->value) {
             case CC_C:
-                r = cf;
+                r          = cf;
                 ea->result = r;
                 break;
             case CC_P:
-                r = pf;
+                r          = pf;
                 ea->result = r;
                 break;
             case CC_A:
-                r = af;
+                r          = af;
                 ea->result = r;
                 break;
             case CC_Z:
-                r = zf;
+                r          = zf;
                 ea->result = r;
                 break;
             case CC_S:
-                r = sf;
+                r          = sf;
                 ea->result = r;
                 break;
             case CC_O:
-                r = of;
+                r          = of;
                 ea->result = r;
                 break;
             default:
@@ -400,7 +400,7 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
 
 #define VERBOSE 0
 static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
-                                       size_t width, OPKIND opkind)
+                                        size_t width, OPKIND opkind)
 {
     Z3_ast cf, pf, af, zf, sf, of;
 
@@ -417,7 +417,7 @@ static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
     Z3_ast src3 = smt_query_to_z3(query->op3, query->op3_is_const, width);
 
     if (width < sizeof(uintptr_t)) {
-        dst = smt_bv_extract(dst, width);
+        dst  = smt_bv_extract(dst, width);
         src1 = smt_bv_extract(src1, width);
         src3 = smt_bv_extract(src3, width);
     }
@@ -439,10 +439,10 @@ static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
             src2 = Z3_mk_bvsub(ctx, dst, src1);
             src2 = Z3_mk_bvsub(ctx, src2, src3);
             // cf = (src3 ? dst <= src1 : dst < src1);
-            cf = Z3_mk_not(ctx, Z3_mk_eq(ctx, src3, zero));
+            cf          = Z3_mk_not(ctx, Z3_mk_eq(ctx, src3, zero));
             Z3_ast cf_a = Z3_mk_bvule(ctx, dst, src1);
             Z3_ast cf_b = Z3_mk_bvult(ctx, dst, src1);
-            cf = Z3_mk_ite(ctx, cf, cf_a, cf_b);
+            cf          = Z3_mk_ite(ctx, cf, cf_a, cf_b);
             //
             pf = eflags_pf(ctx, dst, width);
             // af = (dst ^ src1 ^ src2) & 0x10;
@@ -456,7 +456,8 @@ static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
             // sf = lshift(dst, 8 - DATA_BITS) & 0x80;
             sf = lshift(ctx, dst, 8 - (8 * width), width);
             sf = Z3_mk_bvand(ctx, sf, smt_new_const(0x80, width * 8));
-            // of = lshift((src1 ^ src2 ^ -1) & (src1 ^ dst), 12 - DATA_BITS) & CC_O;
+            // of = lshift((src1 ^ src2 ^ -1) & (src1 ^ dst), 12 - DATA_BITS) &
+            // CC_O;
             of = eflags_of_a(ctx, dst, src1, src2, width);
             break;
         case EFLAGS_ALL_SBBB:
@@ -468,10 +469,10 @@ static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
             src1 = Z3_mk_bvadd(ctx, dst, src2);
             src1 = Z3_mk_bvadd(ctx, dst, src3);
             // cf = (src3 ? src1 <= src2 : src1 < src2);
-            cf = Z3_mk_not(ctx, Z3_mk_eq(ctx, src3, zero));
+            cf   = Z3_mk_not(ctx, Z3_mk_eq(ctx, src3, zero));
             cf_a = Z3_mk_bvule(ctx, src1, src2);
             cf_b = Z3_mk_bvult(ctx, src1, src2);
-            cf = Z3_mk_ite(ctx, cf, cf_a, cf_b);
+            cf   = Z3_mk_ite(ctx, cf, cf_a, cf_b);
             //
             pf = eflags_pf(ctx, dst, width);
             // af = (dst ^ src1 ^ src2) & 0x10;
@@ -509,27 +510,27 @@ static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
     if (ea && ea->type == COSTANT_AND) {
         switch (ea->value) {
             case CC_C:
-                r = cf;
+                r          = cf;
                 ea->result = r;
                 break;
             case CC_P:
-                r = pf;
+                r          = pf;
                 ea->result = r;
                 break;
             case CC_A:
-                r = af;
+                r          = af;
                 ea->result = r;
                 break;
             case CC_Z:
-                r = zf;
+                r          = zf;
                 ea->result = r;
                 break;
             case CC_S:
-                r = sf;
+                r          = sf;
                 ea->result = r;
                 break;
             case CC_O:
-                r = of;
+                r          = of;
                 ea->result = r;
                 break;
             default:
@@ -558,8 +559,8 @@ static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
 #undef VERBOSE
 
 #define VERBOSE 0
-static inline Z3_ast eflags_all_adcxo(Z3_context ctx, Expr* query,
-                                       size_t width, OPKIND opkind)
+static inline Z3_ast eflags_all_adcxo(Z3_context ctx, Expr* query, size_t width,
+                                      OPKIND opkind)
 {
     Z3_ast zero = smt_new_const(0, sizeof(uintptr_t));
 
@@ -572,30 +573,38 @@ static inline Z3_ast eflags_all_adcxo(Z3_context ctx, Expr* query,
     switch (opkind) {
         case EFLAGS_ALL_ADCX:
             // (src1 & ~CC_C) | (dst * CC_C);
-            r0 = Z3_mk_bvand(ctx, src1, smt_new_const(~CC_C, sizeof(uintptr_t)));
+            r0 =
+                Z3_mk_bvand(ctx, src1, smt_new_const(~CC_C, sizeof(uintptr_t)));
             r1 = Z3_mk_eq(ctx, dst, zero);
-            r1 = Z3_mk_ite(ctx, r1, zero, smt_new_const(CC_C, sizeof(uintptr_t)));
-            r = Z3_mk_bvor(ctx, r0, r1);
+            r1 = Z3_mk_ite(ctx, r1, zero,
+                           smt_new_const(CC_C, sizeof(uintptr_t)));
+            r  = Z3_mk_bvor(ctx, r0, r1);
             break;
         case EFLAGS_ALL_ADOX:
             // (src1 & ~CC_O) | (src2 * CC_O);
-            r0 = Z3_mk_bvand(ctx, src1, smt_new_const(~CC_O, sizeof(uintptr_t)));
+            r0 =
+                Z3_mk_bvand(ctx, src1, smt_new_const(~CC_O, sizeof(uintptr_t)));
             r1 = Z3_mk_eq(ctx, src2, zero);
-            r1 = Z3_mk_ite(ctx, r1, zero, smt_new_const(CC_O, sizeof(uintptr_t)));
-            r = Z3_mk_bvor(ctx, r0, r1);
+            r1 = Z3_mk_ite(ctx, r1, zero,
+                           smt_new_const(CC_O, sizeof(uintptr_t)));
+            r  = Z3_mk_bvor(ctx, r0, r1);
             break;
         case EFLAGS_ALL_ADCOX:
             // (src1 & ~(CC_C | CC_O)) | (dst * CC_C) | (src2 * CC_O)
-            r0 = Z3_mk_bvand(ctx, src1, smt_new_const(~(CC_C | CC_O), sizeof(uintptr_t)));
+            r0 = Z3_mk_bvand(ctx, src1,
+                             smt_new_const(~(CC_C | CC_O), sizeof(uintptr_t)));
             r1 = Z3_mk_eq(ctx, dst, zero);
-            r1 = Z3_mk_ite(ctx, r1, zero, smt_new_const(CC_C, sizeof(uintptr_t)));
+            r1 = Z3_mk_ite(ctx, r1, zero,
+                           smt_new_const(CC_C, sizeof(uintptr_t)));
             r2 = Z3_mk_eq(ctx, src2, zero);
-            r2 = Z3_mk_ite(ctx, r1, zero, smt_new_const(CC_O, sizeof(uintptr_t)));
-            r = Z3_mk_bvor(ctx, r0, r1);
-            r = Z3_mk_bvor(ctx, r, r2);
+            r2 = Z3_mk_ite(ctx, r1, zero,
+                           smt_new_const(CC_O, sizeof(uintptr_t)));
+            r  = Z3_mk_bvor(ctx, r0, r1);
+            r  = Z3_mk_bvor(ctx, r, r2);
             break;
         default:
-            ABORT("Unknown i386 eflags_all_adc_x_o_ox opkind: %u", query->opkind);
+            ABORT("Unknown i386 eflags_all_adc_x_o_ox opkind: %u",
+                  query->opkind);
     }
 }
 #undef VERBOSE
@@ -661,11 +670,14 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
         case EFLAGS_ALL_SBBW:
         case EFLAGS_ALL_SBBL:
         case EFLAGS_ALL_SBBQ:
+            r = eflags_all_ternary(ctx, query, (uintptr_t)query->op3,
+                                   query->opkind);
+            break;
         case EFLAGS_ALL_ADCX:
         case EFLAGS_ALL_ADOX:
         case EFLAGS_ALL_ADCOX:
-            r = eflags_all_ternary(ctx, query, (uintptr_t)query->op3,
-                                  query->opkind);
+            r = eflags_all_adcxo(ctx, query, (uintptr_t)query->op3,
+                                 query->opkind);
             break;
 #if 0
         case EFLAGS_ALL_RCL:
