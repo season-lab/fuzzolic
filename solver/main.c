@@ -8,7 +8,7 @@
 #include "i386.h"
 
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
-#define EXPR_QUEUE_POLLING_TIME_NS 5000
+#define EXPR_QUEUE_POLLING_TIME_NS   5000
 
 static int expr_pool_shm_id = -1;
 Expr*      pool;
@@ -198,7 +198,7 @@ void smt_print_ast_sort(Z3_ast e)
 Z3_ast smt_bv_extract(Z3_ast e, size_t width)
 {
     size_t high = (8 * width) - 1;
-    size_t low = 0;
+    size_t low  = 0;
     return Z3_mk_extract(smt_solver.ctx, high, low, e);
 }
 
@@ -213,9 +213,24 @@ Z3_ast smt_to_bv_n(Z3_ast e, size_t width) // cast boolean to a bitvector
     }
 }
 
-Z3_ast smt_to_bv(Z3_ast e)
+Z3_ast smt_to_bv(Z3_ast e) { return smt_to_bv_n(e, 64); }
+
+// ToDo: use a dictionary!
+Expr*           expr_annotation_addr = NULL;
+ExprAnnotation* expr_annotation;
+void            add_expr_annotation(Expr* e, ExprAnnotation* ea)
 {
-    return smt_to_bv_n(e, 64);
+    expr_annotation_addr = e;
+    expr_annotation      = ea;
+}
+
+ExprAnnotation* get_expr_annotation(Expr* e)
+{
+    if (expr_annotation_addr == e) {
+        return expr_annotation;
+    } else {
+        return NULL;
+    }
 }
 
 #define VERBOSE 0
@@ -225,7 +240,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
         width = sizeof(void*);
 
     if (is_const) {
-        //printf("IS_CONST: %lx\n", (uintptr_t)query);
+        // printf("IS_CONST: %lx\n", (uintptr_t)query);
         return smt_new_const((uintptr_t)query, 8 * width);
     }
 
@@ -274,21 +289,46 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
 #endif
             r = Z3_mk_bvsub(smt_solver.ctx, op1, op2);
             break;
-        case AND:
+        case AND:;
+            ExprAnnotation* ea = NULL;
+            if (query->op2_is_const) {
+                // optimization for eflags extraction
+                ea        = calloc(sizeof(ExprAnnotation), 1);
+                ea->type  = COSTANT_AND;
+                ea->value = (uintptr_t)query->op2;
+                add_expr_annotation(query->op1, ea);
+            }
+
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+
+            if (ea && ea->result) {
+                assert(Z3_get_sort_kind(smt_solver.ctx,
+                                         Z3_get_sort(smt_solver.ctx, op1)) !=
+                       Z3_BOOL_SORT);
+                printf("EFLAGS: optimized flag extraction\n");
+                r = ea->result;
+            } else {
+                op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
 #if VERBOSE
-            printf("AND\n");
-            smt_print_ast_sort(op1);
-            smt_print_ast_sort(op2);
+                printf("AND\n");
+                smt_print_ast_sort(op1);
+                smt_print_ast_sort(op2);
 #endif
-            if (Z3_get_sort_kind(smt_solver.ctx,
-                                 Z3_get_sort(smt_solver.ctx, op1)) ==
-                Z3_BOOL_SORT) {
-                Z3_ast args[2] = {op1, op2};
-                r              = Z3_mk_and(smt_solver.ctx, 2, args);
-            } else
-                r = Z3_mk_bvand(smt_solver.ctx, op1, op2);
+                if (Z3_get_sort_kind(smt_solver.ctx,
+                                     Z3_get_sort(smt_solver.ctx, op1)) ==
+                    Z3_BOOL_SORT) {
+                    Z3_ast args[2] = {op1, op2};
+                    r              = Z3_mk_and(smt_solver.ctx, 2, args);
+                } else {
+                    r = Z3_mk_bvand(smt_solver.ctx, op1, op2);
+                }
+            }
+
+            if (ea) {
+                add_expr_annotation(query->op1, NULL);
+                free(ea);
+            }
+
             break;
         case XOR: // 13
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
@@ -325,7 +365,9 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
             smt_print_ast_sort(op1);
             smt_print_ast_sort(op2);
 #endif
-            r = Z3_mk_not(smt_solver.ctx, Z3_mk_eq(smt_solver.ctx, smt_to_bv(op1), smt_to_bv(op2)));
+            r = Z3_mk_not(
+                smt_solver.ctx,
+                Z3_mk_eq(smt_solver.ctx, smt_to_bv(op1), smt_to_bv(op2)));
             break;
         //
         case LT:

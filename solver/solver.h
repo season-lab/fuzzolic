@@ -12,6 +12,16 @@
 
 #include "../tracer/tcg/symbolic/symbolic-struct.h"
 
+typedef enum ExprAnnotationType {
+    COSTANT_AND,
+} ExprAnnotationType;
+
+typedef struct ExprAnnotation {
+    ExprAnnotationType type;
+    uintptr_t          value;
+    void*              result;
+} ExprAnnotation;
+
 Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width);
 void   smt_print_ast_sort(Z3_ast e);
 Z3_ast smt_new_const(uint64_t value, size_t n_bits);
@@ -20,6 +30,7 @@ Z3_ast smt_bv_extract(Z3_ast e, size_t width);
 Z3_ast smt_to_bv(Z3_ast e);
 Z3_ast smt_to_bv_n(Z3_ast e, size_t width);
 
-#define CONST_EXTRACT(c, width) (-1)
+void            add_expr_annotation(Expr* e, ExprAnnotation* ea);
+ExprAnnotation* get_expr_annotation(Expr* e);
 
 #endif // SOLVER_H
