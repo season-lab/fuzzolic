@@ -470,7 +470,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
         case EFLAGS_ALL_SAR:
         case EFLAGS_ALL_BMILG:
         case EFLAGS_ALL_ADCX:
-        case EFLAGS_ALL_ADCO:
+        case EFLAGS_ALL_ADOX:
         case EFLAGS_ALL_ADCOX:
         case EFLAGS_ALL_RCL:
         case EFLAGS_C_ADD:

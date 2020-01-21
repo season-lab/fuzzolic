@@ -557,6 +557,49 @@ static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
 }
 #undef VERBOSE
 
+#define VERBOSE 0
+static inline Z3_ast eflags_all_adcxo(Z3_context ctx, Expr* query,
+                                       size_t width, OPKIND opkind)
+{
+    Z3_ast zero = smt_new_const(0, sizeof(uintptr_t));
+
+    // these are defined as target_ulong
+    Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width);
+    Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width);
+    Z3_ast src2 = smt_query_to_z3(query->op3, query->op3_is_const, width);
+
+    Z3_ast r, r0, r1, r2;
+    switch (opkind) {
+        case EFLAGS_ALL_ADCX:
+            // (src1 & ~CC_C) | (dst * CC_C);
+            r0 = Z3_mk_bvand(ctx, src1, smt_new_const(~CC_C, sizeof(uintptr_t)));
+            r1 = Z3_mk_eq(ctx, dst, zero);
+            r1 = Z3_mk_ite(ctx, r1, zero, smt_new_const(CC_C, sizeof(uintptr_t)));
+            r = Z3_mk_bvor(ctx, r0, r1);
+            break;
+        case EFLAGS_ALL_ADOX:
+            // (src1 & ~CC_O) | (src2 * CC_O);
+            r0 = Z3_mk_bvand(ctx, src1, smt_new_const(~CC_O, sizeof(uintptr_t)));
+            r1 = Z3_mk_eq(ctx, src2, zero);
+            r1 = Z3_mk_ite(ctx, r1, zero, smt_new_const(CC_O, sizeof(uintptr_t)));
+            r = Z3_mk_bvor(ctx, r0, r1);
+            break;
+        case EFLAGS_ALL_ADCOX:
+            // (src1 & ~(CC_C | CC_O)) | (dst * CC_C) | (src2 * CC_O)
+            r0 = Z3_mk_bvand(ctx, src1, smt_new_const(~(CC_C | CC_O), sizeof(uintptr_t)));
+            r1 = Z3_mk_eq(ctx, dst, zero);
+            r1 = Z3_mk_ite(ctx, r1, zero, smt_new_const(CC_C, sizeof(uintptr_t)));
+            r2 = Z3_mk_eq(ctx, src2, zero);
+            r2 = Z3_mk_ite(ctx, r1, zero, smt_new_const(CC_O, sizeof(uintptr_t)));
+            r = Z3_mk_bvor(ctx, r0, r1);
+            r = Z3_mk_bvor(ctx, r, r2);
+            break;
+        default:
+            ABORT("Unknown i386 eflags_all_adc_x_o_ox opkind: %u", query->opkind);
+    }
+}
+#undef VERBOSE
+
 Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
                             size_t width)
 {
@@ -619,7 +662,7 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
         case EFLAGS_ALL_SBBL:
         case EFLAGS_ALL_SBBQ:
         case EFLAGS_ALL_ADCX:
-        case EFLAGS_ALL_ADCO:
+        case EFLAGS_ALL_ADOX:
         case EFLAGS_ALL_ADCOX:
             r = eflags_all_ternary(ctx, query, (uintptr_t)query->op3,
                                   query->opkind);
