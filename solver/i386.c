@@ -396,6 +396,166 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
 
     return r;
 }
+#undef VERBOSE
+
+#define VERBOSE 0
+static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
+                                       size_t width, OPKIND opkind)
+{
+    Z3_ast cf, pf, af, zf, sf, of;
+
+    Z3_ast zero   = smt_new_const(0, width * 8);
+    Z3_ast zero64 = zero;
+    if (width != 8) {
+        zero64 = smt_new_const(0, 64);
+    }
+
+    Z3_ast one = smt_new_const(1, width * 8);
+
+    Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width);
+    Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width);
+    Z3_ast src3 = smt_query_to_z3(query->op3, query->op3_is_const, width);
+
+    if (width < sizeof(uintptr_t)) {
+        dst = smt_bv_extract(dst, width);
+        src1 = smt_bv_extract(src1, width);
+        src3 = smt_bv_extract(src3, width);
+    }
+
+#if VERBOSE
+    printf("%s\n", opkind_to_str(opkind));
+    smt_print_ast_sort(dst);
+    smt_print_ast_sort(src1);
+    smt_print_ast_sort(src3);
+#endif
+
+    Z3_ast src2;
+    switch (opkind) {
+        case EFLAGS_ALL_ADCB:
+        case EFLAGS_ALL_ADCW:
+        case EFLAGS_ALL_ADCL:
+        case EFLAGS_ALL_ADCQ:
+            // DATA_TYPE src2 = dst - src1 - src3;
+            src2 = Z3_mk_bvsub(ctx, dst, src1);
+            src2 = Z3_mk_bvsub(ctx, src2, src3);
+            // cf = (src3 ? dst <= src1 : dst < src1);
+            cf = Z3_mk_not(ctx, Z3_mk_eq(ctx, src3, zero));
+            Z3_ast cf_a = Z3_mk_bvule(ctx, dst, src1);
+            Z3_ast cf_b = Z3_mk_bvult(ctx, dst, src1);
+            cf = Z3_mk_ite(ctx, cf, cf_a, cf_b);
+            //
+            pf = eflags_pf(ctx, dst, width);
+            // af = (dst ^ src1 ^ src2) & 0x10;
+            af = Z3_mk_bvxor(ctx, dst, src1);
+            af = Z3_mk_bvxor(ctx, af, src2);
+            af = Z3_mk_bvand(ctx, af, smt_new_const(0x10, width * 8));
+            // zf = (dst == 0) << 6;
+            zf = Z3_mk_eq(ctx, dst, zero);
+            zf = smt_to_bv_n(zf, width);
+            zf = Z3_mk_bvshl(ctx, zf, smt_new_const(6, width * 8));
+            // sf = lshift(dst, 8 - DATA_BITS) & 0x80;
+            sf = lshift(ctx, dst, 8 - (8 * width), width);
+            sf = Z3_mk_bvand(ctx, sf, smt_new_const(0x80, width * 8));
+            // of = lshift((src1 ^ src2 ^ -1) & (src1 ^ dst), 12 - DATA_BITS) & CC_O;
+            of = eflags_of_a(ctx, dst, src1, src2, width);
+            break;
+        case EFLAGS_ALL_SBBB:
+        case EFLAGS_ALL_SBBW:
+        case EFLAGS_ALL_SBBL:
+        case EFLAGS_ALL_SBBQ:
+            src2 = src1; // args are switched in the helper!
+            // DATA_TYPE src1 = dst + src2 + src3;
+            src1 = Z3_mk_bvadd(ctx, dst, src2);
+            src1 = Z3_mk_bvadd(ctx, dst, src3);
+            // cf = (src3 ? src1 <= src2 : src1 < src2);
+            cf = Z3_mk_not(ctx, Z3_mk_eq(ctx, src3, zero));
+            cf_a = Z3_mk_bvule(ctx, src1, src2);
+            cf_b = Z3_mk_bvult(ctx, src1, src2);
+            cf = Z3_mk_ite(ctx, cf, cf_a, cf_b);
+            //
+            pf = eflags_pf(ctx, dst, width);
+            // af = (dst ^ src1 ^ src2) & 0x10;
+            af = Z3_mk_bvxor(ctx, dst, src1);
+            af = Z3_mk_bvxor(ctx, af, src2);
+            af = Z3_mk_bvand(ctx, af, smt_new_const(0x10, width * 8));
+            // zf = (dst == 0) << 6;
+            zf = Z3_mk_eq(ctx, dst, zero);
+            zf = smt_to_bv_n(zf, width);
+            zf = Z3_mk_bvshl(ctx, zf, smt_new_const(6, width * 8));
+            // sf = lshift(dst, 8 - DATA_BITS) & 0x80;
+            sf = lshift(ctx, dst, 8 - (8 * width), width);
+            sf = Z3_mk_bvand(ctx, sf, smt_new_const(0x80, width * 8));
+            // of = lshift((src1 ^ src2) & (src1 ^ dst), 12 - DATA_BITS) & CC_O;
+            of = eflags_of_b(ctx, dst, src1, src2, width);
+            break;
+        default:
+            ABORT("Unknown i386 eflags_all_ternary opkind: %u", query->opkind);
+    }
+
+    cf = smt_to_bv_n(cf, width);
+
+#if VERBOSE
+    smt_print_ast_sort(cf);
+    smt_print_ast_sort(pf);
+    smt_print_ast_sort(af);
+    smt_print_ast_sort(zf);
+    smt_print_ast_sort(sf);
+    smt_print_ast_sort(of);
+#endif
+
+    Z3_ast r = NULL;
+
+    ExprAnnotation* ea = get_expr_annotation(query);
+    if (ea && ea->type == COSTANT_AND) {
+        switch (ea->value) {
+            case CC_C:
+                r = cf;
+                ea->result = r;
+                break;
+            case CC_P:
+                r = pf;
+                ea->result = r;
+                break;
+            case CC_A:
+                r = af;
+                ea->result = r;
+                break;
+            case CC_Z:
+                r = zf;
+                ea->result = r;
+                break;
+            case CC_S:
+                r = sf;
+                ea->result = r;
+                break;
+            case CC_O:
+                r = of;
+                ea->result = r;
+                break;
+            default:
+                ABORT("Unknown i386 eflags mask: %lu", ea->value);
+        }
+    }
+
+    if (r == NULL) {
+        r = Z3_mk_bvor(ctx, cf, pf);
+        r = Z3_mk_bvor(ctx, r, af);
+        r = Z3_mk_bvor(ctx, r, zf);
+        r = Z3_mk_bvor(ctx, r, sf);
+        r = Z3_mk_bvor(ctx, r, of);
+    }
+
+    if (width < sizeof(uintptr_t)) {
+        Z3_ast zero = smt_new_const(0, (sizeof(uintptr_t) - width) * 8);
+        r           = Z3_mk_concat(ctx, zero, r);
+        if (ea && ea->result) {
+            ea->result = r;
+        }
+    }
+
+    return r;
+}
+#undef VERBOSE
 
 Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
                             size_t width)
@@ -446,10 +606,10 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
         case EFLAGS_ALL_DEC:
         case EFLAGS_ALL_SHL:
         case EFLAGS_ALL_SAR:
+        case EFLAGS_ALL_BMILG:
             r = eflags_all_binary(ctx, query, (uintptr_t)query->op3,
                                   query->opkind);
             break;
-#if 0
         case EFLAGS_ALL_ADCB:
         case EFLAGS_ALL_ADCW:
         case EFLAGS_ALL_ADCL:
@@ -458,10 +618,13 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
         case EFLAGS_ALL_SBBW:
         case EFLAGS_ALL_SBBL:
         case EFLAGS_ALL_SBBQ:
-        case EFLAGS_ALL_BMILG:
         case EFLAGS_ALL_ADCX:
         case EFLAGS_ALL_ADCO:
         case EFLAGS_ALL_ADCOX:
+            r = eflags_all_ternary(ctx, query, (uintptr_t)query->op3,
+                                  query->opkind);
+            break;
+#if 0
         case EFLAGS_ALL_RCL:
         case EFLAGS_C_ADD:
 #endif
