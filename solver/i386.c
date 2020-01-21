@@ -227,8 +227,7 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
             // sf = lshift(dst, 8 - DATA_BITS) & CC_S;
             sf = lshift(ctx, dst, 8 - (8 * width), width);
             sf = Z3_mk_bvand(ctx, sf, smt_new_const(CC_S, width * 8));
-// of = (dst == SIGN_MASK) * CC_O;
-#define SIGN_MASK (1 << ((width * 8) - 1))
+            // of = (dst == SIGN_MASK) * CC_O;
             Z3_ast sign_mask = smt_new_const(SIGN_MASK - 1, width * 8);
             of               = Z3_mk_eq(ctx, dst, sign_mask);
             of = Z3_mk_ite(ctx, of, smt_new_const(CC_O, width * 8), zero);
@@ -252,8 +251,7 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
             // sf = lshift(dst, 8 - DATA_BITS) & CC_S;
             sf = lshift(ctx, dst, 8 - (8 * width), width);
             sf = Z3_mk_bvand(ctx, sf, smt_new_const(CC_S, width * 8));
-// of = (dst == SIGN_MASK - 1) * CC_O;
-#define SIGN_MASK (1 << ((width * 8) - 1))
+            // of = (dst == SIGN_MASK - 1) * CC_O;
             sign_mask = smt_new_const(SIGN_MASK - 1, width * 8);
             of        = Z3_mk_eq(ctx, dst, sign_mask);
             of = Z3_mk_ite(ctx, of, smt_new_const(CC_O, width * 8), zero);
