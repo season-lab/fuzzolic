@@ -46,7 +46,7 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width)
 #if VERBOSE
         smt_print_ast_sort(src3);
 #endif
-        Z3_ast zero = smt_new_const(0, 64);
+        Z3_ast zero = smt_new_const(0, sizeof(uintptr_t));
         Z3_ast cond = Z3_mk_not(ctx, Z3_mk_eq(ctx, smt_to_bv(src3), zero));
         Z3_ast a    = Z3_mk_bvule(ctx, dst, src1);
         Z3_ast b    = Z3_mk_bvult(ctx, dst, src1);
@@ -56,6 +56,60 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width)
 #endif
     }
 
+    return r;
+}
+#undef VERBOSE
+
+#define VERBOSE 0
+static inline Z3_ast eflags_c_binary(Z3_context ctx, Expr* query, size_t width)
+{
+    Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width);
+    Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width);
+
+    if (width < sizeof(uintptr_t)) {
+        dst  = smt_bv_extract(dst, width);
+        src1 = smt_bv_extract(src1, width);
+    }
+
+#if VERBOSE
+    printf("EFLAGS_C_ADD\n");
+    smt_print_ast_sort(dst);
+    smt_print_ast_sort(src1);
+#endif
+
+    Z3_ast src2, r;
+    switch (query->opkind) {
+        case EFLAGS_C_ADD:
+            // dst < src1
+            r = Z3_mk_bvult(ctx, dst, src1);
+            break;
+        case EFLAGS_C_SUB:
+            // args are swapped
+            src2 = src1;
+            // DATA_TYPE src1 = dst + src2;
+            src1 = Z3_mk_bvadd(ctx, dst, src2);
+            // src1 < src2
+            r = Z3_mk_bvult(ctx, src1, src2);
+            break;
+        case EFLAGS_C_SHL:
+            // (src1 >> (DATA_BITS - 1)) & CC_C
+            r = Z3_mk_bvashr(ctx, src1,
+                             smt_new_const((8 * width) - 1, 8 * width));
+            r = Z3_mk_bvand(ctx, src1, smt_new_const(CC_C, 8 * width));
+            break;
+        case EFLAGS_C_BMILG:;
+            // src1 == 0
+            Z3_ast zero = smt_new_const(0, width * 8);
+            Z3_ast one  = smt_new_const(1, width * 8);
+            r           = Z3_mk_eq(ctx, src1, zero);
+            r           = Z3_mk_ite(ctx, src1, zero, one);
+            break;
+        default:
+            ABORT("Unknown i386 eflags_c_binary opkind: %u", query->opkind);
+    }
+
+    Z3_ast zero = smt_new_const(0, (sizeof(uintptr_t) - width) * 8);
+    r           = Z3_mk_concat(ctx, zero, r);
     return r;
 }
 #undef VERBOSE
