@@ -213,7 +213,7 @@ Z3_ast smt_to_bv_n(Z3_ast e, size_t width) // cast boolean to a bitvector
     }
 }
 
-Z3_ast smt_to_bv(Z3_ast e) { return smt_to_bv_n(e, 64); }
+Z3_ast smt_to_bv(Z3_ast e) { return smt_to_bv_n(e, 8); }
 
 // ToDo: use a dictionary!
 Expr*           expr_annotation_addr = NULL;
@@ -388,7 +388,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
             smt_print_ast_sort(op1);
             smt_print_ast_sort(op2);
 #endif
-            r = Z3_mk_bvsge(smt_solver.ctx, op1, op2);
+            r = Z3_mk_bvsge(smt_solver.ctx, smt_to_bv(op1), smt_to_bv(op2));
             break;
         //
         case LTU:

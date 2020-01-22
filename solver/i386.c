@@ -8,7 +8,13 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width)
     // src3 ? dst <= src1 : dst < src1;
     // src3, dst, and src1 must be evaluated based on operation size
 
+#if VERBOSE
+    printf("EFLAGS_C_ADC\n");
+    print_expr(query->op1);
+#endif
+
     Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width);
+    smt_print_ast_sort(dst);
     Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width);
 
     if (width < sizeof(uintptr_t)) {
@@ -20,7 +26,7 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width)
     uint8_t src3_is_const = query->op3_is_const;
 
 #if VERBOSE
-    printf("EFLAGS_C_ADCQ\n");
+    printf("EFLAGS_C_ADC\n");
     smt_print_ast_sort(dst);
     smt_print_ast_sort(src1);
 #endif
@@ -44,18 +50,58 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width)
         Z3_ast src3 = smt_query_to_z3(query->op3, query->op3_is_const, width);
         // src3 is a boolean, no need to cast it
 #if VERBOSE
+        printf("EFLAGS_C_ADCQ: symbolic src3 2\n");
         smt_print_ast_sort(src3);
 #endif
-        Z3_ast zero = smt_new_const(0, sizeof(uintptr_t));
+        Z3_ast zero = smt_new_const(0, 8 * sizeof(uintptr_t));
         Z3_ast cond = Z3_mk_not(ctx, Z3_mk_eq(ctx, smt_to_bv(src3), zero));
         Z3_ast a    = Z3_mk_bvule(ctx, dst, src1);
         Z3_ast b    = Z3_mk_bvult(ctx, dst, src1);
         r           = Z3_mk_ite(ctx, cond, a, b);
 #if VERBOSE
-        printf("EFLAGS_C_ADCQ: symbolic src3 done\n");
+        printf("EFLAGS_C_ADC: symbolic src3 done\n");
 #endif
     }
 
+    return r;
+}
+#undef VERBOSE
+
+#define VERBOSE 0
+static inline Z3_ast eflags_c_sbb(Z3_context ctx, Expr* query, size_t width)
+{
+    // DATA_TYPE src1 = dst + src2 + src3;
+    // return (src3 ? src1 <= src2 : src1 < src2);
+
+    Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width);
+    Z3_ast src2 = smt_query_to_z3(query->op2, query->op2_is_const, width);
+    Z3_ast src3 = smt_query_to_z3(query->op3, query->op3_is_const, width);
+
+    Z3_ast src1 = Z3_mk_bvadd(ctx, dst, src2);
+    src1        = Z3_mk_bvadd(ctx, src1, src3);
+
+    if (width < sizeof(uintptr_t)) {
+        dst  = smt_bv_extract(dst, width);
+        src2 = smt_bv_extract(src2, width);
+        src3 = smt_bv_extract(src2, width);
+    }
+
+#if VERBOSE
+    printf("EFLAGS_C_SBB\n");
+    smt_print_ast_sort(dst);
+    smt_print_ast_sort(src2);
+    smt_print_ast_sort(src3);
+    smt_print_ast_sort(src1);
+#endif
+
+    Z3_ast zero = smt_new_const(0, width * 8);
+    Z3_ast cond = Z3_mk_not(ctx, Z3_mk_eq(ctx, smt_to_bv_n(src3, width), zero));
+    Z3_ast a    = Z3_mk_bvule(ctx, src1, src2);
+    Z3_ast b    = Z3_mk_bvult(ctx, src1, src2);
+    Z3_ast r    = Z3_mk_ite(ctx, cond, a, b);
+
+    Z3_ast zero2 = smt_new_const(0, (sizeof(uintptr_t) - width) * 8);
+    r            = Z3_mk_concat(ctx, zero2, r);
     return r;
 }
 #undef VERBOSE
@@ -177,7 +223,7 @@ static inline Z3_ast eflags_of_b(Z3_context ctx, Z3_ast dst, Z3_ast src1,
 
 #define VERBOSE 0
 static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
-                                       size_t width, OPKIND opkind)
+                                       size_t width)
 {
     Z3_ast cf, pf, af, zf, sf, of;
 
@@ -194,7 +240,7 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
 
     if (width < sizeof(uintptr_t)) {
         dst = smt_bv_extract(dst, width);
-        if (opkind != EFLAGS_ALL_MUL)
+        if (query->opkind != EFLAGS_ALL_MUL)
             src1 = smt_bv_extract(src1, width);
     }
 
@@ -205,7 +251,7 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
 #endif
 
     Z3_ast src2;
-    switch (opkind) {
+    switch (query->opkind) {
         case EFLAGS_ALL_ADD:
             src2 = Z3_mk_bvsub(ctx, dst, src1);
             // cf = dst < src1;
@@ -454,7 +500,7 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
 
 #define VERBOSE 0
 static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
-                                        size_t width, OPKIND opkind)
+                                        size_t width)
 {
     Z3_ast cf, pf, af, zf, sf, of;
 
@@ -484,7 +530,7 @@ static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
 #endif
 
     Z3_ast src2;
-    switch (opkind) {
+    switch (query->opkind) {
         case EFLAGS_ALL_ADCB:
         case EFLAGS_ALL_ADCW:
         case EFLAGS_ALL_ADCL:
@@ -713,8 +759,7 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
         case EFLAGS_ALL_SHL:
         case EFLAGS_ALL_SAR:
         case EFLAGS_ALL_BMILG:
-            r = eflags_all_binary(ctx, query, (uintptr_t)query->op3,
-                                  query->opkind);
+            r = eflags_all_binary(ctx, query, (uintptr_t)query->op3);
             break;
         case EFLAGS_ALL_ADCB:
         case EFLAGS_ALL_ADCW:
@@ -724,8 +769,7 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
         case EFLAGS_ALL_SBBW:
         case EFLAGS_ALL_SBBL:
         case EFLAGS_ALL_SBBQ:
-            r = eflags_all_ternary(ctx, query, (uintptr_t)query->op3,
-                                   query->opkind);
+            r = eflags_all_ternary(ctx, query, (uintptr_t)query->op3);
             break;
         case EFLAGS_ALL_ADCX:
         case EFLAGS_ALL_ADOX:
@@ -735,8 +779,14 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             break;
 #if 0
         case EFLAGS_ALL_RCL:
-        case EFLAGS_C_ADD:
 #endif
+        case EFLAGS_C_ADD:
+        case EFLAGS_C_SUB:
+        case EFLAGS_C_MUL:
+        case EFLAGS_C_LOGIC:
+        case EFLAGS_C_SHL:
+            r = eflags_c_binary(ctx, query, (uintptr_t)query->op3);
+            break;
         case EFLAGS_C_ADCB:
             r = eflags_c_adc(ctx, query, 1);
             break;
@@ -749,16 +799,18 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
         case EFLAGS_C_ADCQ:
             r = eflags_c_adc(ctx, query, 8);
             break;
-#if 0
-        case EFLAGS_C_SUB:
-        case EFLAGS_C_MUL:
         case EFLAGS_C_SBBB:
+            r = eflags_c_sbb(ctx, query, 1);
+            break;
         case EFLAGS_C_SBBW:
+            r = eflags_c_sbb(ctx, query, 2);
+            break;
         case EFLAGS_C_SBBL:
+            r = eflags_c_sbb(ctx, query, 4);
+            break;
         case EFLAGS_C_SBBQ:
-        case EFLAGS_C_LOGIC:
-        case EFLAGS_C_SHL:
-#endif
+            r = eflags_c_sbb(ctx, query, 8);
+            break;
 
         default:
             ABORT("Unknown expr i386 opkind: %u", query->opkind);
