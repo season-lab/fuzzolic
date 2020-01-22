@@ -8,13 +8,7 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width)
     // src3 ? dst <= src1 : dst < src1;
     // src3, dst, and src1 must be evaluated based on operation size
 
-#if VERBOSE
-    printf("EFLAGS_C_ADC\n");
-    print_expr(query->op1);
-#endif
-
     Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width);
-    smt_print_ast_sort(dst);
     Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width);
 
     if (width < sizeof(uintptr_t)) {
