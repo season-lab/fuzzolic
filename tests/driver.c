@@ -19,6 +19,11 @@ int adcl(uint32_t);
 int adcw(uint16_t);
 int adcb(uint8_t);
 
+typedef enum TestcaseInputMode {
+    FIXED_SIZE,
+    VARIABLE_SIZE,
+} TestcaseInputMode;
+
 typedef enum TestcaseInputType {
     VAR,
     BUFFER,
@@ -28,6 +33,7 @@ typedef struct Testcase {
     const char* name;
     int (*f)(uintptr_t);
     TestcaseInputType input_type;
+    TestcaseInputMode input_mode;
     size_t            input_size;
 } Testcase;
 
@@ -40,6 +46,7 @@ Testcase tests[] = {
     {.name       = "simple_if",
      .f          = F(simple_if),
      .input_type = VAR,
+     .input_mode = FIXED_SIZE,
      .input_size = 4},
     {.name       = "mystrcmp",
      .f          = F(mystrcmp),
@@ -48,17 +55,50 @@ Testcase tests[] = {
     {.name       = "all_concrete",
      .f          = F(all_concrete),
      .input_type = VAR,
+     .input_mode = FIXED_SIZE,
      .input_size = 4},
     //
-    {.name = "addq", .f = F(addq), .input_type = VAR, .input_size = 8},
-    {.name = "addl", .f = F(addl), .input_type = VAR, .input_size = 8},
-    {.name = "addw", .f = F(addw), .input_type = VAR, .input_size = 8},
-    {.name = "addb", .f = F(addb), .input_type = VAR, .input_size = 8},
+    {.name       = "addq",
+     .f          = F(addq),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 8},
+    {.name       = "addl",
+     .f          = F(addl),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 8},
+    {.name       = "addw",
+     .f          = F(addw),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 8},
+    {.name       = "addb",
+     .f          = F(addb),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 8},
     //
-    {.name = "adcq", .f = F(adcq), .input_type = VAR, .input_size = 8},
-    {.name = "adcl", .f = F(adcl), .input_type = VAR, .input_size = 8},
-    {.name = "adcw", .f = F(adcw), .input_type = VAR, .input_size = 8},
-    {.name = "adcb", .f = F(adcb), .input_type = VAR, .input_size = 8},
+    {.name       = "adcq",
+     .f          = F(adcq),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 8},
+    {.name       = "adcl",
+     .f          = F(adcl),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 8},
+    {.name       = "adcw",
+     .f          = F(adcw),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 8},
+    {.name       = "adcb",
+     .f          = F(adcb),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 8},
 };
 
 void foo(Testcase* t)
@@ -111,6 +151,7 @@ int main(int argc, char* argv[])
     for (i = 0; i < sizeof(tests) / sizeof(Testcase); i++) {
         if (strcmp(testcase_name, tests[i].name) == 0) {
             assert(tests[i].input_size < MAX_INPUT_SIZE);
+            //printf("Input bytes at %p\n", data);
             foo(&tests[i]);
             found = 1;
             break;

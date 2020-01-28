@@ -3,6 +3,9 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "solver.h"
 #include "i386.h"
@@ -22,8 +25,10 @@ typedef struct SMTSolver {
 
 SMTSolver smt_solver;
 
-static uint8_t* testcase      = NULL;
-static size_t   testcase_size = 0;
+static uint8_t*    testcase       = NULL;
+static size_t      testcase_size  = 0;
+static const char* testcase_fname = NULL;
+static char        testcase_delta = 0;
 
 static void exitf(const char* message)
 {
@@ -45,6 +50,19 @@ static void smt_error_handler(Z3_context c, Z3_error_code e)
     exitf("incorrect use of Z3");
 }
 
+static size_t get_input_size(const char* fname)
+{
+#if 0
+    FILE* f = fopen(fname, "r");
+    fseek(f, 0L, SEEK_END);
+    size_t sz = ftell(f);
+    fclose(f);
+    return sz;
+#endif
+    assert(testcase_size > 0);
+    return testcase_size;
+}
+
 static void smt_init(void)
 {
     Z3_config cfg = Z3_mk_config();
@@ -60,24 +78,22 @@ static void smt_destroy(void)
     Z3_del_context(smt_solver.ctx);
 }
 
-static Expr*  cached_input_expr = NULL;
-static Z3_ast cached_input      = NULL;
-static size_t cached_input_size = 0;
-Z3_ast        smt_new_symbol(const char* name, size_t n_bits, Expr* e)
-{
-    // ToDo: support more than one input
-    if (cached_input) {
-        assert(e->op1 == cached_input_expr->op1 &&
-               e->op2 == cached_input_expr->op2);
-        return cached_input;
-    }
+#define MAX_INPUTS 4096
+static Z3_ast input_exprs[MAX_INPUTS] = {NULL};
 
-    Z3_sort   bv_sort = Z3_mk_bv_sort(smt_solver.ctx, n_bits);
-    Z3_symbol s_name  = Z3_mk_string_symbol(smt_solver.ctx, name);
-    Z3_ast    s       = Z3_mk_const(smt_solver.ctx, s_name, bv_sort);
-    cached_input      = s;
-    cached_input_expr = e;
-    cached_input_size = n_bits;
+Z3_ast smt_new_symbol(uintptr_t id, const char* name, size_t n_bits, Expr* e)
+{
+    assert(id < MAX_INPUTS);
+    assert(n_bits == 8 && "Multi-byte input not yet supported.");
+    Z3_ast s = input_exprs[id];
+    if (s == NULL) {
+        Z3_sort   bv_sort = Z3_mk_bv_sort(smt_solver.ctx, n_bits);
+        Z3_symbol s_name  = Z3_mk_string_symbol(smt_solver.ctx, name);
+        s                 = Z3_mk_const(smt_solver.ctx, s_name, bv_sort);
+        input_exprs[id]   = s;
+        printf("Generating symbolic for input at offset %lu (%p)\n", id,
+               input_exprs[id]);
+    }
     return s;
 }
 
@@ -91,8 +107,7 @@ Z3_ast smt_new_const(uint64_t value, size_t n_bits)
 static uint32_t file_next_id = 0;
 static void     smt_dump_solution(Z3_model m)
 {
-    assert(cached_input);
-    size_t input_size = cached_input_size / 8;
+    size_t input_size = get_input_size(testcase_fname);
 
     char test_case_name[128];
     int n = snprintf(test_case_name, sizeof(test_case_name), "test_case_%u.dat",
@@ -100,33 +115,33 @@ static void     smt_dump_solution(Z3_model m)
     assert(n > 0 && n < sizeof(test_case_name) && "test case name too long");
     // SAYF("Dumping solution into %s\n", test_case_name);
     FILE* fp = fopen(test_case_name, "w");
-#if 0
     for (long i = 0; i < input_size; i++) {
-#else
-    for (long i = input_size - 1; i >= 0; i--) {
-#endif
-    Z3_ast input_slice =
-        Z3_mk_extract(smt_solver.ctx, (8 * (i + 1)) - 1, 8 * i, cached_input);
-    Z3_ast  solution;
-    Z3_bool successfulEval =
-        Z3_model_eval(smt_solver.ctx, m, input_slice,
-                      testcase ? Z3_FALSE : Z3_TRUE, // model_completion
-                      &solution);
-    assert(successfulEval && "Failed to evaluate model");
-    assert(Z3_get_ast_kind(smt_solver.ctx, solution) == Z3_NUMERAL_AST &&
-           "Evaluated expression has wrong sort");
-    int     solution_byte = 0;
-    Z3_bool successGet =
-        Z3_get_numeral_int(smt_solver.ctx, solution, &solution_byte);
-    if (solution_byte)
-        printf("Solution[%ld]: 0x%x\n", input_size - i - 1, solution_byte);
-    else
-        solution_byte = (input_size - i - 1) < testcase_size
-                            ? testcase[input_size - i - 1]
-                            : 0;
-    fwrite(&solution_byte, sizeof(char), 1, fp);
-}
-fclose(fp);
+        Z3_ast input_slice   = input_exprs[i];
+        int    solution_byte = 0;
+        if (input_slice) {
+            SAYF("input slice %ld\n", i);
+            Z3_ast  solution;
+            Z3_bool successfulEval = Z3_model_eval(
+                smt_solver.ctx, m, input_slice,
+                testcase_delta ? Z3_FALSE : Z3_TRUE, // model_completion
+                &solution);
+            assert(successfulEval && "Failed to evaluate model");
+            if (Z3_get_ast_kind(smt_solver.ctx, solution) == Z3_NUMERAL_AST) {
+                Z3_bool successGet =
+                    Z3_get_numeral_int(smt_solver.ctx, solution, &solution_byte);
+                if (successGet) // && solution_byte
+                    printf("Solution[%ld]: 0x%x\n", i, solution_byte);
+            } else {
+                assert(Z3_get_ast_kind(smt_solver.ctx, solution) == Z3_APP_AST);
+                solution_byte = i < testcase_size ? testcase[i] : 0;
+            }
+        } else {
+            // printf("Input slice is not used by the formula\n");
+            solution_byte = i < testcase_size ? testcase[i] : 0;
+        }
+        fwrite(&solution_byte, sizeof(char), 1, fp);
+    }
+    fclose(fp);
 }
 
 static void inline smt_dump_solver(Z3_solver solver)
@@ -255,10 +270,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
         case RESERVED:
             ABORT("Invalid opkind (RESERVER). There is a bug somewhere :(");
         case IS_SYMBOLIC:;
-            // ToDo: get name and size from the struct
             char* input_name = malloc(16);
             snprintf(input_name, 16, "input_%lu", (uintptr_t)query->op1);
-            r = smt_new_symbol(input_name, 8 * (uintptr_t)query->op2, query);
+            r = smt_new_symbol((uintptr_t)query->op1, input_name,
+                               8 * (uintptr_t)query->op2, query);
             break;
         case IS_CONST:
             r = smt_new_const((uintptr_t)query->op1, 64);
@@ -303,7 +318,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
 
             if (ea && ea->result) {
                 assert(Z3_get_sort_kind(smt_solver.ctx,
-                                         Z3_get_sort(smt_solver.ctx, op1)) !=
+                                        Z3_get_sort(smt_solver.ctx, op1)) !=
                        Z3_BOOL_SORT);
                 printf("EFLAGS: optimized flag extraction\n");
                 r = ea->result;
@@ -594,15 +609,16 @@ static inline void smt_load_solver(const char* file)
 #include "test.c"
 #endif
 
-static inline void load_testcase(const char* filename)
+static inline void load_testcase()
 {
-    printf("Loading testcase: %s\n", filename);
+    printf("Loading testcase: %s\n", testcase_fname);
     char  data[1024 * 100] = {0};
-    FILE* fp               = fopen(filename, "r");
+    FILE* fp               = fopen(testcase_fname, "r");
     int   r                = fread(&data, 1, sizeof(data), fp);
+    fclose(fp);
     if (r == sizeof(data))
         PFATAL("Testcase is too large\n");
-    printf("Loaded %d from testcase\n", r);
+    printf("Loaded %d bytes from testcase: %s\n", r, testcase_fname);
     assert(r > 0);
     testcase      = malloc(r);
     testcase_size = r;
@@ -627,8 +643,11 @@ int main(int argc, char* argv[])
     if (argc == 3 && strcmp("-q", argv[1]) == 0) {
         smt_load_solver(argv[2]);
         return 0;
-    } else if (argc == 4 && strcmp("-d", argv[3]) == 0) {
-        load_testcase(argv[1]);
+    } else {
+        testcase_fname = argv[1];
+        load_testcase();
+        if (argc == 4 && strcmp("-d", argv[3]) == 0)
+            testcase_delta = 1;
     }
 
     signal(SIGINT, sig_handler);

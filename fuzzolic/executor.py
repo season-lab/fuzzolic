@@ -9,6 +9,7 @@ import subprocess
 import time
 import signal
 import configparser
+import re
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -27,6 +28,7 @@ class Executor(object):
             sys.exit('ERROR: invalid binary')
         self.binary = binary
         self.binary_args = binary_args
+        self.testcase_from_stdin = '@@' not in self.binary_args
 
         if not os.path.exists(working_dir):
             sys.exit('ERROR: invalid working directory')
@@ -40,6 +42,7 @@ class Executor(object):
         self.delta_solving = delta_solving
 
         self.__load_config()
+        self.__warning_log = set()
 
     def __load_config(self):
         config = {}
@@ -48,7 +51,7 @@ class Executor(object):
         with open(self.binary + '.fuzzolic', 'r') as cfgfile:
             for line in cfgfile:
                 line = line.rstrip('\n').strip()
-                if line.startswith('#'):
+                if line.startswith('#') or '=' not in line:
                     continue
                 pivot = line.index('=')
                 key = line[:pivot]
@@ -116,9 +119,11 @@ class Executor(object):
 
         self.__check_shutdown_flag()
 
+        p_solver_log_name = run_dir + '/solver.log'
+        p_solver_log = open(p_solver_log_name, 'w')
+
         # launch solver
         if self.debug != 'no_solver':
-            p_solver_log = open(run_dir + '/solver.log', 'w')
             p_solver_args = []
             p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
             p_solver_args += [SOLVER_BIN]
@@ -136,11 +141,13 @@ class Executor(object):
             time.sleep(SOLVER_WAIT_TIME_AT_STARTUP)
 
         # launch tracer
-        p_tracer_log = open(run_dir + '/tracer.log', 'w')
+        p_tracer_log_name = run_dir + '/tracer.log'
+        p_tracer_log = open(p_tracer_log_name, 'w')
         p_tracer_args = []
 
         if self.debug != 'gdb':
             p_tracer_args += ['stdbuf', '-o0']  # No buffering on stdout
+            #p_tracer_args += ['strace']
         else:
             p_tracer_args += ['gdb']
 
@@ -150,18 +157,22 @@ class Executor(object):
             p_tracer_args += ['-symbolic']
             if self.debug == 'trace':
                 p_tracer_args += ['-d']
-                p_tracer_args += ['in_asm,op']  # 'in_asm,op_opt,out_asm'
+                p_tracer_args += ['in_asm,op_opt,out_asm']  # 'in_asm,op_opt,out_asm'
+
+        args = self.binary_args
+        if not self.testcase_from_stdin:
+            for k in range(len(args)):
+                if args[k] == '@@':
+                    args[k] = testcase
 
         if self.debug != 'gdb':
             p_tracer_args += [self.working_dir + '/' + self.binary]
-            p_tracer_args += self.binary_args
-
-        # print(p_tracer_args)
+            p_tracer_args += args
 
         p_tracer = subprocess.Popen(p_tracer_args,
                                     stdout=p_tracer_log if not self.debug else None,
                                     stderr=subprocess.STDOUT if not self.debug else None,
-                                    stdin=subprocess.PIPE,  # if self.debug != 'gdb' else None,
+                                    stdin=subprocess.PIPE if self.testcase_from_stdin or self.debug == 'gdb' else None,
                                     cwd=run_dir,
                                     env=env,
                                     bufsize=0 if self.debug == 'gdb' else -1,
@@ -170,14 +181,17 @@ class Executor(object):
 
         # emit testcate on stdin
         if self.debug != 'gdb':
-            if self.config['SYMBOLIC_INJECT_INPUT_MODE'] in ('READ_FD_0', 'REG', 'BUFFER'):
+            if self.testcase_from_stdin:
                 with open(testcase, "rb") as f:
                     p_tracer.stdin.write(f.read())
                     p_tracer.stdin.close()
         else:
             gdb_cmd = 'run -symbolic ' + self.working_dir + \
-                '/' + self.binary + ' < ' + testcase + "\n"
-            # print(gdb_cmd)
+                '/' + self.binary + ' ' + ' '.join(args)
+            if self.testcase_from_stdin:
+                gdb_cmd += ' < ' + testcase
+            gdb_cmd += "\n"
+            print("GDB command: %s" % gdb_cmd)
             p_tracer.stdin.write(gdb_cmd.encode())
             for line in sys.stdin:
                 #print("Sending to gdb: " + line)
@@ -188,10 +202,12 @@ class Executor(object):
             p_tracer.stdin.close()
 
         p_tracer.wait()
+        p_tracer_log.close()
 
         if p_tracer.returncode != 0:
             returncode_str = "(SIGSEGV)" if p_tracer.returncode == -11 else ""
-            print("ERROR: tracer has returned code %d %s" % (p_tracer.returncode, returncode_str))
+            print("ERROR: tracer has returned code %d %s" %
+                  (p_tracer.returncode, returncode_str))
             p_solver.send_signal(signal.SIGINT)
 
         if self.debug != 'no_solver':
@@ -204,6 +220,23 @@ class Executor(object):
                 except subprocess.TimeoutExpired:
                     print('Solver will be killed.')
                     p_solver.send_signal(signal.SIGKILL)
+
+        p_solver_log.close()
+
+        # parse tracer logs for known errors/warnings
+        if not self.debug:
+            with open(p_tracer_log_name, 'r') as log:
+                for line in log:
+                    #if re.search('Helper', line):
+                    if 'Unhandled TCG instruction' in line or 'Helper ' in line:
+                        if line not in self.__warning_log:
+                            self.__warning_log.add("[tracer warning]: %s" % line)
+
+            with open(p_solver_log_name, 'r') as log:
+                for line in log:
+                    if 'PROGRAM ABORT' in line:
+                        if line not in self.__warning_log:
+                            self.__warning_log.add("[solver warning]: %s" % line)
 
         # remove test case from queue dir
         os.system('rm ' + testcase)
@@ -273,3 +306,6 @@ class Executor(object):
             self.__check_shutdown_flag()
             testcase = self.__pick_testcase()
             self.__check_shutdown_flag()
+
+        for w in self.__warning_log:
+            print(w)
