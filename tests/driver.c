@@ -7,6 +7,9 @@ int simple_if(uint32_t);
 int mystrcmp(const char* s1);
 int all_concrete(uint32_t input);
 
+// jump table
+int switchf(int v);
+
 // all flags add
 int addq(uint64_t);
 int addl(uint32_t);
@@ -54,6 +57,12 @@ Testcase tests[] = {
      .input_size = 128},
     {.name       = "all_concrete",
      .f          = F(all_concrete),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 4},
+    //
+    {.name       = "switch",
+     .f          = F(switchf),
      .input_type = VAR,
      .input_mode = FIXED_SIZE,
      .input_size = 4},

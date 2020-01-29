@@ -91,8 +91,8 @@ Z3_ast smt_new_symbol(uintptr_t id, const char* name, size_t n_bits, Expr* e)
         Z3_symbol s_name  = Z3_mk_string_symbol(smt_solver.ctx, name);
         s                 = Z3_mk_const(smt_solver.ctx, s_name, bv_sort);
         input_exprs[id]   = s;
-        printf("Generating symbolic for input at offset %lu (%p)\n", id,
-               input_exprs[id]);
+        //printf("Generating symbolic for input at offset %lu (%p)\n", id,
+        //       input_exprs[id]);
     }
     return s;
 }
@@ -119,7 +119,7 @@ static void     smt_dump_solution(Z3_model m)
         Z3_ast input_slice   = input_exprs[i];
         int    solution_byte = 0;
         if (input_slice) {
-            SAYF("input slice %ld\n", i);
+            // SAYF("input slice %ld\n", i);
             Z3_ast  solution;
             Z3_bool successfulEval = Z3_model_eval(
                 smt_solver.ctx, m, input_slice,
@@ -652,6 +652,12 @@ int main(int argc, char* argv[])
 
     signal(SIGINT, sig_handler);
 
+#if 0
+    printf("Expression size: %lu\n", sizeof(Expr));
+    printf("Allocating %lu MB for expression pool\n", (sizeof(Expr) * EXPR_POOL_CAPACITY) / (1024 * 1024));
+    printf("Allocating %lu MB for query queue\n", (sizeof(Expr*) * EXPR_QUERY_CAPACITY) / (1024 * 1024));
+#endif
+
     expr_pool_shm_id = shmget(EXPR_POOL_SHM_KEY, // IPC_PRIVATE,
                               sizeof(Expr) * EXPR_POOL_CAPACITY,
                               IPC_CREAT | 0666); /*| IPC_EXCL */
@@ -659,7 +665,7 @@ int main(int argc, char* argv[])
         PFATAL("shmget() failed");
 
     query_shm_id = shmget(QUERY_SHM_KEY, // IPC_PRIVATE,
-                          sizeof(Expr*) * EXPR_POOL_CAPACITY,
+                          sizeof(Expr*) * EXPR_QUERY_CAPACITY,
                           IPC_CREAT | 0666); /*| IPC_EXCL */
     if (query_shm_id < 0)
         PFATAL("shmget() failed");
@@ -680,11 +686,17 @@ int main(int argc, char* argv[])
 
     // reset pool and query queue
     memset(pool, 0, sizeof(Expr) * EXPR_POOL_CAPACITY);
-    memset(next_query, 0, sizeof(Expr*) * EXPR_POOL_CAPACITY);
+    memset(next_query, 0, sizeof(Expr*) * EXPR_QUERY_CAPACITY);
+
+    *next_query = (void*)SHM_READY;
+    next_query++;
 
     struct timespec polling_time;
     polling_time.tv_sec  = EXPR_QUEUE_POLLING_TIME_SECS;
     polling_time.tv_nsec = EXPR_QUEUE_POLLING_TIME_NS;
+#if 0
+    SAYF("Waiting for queries...\n");
+#endif
 
     while (1) {
         if (*next_query == 0) {
@@ -694,6 +706,9 @@ int main(int argc, char* argv[])
                 SAYF("Reached final query. Exiting...\n");
                 exit(0);
             }
+#if 0
+            SAYF("Got a query...\n");
+#endif
             smt_query(*next_query);
             next_query++;
         }

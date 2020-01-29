@@ -114,8 +114,9 @@ class Executor(object):
 
         env = os.environ.copy()
         for c in self.config:
-            #assert c not in env
             env[c] = self.config[c]
+        if not self.testcase_from_stdin:
+            env['SYMBOLIC_TESTCASE_NAME'] = testcase
 
         self.__check_shutdown_flag()
 
