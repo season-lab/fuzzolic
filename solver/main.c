@@ -12,12 +12,14 @@
 
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
+#define SOLVER_TIMEOUT_MS            10000
 
 static int expr_pool_shm_id = -1;
 Expr*      pool;
 
 static int    query_shm_id = -1;
 static Expr** next_query;
+static Expr** query_queue;
 
 typedef struct SMTSolver {
     Z3_context ctx;
@@ -65,8 +67,7 @@ static size_t get_input_size(const char* fname)
 
 static void smt_init(void)
 {
-    Z3_config cfg = Z3_mk_config();
-    // Z3_set_param_value(cfg, "model", "true");
+    Z3_config cfg  = Z3_mk_config();
     smt_solver.ctx = Z3_mk_context(cfg);
     Z3_set_error_handler(smt_solver.ctx, smt_error_handler);
     Z3_del_config(cfg);
@@ -91,7 +92,7 @@ Z3_ast smt_new_symbol(uintptr_t id, const char* name, size_t n_bits, Expr* e)
         Z3_symbol s_name  = Z3_mk_string_symbol(smt_solver.ctx, name);
         s                 = Z3_mk_const(smt_solver.ctx, s_name, bv_sort);
         input_exprs[id]   = s;
-        //printf("Generating symbolic for input at offset %lu (%p)\n", id,
+        // printf("Generating symbolic for input at offset %lu (%p)\n", id,
         //       input_exprs[id]);
     }
     return s;
@@ -127,8 +128,8 @@ static void     smt_dump_solution(Z3_model m)
                 &solution);
             assert(successfulEval && "Failed to evaluate model");
             if (Z3_get_ast_kind(smt_solver.ctx, solution) == Z3_NUMERAL_AST) {
-                Z3_bool successGet =
-                    Z3_get_numeral_int(smt_solver.ctx, solution, &solution_byte);
+                Z3_bool successGet = Z3_get_numeral_int(
+                    smt_solver.ctx, solution, &solution_byte);
                 if (successGet) // && solution_byte
                     printf("Solution[%ld]: 0x%x\n", i, solution_byte);
             } else {
@@ -176,14 +177,7 @@ static void smt_query_check(Z3_solver solver, Z3_ast query,
             break;
         case Z3_L_UNDEF:
             /* Z3 failed to prove/disprove f. */
-            printf("unknown\n");
-            m = Z3_solver_get_model(smt_solver.ctx, solver);
-            if (m != 0) {
-                Z3_model_inc_ref(smt_solver.ctx, m);
-                /* m should be viewed as a potential counterexample. */
-                printf("potential counterexample:\n%s\n",
-                       Z3_model_to_string(smt_solver.ctx, m));
-            }
+            printf("Query is UNKNOWN\n");
             break;
         case Z3_L_TRUE:
             printf("Query is SAT\n");
@@ -225,6 +219,33 @@ Z3_ast smt_to_bv_n(Z3_ast e, size_t width) // cast boolean to a bitvector
                          smt_new_const(0, width * 8));
     } else {
         return e;
+    }
+}
+
+void smt_bv_resize(Z3_ast* a, Z3_ast* b)
+{
+    Z3_sort  a_sort = Z3_get_sort(smt_solver.ctx, *a);
+    Z3_sort  b_sort = Z3_get_sort(smt_solver.ctx, *b);
+    unsigned a_size = Z3_get_bv_sort_size(smt_solver.ctx, a_sort);
+    unsigned b_size = Z3_get_bv_sort_size(smt_solver.ctx, b_sort);
+    if (a_size == b_size) {
+        return;
+    }
+    unsigned size = a_size > b_size ? a_size : b_size;
+    // printf("a_size=%u b_size=%u\n", a_size, b_size);
+
+    if (Z3_get_sort_kind(smt_solver.ctx, a_sort) == Z3_BOOL_SORT) {
+        *a = Z3_mk_ite(smt_solver.ctx, *a, smt_new_const(1, size),
+                       smt_new_const(0, size));
+    } else if (a_size < size) {
+        *a = Z3_mk_concat(smt_solver.ctx, smt_new_const(0, size - a_size), *a);
+    }
+
+    if (Z3_get_sort_kind(smt_solver.ctx, b_sort) == Z3_BOOL_SORT) {
+        *b = Z3_mk_ite(smt_solver.ctx, *b, smt_new_const(1, size),
+                       smt_new_const(0, size));
+    } else if (b_size < size) {
+        *b = Z3_mk_concat(smt_solver.ctx, smt_new_const(0, size - b_size), *b);
     }
 }
 
@@ -287,22 +308,45 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
         case ADD:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            smt_bv_resize(&op1, &op2);
 #if VERBOSE
             printf("ADD\n");
             smt_print_ast_sort(op1);
             smt_print_ast_sort(op2);
 #endif
-            r = Z3_mk_bvadd(smt_solver.ctx, smt_to_bv(op1), smt_to_bv(op2));
+            r = Z3_mk_bvadd(smt_solver.ctx, op1, op2);
             break;
         case SUB:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            smt_bv_resize(&op1, &op2);
 #if VERBOSE
             printf("SUB\n");
             smt_print_ast_sort(op1);
             smt_print_ast_sort(op2);
 #endif
             r = Z3_mk_bvsub(smt_solver.ctx, op1, op2);
+            break;
+        case MUL:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+#if VERBOSE
+            printf("MUL\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r = Z3_mk_bvmul(smt_solver.ctx, op1, op2);
+            break;
+        case DIVU: // 8
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            smt_bv_resize(&op1, &op2);
+#if VERBOSE
+            printf("DIVU\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r = Z3_mk_bvudiv(smt_solver.ctx, op1, op2);
             break;
         case AND:;
             ExprAnnotation* ea = NULL;
@@ -345,10 +389,20 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
             }
 
             break;
+        case OR: // 12
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            r   = Z3_mk_bvor(smt_solver.ctx, op1, op2);
+            break;
         case XOR: // 13
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
             r   = Z3_mk_bvxor(smt_solver.ctx, op1, op2);
+            break;
+        case SHL: // 14
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            r   = Z3_mk_bvshl(smt_solver.ctx, op1, op2);
             break;
         case SHR: // 15
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
@@ -451,6 +505,11 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
             op1 = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
             r   = Z3_mk_sign_ext(smt_solver.ctx, 64 - n, op1);
             break;
+        case CONCAT:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            r   = Z3_mk_concat(smt_solver.ctx, op1, op2);
+            break;
         case CONCAT8:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
@@ -461,6 +520,35 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
             unsigned high = ((((uintptr_t)query->op2) + 1) * 8) - 1;
             unsigned low  = ((uintptr_t)query->op2) * 8;
             r             = Z3_mk_extract(smt_solver.ctx, high, low, op1);
+            break;
+        case EXTRACT:
+            op1  = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            high = (uintptr_t)query->op2;
+            low  = (uintptr_t)query->op3;
+            r    = Z3_mk_extract(smt_solver.ctx, high, low, op1);
+            break;
+        case DEPOSIT:
+            // DEPOSIT(arg0, arg1, arg2, pos, len):
+            //    arg0 = (arg1 & ~MASK(pos, len)) | ((arg2 << pos) & MASK(pos,
+            //    len))
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            op2 = smt_to_bv(op2);
+#if VERBOSE
+            printf("DEPOSIT\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            uintptr_t dpos = UNPACK_0((uint64_t)query->op3);
+            uintptr_t dlen = UNPACK_1((uint64_t)query->op3);
+            Z3_ast    r0 =
+                Z3_mk_bvand(smt_solver.ctx, op1,
+                            smt_new_const(~DEPOSIT_MASK(dpos, dlen), 64));
+            Z3_ast r1 =
+                Z3_mk_bvshl(smt_solver.ctx, op2, smt_new_const(dpos, 64));
+            r1 = Z3_mk_bvand(smt_solver.ctx, op2,
+                             smt_new_const(DEPOSIT_MASK(dpos, dlen), 64));
+            r  = Z3_mk_bvor(smt_solver.ctx, r0, r1);
             break;
 
         // x86 specific
@@ -521,7 +609,12 @@ static void smt_query(Expr* query)
     Z3_solver solver = Z3_mk_solver(smt_solver.ctx);
     Z3_solver_inc_ref(smt_solver.ctx, solver);
 
-    SAYF("Translating query to Z3...\n");
+    Z3_symbol timeout = Z3_mk_string_symbol(smt_solver.ctx, "timeout");
+    Z3_params params  = Z3_mk_params(smt_solver.ctx);
+    Z3_params_set_uint(smt_solver.ctx, params, timeout, SOLVER_TIMEOUT_MS);
+    Z3_solver_set_params(smt_solver.ctx, solver, params);
+
+    SAYF("Translating query %lu to Z3...\n", (next_query - query_queue) - 1);
     Z3_ast z3_query = smt_query_to_z3(query, 0, 0);
 
     SAYF("DONE: Translating query to Z3\n");
@@ -579,14 +672,7 @@ static inline void smt_load_solver(const char* file)
             break;
         case Z3_L_UNDEF:
             /* Z3 failed to prove/disprove f. */
-            printf("unknown\n");
-            m = Z3_solver_get_model(smt_solver.ctx, solver);
-            if (m != 0) {
-                Z3_model_inc_ref(smt_solver.ctx, m);
-                /* m should be viewed as a potential counterexample. */
-                printf("potential counterexample:\n%s\n",
-                       Z3_model_to_string(smt_solver.ctx, m));
-            }
+            printf("Query is UNKNOWN\n");
             break;
         case Z3_L_TRUE:
             printf("Query is SAT\n");
@@ -681,6 +767,7 @@ int main(int argc, char* argv[])
         PFATAL("shmat() failed");
 
     next_query = shmat(query_shm_id, NULL, 0);
+    query_queue = next_query;
     if (!next_query)
         PFATAL("shmat() failed");
 

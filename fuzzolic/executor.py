@@ -212,6 +212,8 @@ class Executor(object):
             if self.debug != 'no_solver':
                 p_solver.send_signal(signal.SIGINT)
 
+        p_solver.wait()
+        """
         if self.debug != 'no_solver':
             try:
                 p_solver.wait(SOLVER_TIMEOUT)
@@ -222,6 +224,7 @@ class Executor(object):
                 except subprocess.TimeoutExpired:
                     print('Solver will be killed.')
                     p_solver.send_signal(signal.SIGKILL)
+        """
 
         p_solver_log.close()
 
