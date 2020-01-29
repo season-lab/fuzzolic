@@ -209,7 +209,8 @@ class Executor(object):
             returncode_str = "(SIGSEGV)" if p_tracer.returncode == -11 else ""
             print("ERROR: tracer has returned code %d %s" %
                   (p_tracer.returncode, returncode_str))
-            p_solver.send_signal(signal.SIGINT)
+            if self.debug != 'no_solver':
+                p_solver.send_signal(signal.SIGINT)
 
         if self.debug != 'no_solver':
             try:

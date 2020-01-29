@@ -684,7 +684,9 @@ int main(int argc, char* argv[])
     if (!next_query)
         PFATAL("shmat() failed");
 
-    // reset pool and query queue
+    *next_query = 0;
+
+    // reset pool and query queue (this may take some time...)
     memset(pool, 0, sizeof(Expr) * EXPR_POOL_CAPACITY);
     memset(next_query, 0, sizeof(Expr*) * EXPR_QUERY_CAPACITY);
 
