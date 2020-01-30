@@ -23,6 +23,13 @@ static Expr** query_queue;
 
 typedef struct SMTSolver {
     Z3_context ctx;
+    Z3_solver  solver;
+    uint64_t   sat_count;
+    uint64_t   sat_time;
+    uint64_t   unsat_count;
+    uint64_t   unsat_time;
+    uint64_t   unknown_count;
+    uint64_t   unknown_time;
 } SMTSolver;
 
 SMTSolver smt_solver;
@@ -65,17 +72,40 @@ static size_t get_input_size(const char* fname)
     return testcase_size;
 }
 
+static inline void get_time(struct timespec * tp)
+{
+    clockid_t clk_id = CLOCK_MONOTONIC;
+    int result = clock_gettime(clk_id, tp);
+}
+
+static inline uint64_t get_diff_time_microsec(struct timespec * start, struct timespec * end)
+{
+    uint64_t r = (end->tv_sec - start->tv_sec) * 1000000000;
+    r += (end->tv_nsec - start->tv_nsec);
+    return (r / 1000);
+}
+
 static void smt_init(void)
 {
     Z3_config cfg  = Z3_mk_config();
     smt_solver.ctx = Z3_mk_context(cfg);
     Z3_set_error_handler(smt_solver.ctx, smt_error_handler);
     Z3_del_config(cfg);
+
+    smt_solver.solver = Z3_mk_solver(smt_solver.ctx);
+    Z3_solver_inc_ref(smt_solver.ctx, smt_solver.solver);
+
+    Z3_symbol timeout = Z3_mk_string_symbol(smt_solver.ctx, "timeout");
+    Z3_params params  = Z3_mk_params(smt_solver.ctx);
+    Z3_params_set_uint(smt_solver.ctx, params, timeout, SOLVER_TIMEOUT_MS);
+    Z3_solver_set_params(smt_solver.ctx, smt_solver.solver, params);
 }
 
 static void smt_destroy(void)
 {
     assert(smt_solver.ctx);
+    assert(smt_solver.solver);
+    Z3_solver_dec_ref(smt_solver.ctx, smt_solver.solver);
     Z3_del_context(smt_solver.ctx);
 }
 
@@ -158,44 +188,46 @@ static void inline smt_dump_solver(Z3_solver solver)
     fclose(fp);
 }
 
-static void smt_query_check(Z3_solver solver, Z3_ast query,
-                            uint8_t preserve_solver)
+static void smt_query_check(Z3_solver solver, Z3_ast query)
 {
-    Z3_model m = 0;
-
-    /* save the current state of the context */
-    if (preserve_solver)
-        Z3_solver_push(smt_solver.ctx, solver);
-
     Z3_solver_assert(smt_solver.ctx, solver, query);
 
     smt_dump_solver(solver);
 
-    switch (Z3_solver_check(smt_solver.ctx, solver)) {
+    struct timespec start;
+    get_time(&start);
+
+    Z3_model m = NULL;
+    Z3_lbool res = Z3_solver_check(smt_solver.ctx, solver);
+
+    struct timespec end;
+    get_time(&end);
+    uint64_t elapsed_microsecs = get_diff_time_microsec(&start, &end);
+
+    switch (res) {
         case Z3_L_FALSE:
             printf("Query is UNSAT\n");
+            smt_solver.unsat_count += 1;
+            smt_solver.unsat_time += elapsed_microsecs;
             break;
         case Z3_L_UNDEF:
-            /* Z3 failed to prove/disprove f. */
             printf("Query is UNKNOWN\n");
+            smt_solver.unknown_count += 1;
+            smt_solver.unknown_time += elapsed_microsecs;
             break;
         case Z3_L_TRUE:
             printf("Query is SAT\n");
+            smt_solver.sat_count += 1;
+            smt_solver.sat_time += elapsed_microsecs;
             m = Z3_solver_get_model(smt_solver.ctx, solver);
             if (m) {
                 Z3_model_inc_ref(smt_solver.ctx, m);
                 smt_dump_solution(m);
-                // printf("solution:\n %s\n",
-                // Z3_model_to_string(smt_solver.ctx, m));
             }
             break;
     }
     if (m)
         Z3_model_dec_ref(smt_solver.ctx, m);
-
-    /* restore scope */
-    if (preserve_solver)
-        Z3_solver_pop(smt_solver.ctx, solver, 1);
 }
 
 void smt_print_ast_sort(Z3_ast e)
@@ -600,31 +632,38 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
     return r;
 }
 
-static void smt_query(Expr* query)
+static void smt_stats(Z3_solver solver)
 {
-#if 0
-    print_expr(query);
-#endif
-
-    Z3_solver solver = Z3_mk_solver(smt_solver.ctx);
-    Z3_solver_inc_ref(smt_solver.ctx, solver);
-
-    Z3_symbol timeout = Z3_mk_string_symbol(smt_solver.ctx, "timeout");
-    Z3_params params  = Z3_mk_params(smt_solver.ctx);
-    Z3_params_set_uint(smt_solver.ctx, params, timeout, SOLVER_TIMEOUT_MS);
-    Z3_solver_set_params(smt_solver.ctx, solver, params);
-#if 0
-    Z3_stats    stats   = Z3_solver_get_statistics(smt_solver.ctx, solver);
+    Z3_stats stats = Z3_solver_get_statistics(smt_solver.ctx, solver);
+    Z3_stats_inc_ref(smt_solver.ctx, stats);
     const char* s_stats = Z3_stats_to_string(smt_solver.ctx, stats);
     printf("%s\n", s_stats);
+    Z3_stats_dec_ref(smt_solver.ctx, stats);
 
-    //Z3_solver_push(smt_solver.ctx, solver);
+    if (smt_solver.sat_count > 0) {
+        printf("SAT queries: count=%lu avg=%lu\n", smt_solver.sat_count, (smt_solver.sat_time / smt_solver.sat_count));
+    }
+    if (smt_solver.unsat_count > 0) {
+        printf("UNSAT queries: count=%lu avg=%lu\n", smt_solver.unsat_count, (smt_solver.unsat_time / smt_solver.unsat_count));
+    }
+    if (smt_solver.unknown_count > 0) {
+        printf("UNKNOWN queries: count=%lu avg=%lu\n", smt_solver.unknown_count, (smt_solver.unknown_time / smt_solver.unknown_count));
+    }
+}
+
+static void smt_branch_query(Expr* query)
+{
+#if 0
+    smt_stats(smt_solver.solver);
 #endif
 
     SAYF("Translating query %lu to Z3...\n", (next_query - query_queue) - 1);
     Z3_ast z3_query = smt_query_to_z3(query, 0, 0);
-
     SAYF("DONE: Translating query to Z3\n");
+
+    Z3_solver_push(smt_solver.ctx, smt_solver.solver);
+    Z3_ast z3_neg_query = Z3_mk_not(smt_solver.ctx, z3_query); // invert branch
+
 #if 0
     Z3_set_ast_print_mode(smt_solver.ctx, Z3_PRINT_LOW_LEVEL);
     const char * z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
@@ -632,12 +671,28 @@ static void smt_query(Expr* query)
 #endif
 
     SAYF("Running a query...\n");
-    smt_query_check(solver, z3_query, 0);
+    smt_query_check(smt_solver.solver, z3_neg_query);
 
-    //Z3_solver_pop(smt_solver.ctx, solver, 1);
-    //Z3_solver_reset(smt_solver.ctx, solver);
+    Z3_solver_pop(smt_solver.ctx, smt_solver.solver, 1);
+    Z3_solver_assert(smt_solver.ctx, smt_solver.solver, z3_query);
+}
 
-    Z3_solver_dec_ref(smt_solver.ctx, solver);
+static void smt_query(Expr* query)
+{
+#if 0
+    print_expr(query);
+#endif
+
+    switch (query->opkind) {
+        case SYMBOLIC_PC:
+            ABORT("Not yet implemented"); // ToDo;
+            break;
+        case SYMBOLIC_JUMP_TABLE_ACCESS:
+            ABORT("Not yet implemented"); // ToDo;
+            break;
+        default:
+            smt_branch_query(query);
+    }
 }
 
 static int  need_to_clean = 1;

@@ -4,6 +4,7 @@
 #include <assert.h>
 
 int simple_if(uint32_t);
+int nested_if(uint32_t input);
 int mystrcmp(const char* s1);
 int all_concrete(uint32_t input);
 
@@ -48,6 +49,11 @@ uint8_t data[MAX_INPUT_SIZE] = {0};
 Testcase tests[] = {
     {.name       = "simple_if",
      .f          = F(simple_if),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 4},
+    {.name       = "nested_if",
+     .f          = F(nested_if),
      .input_type = VAR,
      .input_mode = FIXED_SIZE,
      .input_size = 4},
