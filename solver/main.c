@@ -613,6 +613,13 @@ static void smt_query(Expr* query)
     Z3_params params  = Z3_mk_params(smt_solver.ctx);
     Z3_params_set_uint(smt_solver.ctx, params, timeout, SOLVER_TIMEOUT_MS);
     Z3_solver_set_params(smt_solver.ctx, solver, params);
+#if 0
+    Z3_stats    stats   = Z3_solver_get_statistics(smt_solver.ctx, solver);
+    const char* s_stats = Z3_stats_to_string(smt_solver.ctx, stats);
+    printf("%s\n", s_stats);
+
+    //Z3_solver_push(smt_solver.ctx, solver);
+#endif
 
     SAYF("Translating query %lu to Z3...\n", (next_query - query_queue) - 1);
     Z3_ast z3_query = smt_query_to_z3(query, 0, 0);
@@ -626,6 +633,9 @@ static void smt_query(Expr* query)
 
     SAYF("Running a query...\n");
     smt_query_check(solver, z3_query, 0);
+
+    //Z3_solver_pop(smt_solver.ctx, solver, 1);
+    //Z3_solver_reset(smt_solver.ctx, solver);
 
     Z3_solver_dec_ref(smt_solver.ctx, solver);
 }
@@ -766,7 +776,7 @@ int main(int argc, char* argv[])
     if (!pool)
         PFATAL("shmat() failed");
 
-    next_query = shmat(query_shm_id, NULL, 0);
+    next_query  = shmat(query_shm_id, NULL, 0);
     query_queue = next_query;
     if (!next_query)
         PFATAL("shmat() failed");
