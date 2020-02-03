@@ -44,7 +44,7 @@ class Condition:
 
 
 class Transformer:
-    def remove_leading_zeros(args, opkind):
+    def eq_remove_leading_zeros(args, opkind):
         # from:
         #   (0x0#N .. X) == Y#M
         # where:
@@ -59,6 +59,27 @@ class Transformer:
             #
             args[0] = args[0].args[1]
             args[1].size = args[0].size
+        return args
+
+    def eq_remove_leading_zeros_with_extract(args, opkind):
+        # from:
+        #   (Z .. X)[high:0] == Y
+        # where:
+        #   - size(X) == (high + 1) == size(Y)
+        # to:
+        #   X == Y
+        assert opkind == '==' and len(args) == 2
+        if args[0].opkind == 'extract' \
+                and args[0].args[1] + 1 == args[1].size and args[0].args[2] == 0 \
+                and args[0].args[0].opkind == '..' \
+                and args[0].args[0].size - args[0].args[0].args[0].size == args[1].size:
+            #
+            if len(args[0].args[0].args) == 1:
+                args[0] = args[0].args[0].args[1]
+            else:
+                args[0] = args[0].args[0]
+                args[0].args = args[0].args[1:]
+                args[0].size = args[1].size
         return args
 
     def eq_sub_zero_to_eq(args, opkind):
@@ -77,11 +98,27 @@ class Transformer:
     def concat_concat(args, opkind):
         # from:
         #   (X .. (Y .. Z))
+        #   ((X .. Y) .. Z))
         # to:
         #   X .. Y .. Z
         assert opkind == '..'
-        if args[0].opkind == '..':  # merge concat
+        if args[0].opkind == '..':
             args = args[0].args + args[1:]
+        if args[1].opkind == '..' and len(args) == 2:
+            args = [ args[0] ] + args[1].args
+        return args
+
+    def concat_merge_const(args, opkind):
+        # from:
+        #   (0#N1 .. 0#N2 .. X)
+        # to:
+        #   (0#(N1+N2) .. X)
+        assert opkind == '..'
+        if args[0].opkind == 'const' and args[0].args[0] == 0 \
+                and args[1].opkind == 'const' and args[1].args[0] == 0:
+            n = args[0].size + args[1].size
+            args = [ args[0] ] + args[2:]
+            args[0].size = n
         return args
 
     def extract_concat_bytes(args, opkind, high, low):
@@ -117,6 +154,23 @@ class Transformer:
         #   X
         assert opkind == 'extract' and len(args) == 1
         if args[0].size == (high - low + 1):
+            return None, args[0]
+        return args, None
+
+    def extract_with_leading_zeros(args, opkind, high, low):
+        # from:
+        #   (C#M .. X)[N:0]
+        # where:
+        #   size(X) < N + 1
+        # to:
+        #   (C#P .. X)
+        # with P = N - size(X)
+        assert opkind == 'extract' and len(args) == 1
+        if args[0].opkind == '..' and args[0].args[0].opkind == 'const' \
+                and low == 0 and args[0].size - args[0].args[0].size < high + 1:
+            #
+            args[0].args[0].size = (high + 1) - (args[0].size - args[0].args[0].size)
+            args[0].args[0].args[0] = args[0].args[0].args[0] & ((1 << args[0].args[0].size) - 1)
             return None, args[0]
         return args, None
 
@@ -211,6 +265,7 @@ class Transformer:
                                                * 8), 'const', [0])]
                 for o in reversed(offsets):
                     args += [bytes[o]]
+                args = Transformer.concat_concat(args, '..')
                 return None, Condition(size, '..', args)
 
         return args, None
@@ -278,6 +333,8 @@ class Transformer:
 def get_invert_opkind(opkind):
     if opkind == '==':
         return '!='
+    elif opkind == '!=':
+        return '=='
 
     print("Inverting %s not yet implemented" % opkind)
     sys.exit(1)
@@ -328,6 +385,10 @@ def parse_condition(e):
         if expr:
             return expr
 
+        args, expr = Transformer.extract_with_leading_zeros(args, 'extract', high, low)
+        if expr:
+            return expr
+
         return Condition(e.size(), 'extract', [args[0]] + e.params())
 
     for k in range(1, e.num_args()):
@@ -338,14 +399,16 @@ def parse_condition(e):
     if opkind == 'Concat':
         opkind = '..'
         args = Transformer.concat_concat(args, opkind)
+        args = Transformer.concat_merge_const(args, opkind)
 
     elif opkind == 'If':
         opkind = 'ITE'
 
     elif opkind == '==' or opkind == '!=':
-        args = Transformer.remove_leading_zeros(args, opkind)
+        args = Transformer.eq_remove_leading_zeros(args, opkind)
         args = Transformer.eq_sub_zero_to_eq(args, opkind)
-        args = Transformer.remove_leading_zeros(args, opkind)
+        args = Transformer.eq_remove_leading_zeros_with_extract(args, opkind)
+        args = Transformer.eq_remove_leading_zeros(args, opkind)
 
         args, expr = Transformer.eq_ite_const(args, opkind)
         if expr:
