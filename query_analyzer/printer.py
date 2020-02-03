@@ -22,14 +22,14 @@ class Condition:
         elif self.opkind == 'ITE':
             assert len(self.args) == 3
             s = "if(%s) { %s } else { %s }" % (
-                self.args[0], self.args[1], self.args[2])
+                par_strip(str(self.args[0])), self.args[1], self.args[2])
         elif len(self.args) == 1:
             if self.opkind == 'const':
                 s = "%s#%s" % (hex(self.args[0]), self.size)
             elif self.opkind == 'input':
                 s = self.args[0]
             elif self.opkind == 'not':
-                s = "!(%s)" % self.args[0]
+                s = "!(%s)" % par_strip(str(self.args[0]))
             else:
                 print("Unknown %s opkind" % self.opkind)
                 sys.exit(1)
@@ -149,6 +149,21 @@ class Transformer:
 
         return args, None
 
+    def extract_and_FF(args, opkind, high, low):
+        # from:
+        #   (X & C#M)[high:0]
+        # where:
+        #   - C == ((1 << (high + 1)) - 1)
+        # to:
+        #   X[high:0]
+        assert opkind == 'extract'
+        if args[0].opkind == '&' and args[0].args[1].opkind == 'const' and low == 0:
+            mask = ((1 << (high + 1)) - 1)
+            v = args[0].args[1].args[0] & mask
+            if v == mask:
+                return None, args[0].args[0]
+        return args, None
+
     def or_lshifted_bytes(args, opkind):
         # from:
         #   ((0#N .. X1) | ((0#N .. X2) << K1) | ((0#N .. X3) << K2) | ((0#N .. X4) << K3) | [...] )
@@ -200,6 +215,65 @@ class Transformer:
 
         return args, None
 
+    def and_const_args(args, opkind):
+        # from:
+        #   C1#N & C2#N
+        # to:
+        #   (C1 & C2)#N
+        assert opkind == '&' and len(args) == 2
+        if args[0].opkind == 'const' and args[1].opkind == 'const':
+            return None, Condition(args[0].size, 'const', [ args[0].args[0] & args[1].args[0] ] )
+        return args, None
+
+    def and_arg_FF(args, opkind):
+        # from:
+        #   X & 0xFFFFF...
+        # to:
+        #   X
+        assert opkind == '&' and len(args) == 2
+        if args[0].opkind == 'const' and args[0].args[0] == ((1 << args[0].size) - 1):
+            return None, args[1]
+        if args[1].opkind == 'const' and args[1].args[0] == ((1 << args[1].size) - 1):
+            return None, args[0]
+        return args, None
+
+    def or_zero(args, opkind):
+        # from:
+        #   0#N | X
+        # to:
+        #   X
+        assert opkind == '|' and len(args) == 2
+        if args[0].opkind == 'const' and args[0].args[0] == 0:
+            if args[1].opkind == 'const' and args[1].args[0] == 0:
+                return None, Condition(args[0].size, 'const', [ 0 ] )
+            else:
+                return None, args[1]
+        elif args[1].opkind == 'const' and args[1].args[0] == 0:
+           return None, args[0]
+        return args, None
+
+    def eq_ite_const(args, opkind):
+        # from:
+        #   if (X) { 0#N } else { C#N } == 0#N
+        #   if (X) { C#N } else { 0#N } != 0#N
+        # to:
+        #   X
+        # from:
+        #   if (X) { C#N } else { 0#N } == 0#N
+        # to:
+        #   !X
+        assert opkind == '==' or opkind == '!='
+        if args[1].opkind == 'const' and args[1].args[0] == 0 \
+                and args[0].opkind == 'ITE' \
+                and args[0].args[1].opkind == 'const' \
+                and args[0].args[2].opkind == 'const':
+            if opkind == '==' and args[0].args[1].args[0] == 0:
+                return None, args[0].args[0]
+            elif opkind == '!=' and args[0].args[2].args[0] == 0:
+                return None, args[0].args[0]
+            elif opkind == '==' and args[0].args[2].args[0] == 0:
+                return None, Condition(args[0].args[0].size, 'not', [ args[0].args[0] ] )
+        return args, None
 
 def get_invert_opkind(opkind):
     if opkind == '==':
@@ -209,7 +283,7 @@ def get_invert_opkind(opkind):
     sys.exit(1)
 
 
-def parse_condition(e, invert_opkind=False):
+def parse_condition(e):
     opkind = str(e.decl())
     args = []
 
@@ -224,10 +298,14 @@ def parse_condition(e, invert_opkind=False):
 
     if opkind == 'Not':
         assert e.num_args() == 1
-        if str(e.arg(0).decl()) in ['==', '!=']:
+        if args[0].opkind == 'not':
+            return args[0].args[0]
+        elif args[0].opkind in ['==', '!=']:
+            args[0].opkind = get_invert_opkind(args[0].opkind)
             return args[0]
         else:
             return Condition(1, 'not', args)
+
     elif opkind == 'Extract':
         assert e.num_args() == 1
 
@@ -246,13 +324,14 @@ def parse_condition(e, invert_opkind=False):
         if expr:
             return expr
 
+        args, expr = Transformer.extract_and_FF(args, 'extract', high, low)
+        if expr:
+            return expr
+
         return Condition(e.size(), 'extract', [args[0]] + e.params())
 
     for k in range(1, e.num_args()):
         args += [parse_condition(e.arg(k))]
-
-    if invert_opkind:
-        opkind = get_invert_opkind(opkind)
 
     size = int(e.size()) if str(e.sort()) != 'Bool' else 1
 
@@ -268,6 +347,10 @@ def parse_condition(e, invert_opkind=False):
         args = Transformer.eq_sub_zero_to_eq(args, opkind)
         args = Transformer.remove_leading_zeros(args, opkind)
 
+        args, expr = Transformer.eq_ite_const(args, opkind)
+        if expr:
+            return expr
+
     elif opkind in ['+', '-', '<<']:
         assert e.num_args() == 2
 
@@ -280,9 +363,20 @@ def parse_condition(e, invert_opkind=False):
 
     elif opkind in ['&']:
         opkind = '&'
+        args, expr = Transformer.and_const_args(args, opkind)
+        if expr:
+            return expr
+
+        args, expr = Transformer.and_arg_FF(args, opkind)
+        if expr:
+            return expr
 
     elif opkind in ['|']:
         args, expr = Transformer.or_lshifted_bytes(args, opkind)
+        if expr:
+            return expr
+
+        args, expr = Transformer.or_zero(args, opkind)
         if expr:
             return expr
 
@@ -295,6 +389,10 @@ def parse_condition(e, invert_opkind=False):
     # print(res)
     return res
 
+def par_strip(s):
+    if s[0] == '(' and s[-1] == ')':
+        s = s[1:-1]
+    return s
 
 def traslate_to_pseudocode(query):
 
@@ -310,7 +408,7 @@ def traslate_to_pseudocode(query):
 
         cond = parse_condition(e)
         cond_counter += 1
-        s += "c%s = %s;\n" % (cond_counter, str(cond)[1:].rstrip(')'))
+        s += "c%s = %s;\n" % (cond_counter, par_strip(str(cond)))
         s += 'assert(c%s);\n\n' % cond_counter
 
     return s
