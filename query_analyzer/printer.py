@@ -44,14 +44,14 @@ class Condition:
 
 
 class Transformer:
-    def eq_remove_leading_zeros(args, opkind):
+    def bool_bin_op_remove_leading_zeros(args, opkind):
         # from:
         #   (0x0#N .. X) == Y#M
         # where:
         #   Y is a const smaller than ???
         # to:
         #   X == Y
-        assert opkind == '==' and len(args) == 2
+        assert opkind in ['==', '!=', '<=u', '>u'] and len(args) == 2
         # ToDo: larger const values
         if args[0].opkind == '..' and len(args[0].args) == 2 \
                 and args[1].opkind == 'const' and args[1].args[0] <= 0xFF \
@@ -105,7 +105,7 @@ class Transformer:
         if args[0].opkind == '..':
             args = args[0].args + args[1:]
         if args[1].opkind == '..' and len(args) == 2:
-            args = [ args[0] ] + args[1].args
+            args = [args[0]] + args[1].args
         return args
 
     def concat_merge_const(args, opkind):
@@ -117,7 +117,7 @@ class Transformer:
         if args[0].opkind == 'const' and args[0].args[0] == 0 \
                 and args[1].opkind == 'const' and args[1].args[0] == 0:
             n = args[0].size + args[1].size
-            args = [ args[0] ] + args[2:]
+            args = [args[0]] + args[2:]
             args[0].size = n
         return args
 
@@ -169,8 +169,10 @@ class Transformer:
         if args[0].opkind == '..' and args[0].args[0].opkind == 'const' \
                 and low == 0 and args[0].size - args[0].args[0].size < high + 1:
             #
-            args[0].args[0].size = (high + 1) - (args[0].size - args[0].args[0].size)
-            args[0].args[0].args[0] = args[0].args[0].args[0] & ((1 << args[0].args[0].size) - 1)
+            args[0].args[0].size = (high + 1) - \
+                (args[0].size - args[0].args[0].size)
+            args[0].args[0].args[0] = args[0].args[0].args[0] & (
+                (1 << args[0].args[0].size) - 1)
             return None, args[0]
         return args, None
 
@@ -216,6 +218,30 @@ class Transformer:
             v = args[0].args[1].args[0] & mask
             if v == mask:
                 return None, args[0].args[0]
+        return args, None
+
+    def extract_add_const(args, opkind, high, low):
+        # from:
+        #   ((C1#N .. X) + C2#M)[high:0]
+        # to:
+        #   X + C2#size(X)          when size(X) == (high + 1)
+        #   (C1#P1 + X) + C2#P2     otherwise
+        assert opkind == 'extract' and len(args) == 1
+        if args[0].opkind == '+' and low == 0 and \
+                args[0].args[1].opkind == 'const' \
+                and args[0].args[0].opkind == '..' \
+                and len(args[0].args[0].args) == 2 \
+                and args[0].args[0].args[0].opkind == 'const':
+            args[0].size = (high + 1)
+            args[0].args[1].size = (high + 1)
+            args[0].args[1].args[0] = args[0].args[1].args[0] & ((1 << (high + 1)) - 1)
+            if args[0].args[0].args[1].size == (high + 1):
+                args[0].args[0] = args[0].args[0].args[1]
+                return None, args[0]
+            else:
+                args[0].args[0].args[0].size = (high + 1) - args[0].args[0].args[1].size
+                args[0].args[0].args[0].args[0] = args[0].args[0].args[0].args[0] & ((1 << args[0].args[0].args[0].size) - 1)
+                return None, args[0]
         return args, None
 
     def or_lshifted_bytes(args, opkind):
@@ -277,7 +303,7 @@ class Transformer:
         #   (C1 & C2)#N
         assert opkind == '&' and len(args) == 2
         if args[0].opkind == 'const' and args[1].opkind == 'const':
-            return None, Condition(args[0].size, 'const', [ args[0].args[0] & args[1].args[0] ] )
+            return None, Condition(args[0].size, 'const', [args[0].args[0] & args[1].args[0]])
         return args, None
 
     def and_arg_FF(args, opkind):
@@ -300,11 +326,11 @@ class Transformer:
         assert opkind == '|' and len(args) == 2
         if args[0].opkind == 'const' and args[0].args[0] == 0:
             if args[1].opkind == 'const' and args[1].args[0] == 0:
-                return None, Condition(args[0].size, 'const', [ 0 ] )
+                return None, Condition(args[0].size, 'const', [0])
             else:
                 return None, args[1]
         elif args[1].opkind == 'const' and args[1].args[0] == 0:
-           return None, args[0]
+            return None, args[0]
         return args, None
 
     def eq_ite_const(args, opkind):
@@ -327,14 +353,19 @@ class Transformer:
             elif opkind == '!=' and args[0].args[2].args[0] == 0:
                 return None, args[0].args[0]
             elif opkind == '==' and args[0].args[2].args[0] == 0:
-                return None, Condition(args[0].args[0].size, 'not', [ args[0].args[0] ] )
+                return None, Condition(args[0].args[0].size, 'not', [args[0].args[0]])
         return args, None
+
 
 def get_invert_opkind(opkind):
     if opkind == '==':
         return '!='
     elif opkind == '!=':
         return '=='
+    elif opkind == '<=u':
+        return '>u'
+    elif opkind == '>u':
+        return '<=u'
 
     print("Inverting %s not yet implemented" % opkind)
     sys.exit(1)
@@ -343,6 +374,8 @@ def get_invert_opkind(opkind):
 def parse_condition(e):
     opkind = str(e.decl())
     args = []
+
+    op_map = {'ULE': '<=u', 'UGT': '>u'}
 
     if opkind == 'bv':
         val = int(e.params()[0])
@@ -357,7 +390,7 @@ def parse_condition(e):
         assert e.num_args() == 1
         if args[0].opkind == 'not':
             return args[0].args[0]
-        elif args[0].opkind in ['==', '!=']:
+        elif args[0].opkind in ['==', '!=', '<=u', '>u']:
             args[0].opkind = get_invert_opkind(args[0].opkind)
             return args[0]
         else:
@@ -385,7 +418,12 @@ def parse_condition(e):
         if expr:
             return expr
 
-        args, expr = Transformer.extract_with_leading_zeros(args, 'extract', high, low)
+        args, expr = Transformer.extract_with_leading_zeros(
+            args, 'extract', high, low)
+        if expr:
+            return expr
+
+        args, expr = Transformer.extract_add_const(args, 'extract', high, low)
         if expr:
             return expr
 
@@ -405,10 +443,10 @@ def parse_condition(e):
         opkind = 'ITE'
 
     elif opkind == '==' or opkind == '!=':
-        args = Transformer.eq_remove_leading_zeros(args, opkind)
+        args = Transformer.bool_bin_op_remove_leading_zeros(args, opkind)
         args = Transformer.eq_sub_zero_to_eq(args, opkind)
         args = Transformer.eq_remove_leading_zeros_with_extract(args, opkind)
-        args = Transformer.eq_remove_leading_zeros(args, opkind)
+        args = Transformer.bool_bin_op_remove_leading_zeros(args, opkind)
 
         args, expr = Transformer.eq_ite_const(args, opkind)
         if expr:
@@ -417,8 +455,10 @@ def parse_condition(e):
     elif opkind in ['+', '-', '<<']:
         assert e.num_args() == 2
 
-    elif opkind == 'ULE':
-        opkind = '<=u'
+    elif opkind in op_map:
+
+        opkind = op_map[opkind]
+        args = Transformer.bool_bin_op_remove_leading_zeros(args, opkind)
 
     elif opkind == 'And':
         assert str(e.sort()) == 'Bool'
@@ -452,10 +492,12 @@ def parse_condition(e):
     # print(res)
     return res
 
+
 def par_strip(s):
     if s[0] == '(' and s[-1] == ')':
         s = s[1:-1]
     return s
+
 
 def traslate_to_pseudocode(query):
 
