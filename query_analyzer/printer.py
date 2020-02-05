@@ -51,9 +51,10 @@ class Transformer:
         #   Y is a const smaller than ???
         # to:
         #   X == Y
-        assert opkind in ['==', '!=', '<=u', '>u'] and len(args) == 2
+        if opkind not in ['==', '!=', '<=u', '>u'] or len(args) != 2:
+            return args
         # ToDo: larger const values
-        if args[0].opkind == '..' and len(args[0].args) == 2 \
+        if args[0].opkind == '..' \
                 and args[1].opkind == 'const' and args[1].args[0] <= 0xFF \
                 and args[0].args[0].opkind == 'const' and args[0].args[0].args[0] == 0:
             #
@@ -157,24 +158,43 @@ class Transformer:
         # from:
         #   (X1 .. X2 .. X3 .. [...])[high:low]
         # to:
-        #   (Xi .. X(i+1))
+        #   (Xi .. X(i+1) .. [...])
         # keeping Xi if within [high:low]
         assert opkind == 'extract' and len(args) == 1
         if args[0].opkind == '..':
             slice = 0
             arg_to_keep = []
+            sum_size_arg_to_keep = 0
             start = None
             for c in reversed(args[0].args):
                 if (slice >= low or (slice + c.size - 1) >= low) and slice <= high:
                     arg_to_keep = arg_to_keep + [c]
+                    sum_size_arg_to_keep += c.size
                     if start is None:
                         start = slice
                 slice += c.size
             assert len(arg_to_keep) > 0 and start is not None
-            if len(arg_to_keep) == 1:
+            if len(arg_to_keep) == 1 and sum_size_arg_to_keep == (high - low) + 1:
                 return None, arg_to_keep[0]
             else:
-                pass  # ToDo
+                if sum_size_arg_to_keep == (high - low) + 1:
+                    args[0].args = arg_to_keep
+                    args[0].size = (high - low) + 1
+                    return None, args[0]
+        return args, None
+
+    def extract_concat_bytes_const(args, opkind, high, low):
+        # from:
+        #   (0#N .. X)[high:low]
+        # where: low >= size(X)
+        # to:
+        #   0#(high - low + 1)
+        # keeping Xi if within [high:low]
+        assert opkind == 'extract' and len(args) == 1
+        if args[0].opkind == '..' and args[0].args[0].opkind == 'const' \
+                and args[0].args[0].args[0] == 0 and low >= (args[0].size - args[0].args[0].size):
+            args[0].args[0].size = (high - low) + 1
+            return None, args[0].args[0]
         return args, None
 
     def extract_same_size(args, opkind, high, low):
@@ -419,7 +439,8 @@ class Transformer:
         #   0#N | X
         # to:
         #   X
-        assert opkind == '|' and len(args) == 2
+        if opkind != '|' or len(args) != 2:
+            return args, None
         if args[0].opkind == 'const' and args[0].args[0] == 0:
             if args[1].opkind == 'const' and args[1].args[0] == 0:
                 return None, Condition(args[0].size, 'const', [0])
@@ -496,7 +517,7 @@ def parse_condition(e):
     opkind = str(e.decl())
     args = []
 
-    op_map = {'ULE': '<=u', 'UGT': '>u'}
+    op_map = {'ULE': '<=u', 'UGT': '>u', 'UDiv': '/u', 'bvudiv_i': '/u_i'}
 
     if opkind == 'bv':
         val = int(e.params()[0])
@@ -556,6 +577,10 @@ def parse_condition(e):
         if expr:
             return expr
 
+        args, expr = Transformer.extract_concat_bytes_const(args, 'extract', high, low)
+        if expr:
+            return expr
+
         return Condition(e.size(), 'extract', [args[0]] + e.params())
 
     for k in range(1, e.num_args()):
@@ -586,7 +611,7 @@ def parse_condition(e):
         if expr:
             return expr
 
-    elif opkind in ['+', '-', '<<', 'LShR', '^']:
+    elif opkind in ['+', '-', '<<', 'LShR', '^', '*']:
         assert e.num_args() == 2
         if opkind == 'LShR':
             opkind = '>>l'
@@ -631,6 +656,7 @@ def parse_condition(e):
             return expr
 
     else:
+        assert opkind not in op_map
         print("parse_condition for opkind %s not yet implemented" % opkind)
         sys.exit(1)
 
@@ -671,16 +697,17 @@ if len(sys.argv) != 2:
 
 query_file = sys.argv[1]
 query = z3.parse_smt2_file(query_file)
-#query = z3.simplify(query)
 
-print(query)
-print("\n##########\n")
+if False:
+    query = z3.simplify(query)
+    print(query)
+    print("\n##########\n")
 
 if str(query) not in ['True', 'False']:
     code = traslate_to_pseudocode(query)
     print(code)
 
-if True:
+if False:
     solver = z3.Solver()
     solver.add(query)
     start = time.time()
