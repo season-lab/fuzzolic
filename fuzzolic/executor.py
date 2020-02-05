@@ -156,9 +156,9 @@ class Executor(object):
 
         if self.debug != 'gdb':
             p_tracer_args += ['-symbolic']
-            if self.debug == 'trace':
+            if self.debug == 'trace' or self.debug == 'no_solver': # 
                 p_tracer_args += ['-d']
-                p_tracer_args += ['in_asm,op_opt,out_asm']  # 'in_asm,op_opt,out_asm'
+                p_tracer_args += ['in_asm,op']  # 'in_asm,op_opt,out_asm'
 
         args = self.binary_args
         if not self.testcase_from_stdin:
@@ -179,6 +179,8 @@ class Executor(object):
                                     bufsize=0 if self.debug == 'gdb' else -1,
                                     #universal_newlines=True if self.debug == 'gdb' else False
                                     )
+
+        # print("Tracer started")
 
         # emit testcate on stdin
         if self.debug != 'gdb':
@@ -203,6 +205,7 @@ class Executor(object):
             p_tracer.stdin.close()
 
         p_tracer.wait()
+        # print("Tracer completed")
         p_tracer_log.close()
 
         if p_tracer.returncode != 0:
@@ -212,7 +215,8 @@ class Executor(object):
             if self.debug != 'no_solver':
                 p_solver.send_signal(signal.SIGINT)
 
-        p_solver.wait()
+        if self.debug != 'no_solver':
+            p_solver.wait()
         """
         if self.debug != 'no_solver':
             try:
@@ -257,7 +261,7 @@ class Executor(object):
             # check whether this a duplicate test case
             discard = False
             known_tests = glob.glob(
-                self.__get_test_cases_dir() + "/test_case_*.dat")
+                self.__get_test_cases_dir() + "/*.dat")
             for kt in known_tests:
                 if filecmp.cmp(kt, t):
                     print('Discarding %s since it is a duplicate' % t)
@@ -312,5 +316,7 @@ class Executor(object):
             testcase = self.__pick_testcase()
             self.__check_shutdown_flag()
 
+        if len(self.__warning_log):
+            print()
         for w in self.__warning_log:
             print(w)

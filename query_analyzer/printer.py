@@ -676,14 +676,16 @@ query = z3.parse_smt2_file(query_file)
 print(query)
 print("\n##########\n")
 
-if False:
-    solver = z3.Solver()
-    solver.add(query)
-    start = time.time()
-    solver.check()
-    end = time.time()
-    print(end - start)
-
 if str(query) not in ['True', 'False']:
     code = traslate_to_pseudocode(query)
     print(code)
+
+if True:
+    solver = z3.Solver()
+    solver.add(query)
+    start = time.time()
+    r = solver.check()
+    end = time.time()
+    print("r = %s - time %s\n" % (r , str(end - start)))
+
+

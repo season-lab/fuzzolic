@@ -715,15 +715,17 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
 
             // case RCL:
 
-        case CMPB:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 1);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 1);
-            // printf("CMPB\n");
+        case CMP_EQ:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            size_t slice = (uintptr_t) query->op3;
+            assert(slice <= sizeof(uintptr_t));
+            // printf("CMP_EQ\n");
             // smt_print_ast_sort(op1);
             // smt_print_ast_sort(op2);
             r            = Z3_mk_eq(ctx, op1, op2);
-            Z3_ast ones  = smt_new_const(0xFF, 8);
-            Z3_ast zeros = smt_new_const(0, 8);
+            Z3_ast ones  = smt_new_const((1 << (8 * slice)) - 1, slice);
+            Z3_ast zeros = smt_new_const(0, slice);
             r            = Z3_mk_ite(ctx, r, ones, zeros);
             break;
         case PMOVMSKB:

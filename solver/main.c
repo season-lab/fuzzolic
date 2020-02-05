@@ -18,8 +18,8 @@ static int expr_pool_shm_id = -1;
 Expr*      pool;
 
 static int    query_shm_id = -1;
-static Expr** next_query;
-static Expr** query_queue;
+static Query* next_query;
+static Query* query_queue;
 
 typedef struct SMTSolver {
     Z3_context ctx;
@@ -203,6 +203,8 @@ static void smt_query_check(Z3_solver solver, Z3_ast query)
     struct timespec end;
     get_time(&end);
     uint64_t elapsed_microsecs = get_diff_time_microsec(&start, &end);
+
+    printf("Elapsed: %lu ms\n", elapsed_microsecs / 1000);
 
     switch (res) {
         case Z3_L_FALSE:
@@ -585,7 +587,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
 
         // x86 specific
         case RCL:
-        case CMPB:
+        case CMP_EQ:
         case PMOVMSKB:
         case EFLAGS_ALL_ADD:
         case EFLAGS_ALL_ADCB:
@@ -664,7 +666,10 @@ static void smt_branch_query(Expr* query)
     Z3_solver_push(smt_solver.ctx, smt_solver.solver);
     Z3_ast z3_neg_query = Z3_mk_not(smt_solver.ctx, z3_query); // invert branch
 
-#if 0
+    //printf("%s\n", Z3_simplify_get_help(smt_solver.ctx));
+    // z3_neg_query = Z3_simplify(smt_solver.ctx, z3_neg_query);
+
+#if 1
     Z3_set_ast_print_mode(smt_solver.ctx, Z3_PRINT_LOW_LEVEL);
     const char * z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
     SAYF("%s\n", z3_query_str);
@@ -677,13 +682,13 @@ static void smt_branch_query(Expr* query)
     Z3_solver_assert(smt_solver.ctx, smt_solver.solver, z3_query);
 }
 
-static void smt_query(Expr* query)
+static void smt_query(Query* q)
 {
 #if 0
     print_expr(query);
 #endif
 
-    switch (query->opkind) {
+    switch (q->query->opkind) {
         case SYMBOLIC_PC:
             ABORT("Not yet implemented"); // ToDo;
             break;
@@ -691,7 +696,8 @@ static void smt_query(Expr* query)
             ABORT("Not yet implemented"); // ToDo;
             break;
         default:
-            smt_branch_query(query);
+            printf("\nBranch at 0x%lx\n", q->address);
+            smt_branch_query(q->query);
     }
 }
 
@@ -816,7 +822,7 @@ int main(int argc, char* argv[])
         PFATAL("shmget() failed");
 
     query_shm_id = shmget(QUERY_SHM_KEY, // IPC_PRIVATE,
-                          sizeof(Expr*) * EXPR_QUERY_CAPACITY,
+                          sizeof(Query) * EXPR_QUERY_CAPACITY,
                           IPC_CREAT | 0666); /*| IPC_EXCL */
     if (query_shm_id < 0)
         PFATAL("shmget() failed");
@@ -836,13 +842,13 @@ int main(int argc, char* argv[])
     if (!next_query)
         PFATAL("shmat() failed");
 
-    *next_query = 0;
+    next_query[0].query = 0;
 
     // reset pool and query queue (this may take some time...)
     memset(pool, 0, sizeof(Expr) * EXPR_POOL_CAPACITY);
-    memset(next_query, 0, sizeof(Expr*) * EXPR_QUERY_CAPACITY);
+    memset(next_query, 0, sizeof(Query) * EXPR_QUERY_CAPACITY);
 
-    *next_query = (void*)SHM_READY;
+    next_query[0].query = (void*)SHM_READY;
     next_query++;
 
     struct timespec polling_time;
@@ -853,18 +859,22 @@ int main(int argc, char* argv[])
 #endif
 
     while (1) {
-        if (*next_query == 0) {
+        if (next_query[0].query == NULL) {
             nanosleep(&polling_time, NULL);
         } else {
-            if (*next_query == FINAL_QUERY) {
+            if (next_query[0].query == FINAL_QUERY) {
                 SAYF("Reached final query. Exiting...\n");
                 exit(0);
             }
 #if 0
             SAYF("Got a query...\n");
 #endif
-            smt_query(*next_query);
+            smt_query(&next_query[0]);
             next_query++;
+
+            if (next_query - query_queue > 30) {
+                exit(0);
+            }
         }
     }
 
