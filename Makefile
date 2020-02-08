@@ -45,7 +45,7 @@ build: build-solver build-tracer
 	echo "Built."
 
 build-solver:
-	cd solver && make build
+	cd solver && make
 
 build-tracer:
 	cd tracer && make
