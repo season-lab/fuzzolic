@@ -5,6 +5,66 @@ import time
 
 cond_counter = 0
 
+def longestRepeatedSubstring(str):
+    # Returns the longest repeating non-overlapping
+    # substring in str
+
+    n = len(str)
+    LCSRe = [[0 for x in range(n + 1)]
+             for y in range(n + 1)]
+
+    res = ""  # To store result
+    res_length = 0  # To store length of result
+
+    # building table in bottom-up manner
+    index = 0
+    for i in range(1, n + 1):
+        for j in range(i + 1, n + 1):
+
+            # (j-i) > LCSRe[i-1][j-1] to remove
+            # overlapping
+            if (str[i - 1] == str[j - 1] and
+                    LCSRe[i - 1][j - 1] < (j - i)):
+                LCSRe[i][j] = LCSRe[i - 1][j - 1] + 1
+
+                # updating maximum length of the
+                # substring and updating the finishing
+                # index of the suffix
+                if (LCSRe[i][j] > res_length):
+                    res_length = LCSRe[i][j]
+                    index = max(i, index)
+
+            else:
+                LCSRe[i][j] = 0
+
+    # If we have non-empty result, then insert
+    # all characters from first character to
+    # last character of string
+    if (res_length > 0):
+        for i in range(index - res_length + 1,
+                       index + 1):
+            res = res + str[i - 1]
+
+    if res is None:
+        return ''
+
+    res = res.strip()
+    par = []
+    largest = None
+    for k in range(len(res)):
+        if res[k] == '(':
+            par.append(k)
+        elif res[k] == ')':
+            if len(par) == 0:
+                break
+            slice = [par.pop(), k]
+            if largest is None or slice[1] - slice[0] > largest[1] - largest[0]:
+                largest = slice
+    if largest is None:
+        return ''
+    else:
+        return res[largest[0]:largest[1]+1]
+
 
 class Condition:
     def __init__(self, size, opkind, args):
@@ -12,6 +72,10 @@ class Condition:
         self.opkind = opkind
         self.args = args
         assert isinstance(args, list)
+        assert len(args) > 0
+
+        if opkind == '-':
+            assert len(args) == 2
 
     def __repr__(self):
 
@@ -30,6 +94,8 @@ class Condition:
                 s = self.args[0]
             elif self.opkind == 'not':
                 s = "!(%s)" % par_strip(str(self.args[0]))
+            elif self.opkind == '~':
+                s = "~(%s)" % par_strip(str(self.args[0]))
             else:
                 print("Unknown %s opkind" % self.opkind)
                 sys.exit(1)
@@ -46,7 +112,7 @@ class Condition:
 class Transformer:
     def bool_bin_op_remove_leading_zeros(args, opkind):
         # from:
-        #   (0x0#N .. X) == Y#M
+        #   (0x0#N .. X) == (0x0#N .. Z)
         # where:
         #   Y is a const smaller than ???
         # to:
@@ -61,6 +127,32 @@ class Transformer:
             args[0] = args[0].args[1]
             args[1].size = args[0].size
         return args
+
+    def bool_bin_op_remove_leading_zeros_both(args, opkind):
+        # from:
+        #   (0x0#N .. X) == (0x0#N .. Z)
+        # to:
+        #   X == Y
+        if opkind in ['==', '!='] \
+                and args[0].opkind == '..' and args[1].opkind == '..' \
+                and args[0].args[0].opkind == 'const' and args[0].args[0].args[0] == 0 \
+                and args[1].args[0].opkind == 'const' and args[1].args[0].args[0] == 0 \
+                and args[0].args[0].size == args[1].args[0].size:
+            #
+            if len(args[0].args) == 2:
+                args[0] = args[0].args[1]
+            else:
+                args[0].size = args[0].size - args[0].args[0].size
+                args[0].args = args[0].args[1:]
+
+            if len(args[1].args) == 2:
+                args[1] = args[1].args[1]
+            else:
+                args[1].size = args[1].size - args[1].args[0].size
+                args[1].args = args[1].args[1:]
+
+            return None, Condition(args[0].size, opkind, args)
+        return args, None
 
     def eq_remove_leading_zeros_with_extract(args, opkind):
         # from:
@@ -81,6 +173,7 @@ class Transformer:
                 args[0] = args[0].args[0]
                 args[0].args = args[0].args[1:]
                 args[0].size = args[1].size
+        assert len(args[0].args) > 0
         return args
 
     def eq_sub_zero_to_eq(args, opkind):
@@ -106,6 +199,7 @@ class Transformer:
         assert opkind == '==' and len(args) == 2
         if args[1].opkind == 'const' and args[1].args[0] == 0 \
                 and args[0].opkind == 'extract' and args[0].args[0].opkind == '-' \
+                and len(args[0].args[0].args) == 2 \
                 and args[0].args[0].args[0].opkind == '..' \
                 and args[0].args[0].args[1].opkind == '..' \
                 and args[0].args[0].args[0].args[0].opkind == 'const' \
@@ -118,11 +212,13 @@ class Transformer:
                 args[0].args[0].args[0] = args[0].args[0].args[0].args[1]
             else:
                 args[0].args[0].args[0].args = args[0].args[0].args[0].args[1:]
+                assert len(args[0].args[0].args[0].args) > 0
                 args[0].args[0].args[0].size = (args[0].args[1] + 1)
             if len(args[0].args[0].args[1].args) == 2:
                 args[0].args[0].args[1] = args[0].args[0].args[1].args[1]
             else:
                 args[0].args[0].args[1].args = args[0].args[0].args[1].args[1:]
+                assert len(args[0].args[0].args[1].args) > 0
                 args[0].args[0].args[1].size = (args[0].args[1] + 1)
             args[1] = args[0].args[0].args[1]
             args[0] = args[0].args[0].args[0]
@@ -139,6 +235,7 @@ class Transformer:
             args = args[0].args + args[1:]
         if args[1].opkind == '..' and len(args) == 2:
             args = [args[0]] + args[1].args
+        assert len(args) > 0
         return args
 
     def concat_merge_const(args, opkind):
@@ -151,7 +248,9 @@ class Transformer:
                 and args[1].opkind == 'const' and args[1].args[0] == 0:
             n = args[0].size + args[1].size
             args = [args[0]] + args[2:]
+            assert len(args) > 0
             args[0].size = n
+        assert len(args) > 0
         return args
 
     def extract_concat_bytes(args, opkind, high, low):
@@ -168,7 +267,7 @@ class Transformer:
             start = None
             for c in reversed(args[0].args):
                 if (slice >= low or (slice + c.size - 1) >= low) and slice <= high:
-                    arg_to_keep = arg_to_keep + [c]
+                    arg_to_keep = [c] + arg_to_keep
                     sum_size_arg_to_keep += c.size
                     if start is None:
                         start = slice
@@ -179,6 +278,7 @@ class Transformer:
             else:
                 if sum_size_arg_to_keep == (high - low) + 1:
                     args[0].args = arg_to_keep
+                    assert len(args[0].args) > 0
                     args[0].size = (high - low) + 1
                     return None, args[0]
         return args, None
@@ -207,6 +307,7 @@ class Transformer:
         assert opkind == 'extract' and len(args) == 1
         if args[0].size == (high - low + 1):
             return None, args[0]
+        assert len(args) > 0
         return args, None
 
     def extract_with_leading_zeros(args, opkind, high, low):
@@ -226,6 +327,7 @@ class Transformer:
             args[0].args[0].args[0] = args[0].args[0].args[0] & (
                 (1 << args[0].args[0].size) - 1)
             return None, args[0]
+        assert len(args) > 0
         return args, None
 
     def extract_sub_to_sub(args, opkind, high, low):
@@ -236,7 +338,8 @@ class Transformer:
         # to:
         #   X - C#size(X)
         assert opkind == 'extract' and len(args) == 1
-        if args[0].opkind == '-' and args[0].args[1].opkind == 'const' \
+        if args[0].opkind == '-' and len(args[0].args) == 2 \
+                and args[0].args[1].opkind == 'const' \
                 and low == 0 and args[0].args[1].args[0] <= ((1 << (high + 1)) - 1) \
                 and args[0].args[0].opkind == '..' \
                 and args[0].args[0].args[0].size >= (args[0].args[0].size - (high + 1)) \
@@ -250,11 +353,14 @@ class Transformer:
             if len(args[0].args[0].args[1:]) == 1:
                 a = args[0].args[0].args[1]
             else:
+                assert len(args[0].args[0].args[1:]) > 0
                 a = Condition(high + 1, '..', args[0].args[0].args[1:])
             args = [a, args[0].args[1]]
             args[1].size = high + 1
+            assert len(args) > 0
             return None, Condition(high - low + 1, '-', args)
 
+        assert len(args) > 0
         return args, None
 
     def extract_binop_safe_const(args, opkind, high, low):
@@ -269,7 +375,7 @@ class Transformer:
         op = args[0].opkind
         if op not in ['^'] or len(args[0].args) != 2:
             return args, None
-        #print(args[0])
+        # print(args[0])
         if args[0].args[1].opkind == 'const' \
                 and low == 0 and args[0].args[1].args[0] <= ((1 << (high + 1)) - 1) \
                 and args[0].args[0].opkind == '..' \
@@ -281,11 +387,14 @@ class Transformer:
                               (args[0].args[0].size - (high + 1)), 'const', [0])
                 args[0].args[0].args = [args[0].args[0].args[0]] + \
                     [a] + args[0].args[0].args[1:]
+                assert len(args[0].args[0].args) > 0
             if len(args[0].args[0].args[1:]) == 1:
                 a = args[0].args[0].args[1]
             else:
+                assert len(args[0].args[0].args[1:]) > 0
                 a = Condition(high + 1, '..', args[0].args[0].args[1:])
             args = [a, args[0].args[1]]
+            assert len(args) > 0
             args[1].size = high + 1
             return None, Condition(high - low + 1, '-', args)
 
@@ -304,6 +413,7 @@ class Transformer:
             v = args[0].args[1].args[0] & mask
             if v == mask:
                 return None, args[0].args[0]
+        assert len(args) > 0
         return args, None
 
     def or_FF(args, opkind):
@@ -333,14 +443,18 @@ class Transformer:
                 and args[0].args[0].args[0].opkind == 'const':
             args[0].size = (high + 1)
             args[0].args[1].size = (high + 1)
-            args[0].args[1].args[0] = args[0].args[1].args[0] & ((1 << (high + 1)) - 1)
+            args[0].args[1].args[0] = args[0].args[1].args[0] & (
+                (1 << (high + 1)) - 1)
             if args[0].args[0].args[1].size == (high + 1):
                 args[0].args[0] = args[0].args[0].args[1]
                 return None, args[0]
             else:
-                args[0].args[0].args[0].size = (high + 1) - args[0].args[0].args[1].size
-                args[0].args[0].args[0].args[0] = args[0].args[0].args[0].args[0] & ((1 << args[0].args[0].args[0].size) - 1)
+                args[0].args[0].args[0].size = (
+                    high + 1) - args[0].args[0].args[1].size
+                args[0].args[0].args[0].args[0] = args[0].args[0].args[0].args[0] & (
+                    (1 << args[0].args[0].args[0].size) - 1)
                 return None, args[0]
+        assert len(args) > 0
         return args, None
 
     def or_lshifted_bytes(args, opkind):
@@ -372,6 +486,7 @@ class Transformer:
                 and a.args[0].args[0].opkind == 'const' and a.args[0].args[0].args[0] == 0 \
                     and a.args[0].args[1].opkind == 'input' and a.args[0].args[1].size == 8:
                 #
+                # print("bytes[%s] = %s" % (int(a.args[1].args[0] / 8), a.args[0].args[1]))
                 bytes[int(a.args[1].args[0] / 8)] = a.args[0].args[1]
                 continue
             pattern_lshift_bytes = False
@@ -391,8 +506,10 @@ class Transformer:
                 for o in reversed(offsets):
                     args += [bytes[o]]
                 args = Transformer.concat_concat(args, '..')
+                assert len(args) > 0
                 return None, Condition(size, '..', args)
 
+        assert len(args) > 0
         return args, None
 
     def shift_to_const(args, opkind):
@@ -409,8 +526,8 @@ class Transformer:
                 and args[0].args[0].args[0] == 0 and args[0].args[1].size == args[1].args[0]:
             args[0].args[0].size = args[0].args[0].size + args[0].args[1].size
             return None, args[0].args[0]
+        assert len(args) > 0
         return args, None
-
 
     def and_const_args(args, opkind):
         # from:
@@ -419,6 +536,7 @@ class Transformer:
         #   (C1 & C2)#N
         assert opkind == '&' and len(args) == 2
         if args[0].opkind == 'const' and args[1].opkind == 'const':
+            assert len([args[0].args[0] & args[1].args[0]]) > 0
             return None, Condition(args[0].size, 'const', [args[0].args[0] & args[1].args[0]])
         return args, None
 
@@ -487,13 +605,20 @@ class Transformer:
             # ToDo: this should be a logical shift! FixMe
             args[0].args[0] = args[0].args[0] >> args[1].args[0]
             return None, args[0]
+        if opkind == '+' and len(args) == 3 \
+                and args[1].opkind == 'const' and args[2].opkind == 'const':
+            args[1].args[0] = args[1].args[0] + args[2].args[0]
+            args.pop()
+            assert len(args) > 0
+            return args, None
         if opkind == 'extract' and args[0].opkind == 'const' and low == 0:
             args[0].args[0] = args[0].args[0] & ((1 << (high + 1)) - 1)
             args[0].size = high + 1
             return None, args[0]
         if opkind == '..' and len(args) == 2 \
                 and args[0].opkind == 'const' and args[1].opkind == 'const':
-            args[1].args[0] = args[1].args[0] | (args[0].args[0] << args[1].size)
+            args[1].args[0] = args[1].args[0] | (
+                args[0].args[0] << args[1].size)
             args[1].size = args[1].size + args[0].size
             return None, args[1]
         return args, None
@@ -508,6 +633,10 @@ def get_invert_opkind(opkind):
         return '>u'
     elif opkind == '>u':
         return '<=u'
+    elif opkind == '>=u':
+        return '<u'
+    elif opkind == '>=':
+        return '<'
 
     print("Inverting %s not yet implemented" % opkind)
     sys.exit(1)
@@ -517,7 +646,8 @@ def parse_condition(e):
     opkind = str(e.decl())
     args = []
 
-    op_map = {'ULE': '<=u', 'UGT': '>u', 'UDiv': '/u', 'bvudiv_i': '/u_i'}
+    op_map = {'ULE': '<=u', 'UGT': '>u', 'UDiv': '/u',
+              'bvudiv_i': '/u_i', 'UGE': '>=u', '>=': '>=', '<=': '<='}
 
     if opkind == 'bv':
         val = int(e.params()[0])
@@ -532,11 +662,19 @@ def parse_condition(e):
         assert e.num_args() == 1
         if args[0].opkind == 'not':
             return args[0].args[0]
-        elif args[0].opkind in ['==', '!=', '<=u', '>u']:
+        elif args[0].opkind in ['==', '!=', '<=u', '>u', '>=u', '>=']:
             args[0].opkind = get_invert_opkind(args[0].opkind)
             return args[0]
         else:
             return Condition(1, 'not', args)
+
+    elif opkind == '~':
+        assert e.num_args() == 1
+        return Condition(e.size(), '~', args)
+
+    elif opkind == 'SignExt':
+        assert e.num_args() == 1
+        return Condition(e.size(), 'SExt', [args[0]] + e.params())
 
     elif opkind == 'Extract':
         assert e.num_args() == 1
@@ -569,7 +707,8 @@ def parse_condition(e):
         if expr:
             return expr
 
-        args, expr = Transformer.extract_binop_safe_const(args, 'extract', high, low)
+        args, expr = Transformer.extract_binop_safe_const(
+            args, 'extract', high, low)
         if expr:
             return expr
 
@@ -577,7 +716,8 @@ def parse_condition(e):
         if expr:
             return expr
 
-        args, expr = Transformer.extract_concat_bytes_const(args, 'extract', high, low)
+        args, expr = Transformer.extract_concat_bytes_const(
+            args, 'extract', high, low)
         if expr:
             return expr
 
@@ -607,12 +747,16 @@ def parse_condition(e):
         args = Transformer.eq_remove_leading_zeros_with_extract(args, opkind)
         args = Transformer.bool_bin_op_remove_leading_zeros(args, opkind)
 
+        args, expr = Transformer.bool_bin_op_remove_leading_zeros_both(
+            args, opkind)
+        if expr:
+            return expr
+
         args, expr = Transformer.eq_ite_const(args, opkind)
         if expr:
             return expr
 
     elif opkind in ['+', '-', '<<', 'LShR', '^', '*']:
-        assert e.num_args() == 2
         if opkind == 'LShR':
             opkind = '>>l'
             args, expr = Transformer.shift_to_const(args, opkind)
@@ -682,10 +826,23 @@ def traslate_to_pseudocode(query):
     else:
         conjs = query.children()
 
+    vars = {}
+
     for e in conjs:
-        cond = parse_condition(e)
+        cond = str(parse_condition(e))
+        for v in vars:
+            cond = cond.replace(vars[v], 'x%s' % v)
+
+        r = longestRepeatedSubstring(cond).strip()
+        while len(r) > 6 and r[0] == '(' and r[-1] == ')':
+            v = len(vars)
+            vars[v] = r
+            s += "x%s = %s;\n" % (v, par_strip(vars[v]))
+            cond = cond.replace(r, "x%s" % v)
+            r = longestRepeatedSubstring(cond)
+
         cond_counter += 1
-        s += "c%s = %s;\n" % (cond_counter, par_strip(str(cond)))
+        s += "c%s = %s;\n" % (cond_counter, par_strip(cond))
         s += 'assert(c%s);\n\n' % cond_counter
 
     return s
@@ -707,12 +864,28 @@ if str(query) not in ['True', 'False']:
     code = traslate_to_pseudocode(query)
     print(code)
 
-if False:
+if True:
+    solver = z3.Solver()
+    prev = query.children()[:-1]
+    assert len(query.children()) - 1 == len(prev)
+    for c in prev:
+        solver.add(c)
+    start = time.time()
+    r = solver.check()
+    end = time.time()
+    print("prev branches = %s - time %s\n" % (r, str(end - start)))
+
+    solver = z3.Solver()
+    solver.add(query.children()[-1])
+    start = time.time()
+    r = solver.check()
+    end = time.time()
+    print("current branch = %s - time %s\n" % (r, str(end - start)))
+
+if True:
     solver = z3.Solver()
     solver.add(query)
     start = time.time()
     r = solver.check()
     end = time.time()
-    print("r = %s - time %s\n" % (r , str(end - start)))
-
-
+    print("query = %s - time %s\n" % (r, str(end - start)))
