@@ -29,7 +29,7 @@ Z3_ast smt_new_symbol(uintptr_t id, const char* name, size_t n_bits, Expr* e);
 Z3_ast smt_bv_extract(Z3_ast e, size_t width);
 Z3_ast smt_to_bv(Z3_ast e);
 Z3_ast smt_to_bv_n(Z3_ast e, size_t width);
-void smt_bv_resize(Z3_ast* a, Z3_ast* b);
+void smt_bv_resize(Z3_ast* a, Z3_ast* b, ssize_t size);
 
 void            add_expr_annotation(Expr* e, ExprAnnotation* ea);
 ExprAnnotation* get_expr_annotation(Expr* e);

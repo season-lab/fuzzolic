@@ -703,6 +703,7 @@ static inline Z3_ast eflags_all_adcxo(Z3_context ctx, Expr* query, size_t width,
 }
 #undef VERBOSE
 
+#define VERBOSE 0
 Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
                             size_t width)
 {
@@ -715,17 +716,21 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
 
             // case RCL:
 
-        case CMP_EQ:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+        case CMP_EQ:;
             size_t slice = (uintptr_t) query->op3;
+            if (slice > sizeof(uintptr_t))
+                printf("CMPQ slice=%ld\n", slice);
             assert(slice <= sizeof(uintptr_t));
-            // printf("CMP_EQ\n");
-            // smt_print_ast_sort(op1);
-            // smt_print_ast_sort(op2);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, slice);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, slice);
+#if VERBOSE
+            printf("CMP_EQ\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
             r            = Z3_mk_eq(ctx, op1, op2);
-            Z3_ast ones  = smt_new_const((1 << (8 * slice)) - 1, slice);
-            Z3_ast zeros = smt_new_const(0, slice);
+            Z3_ast ones  = smt_new_const((1 << (8 * slice)) - 1, slice * 8);
+            Z3_ast zeros = smt_new_const(0, slice * 8);
             r            = Z3_mk_ite(ctx, r, ones, zeros);
             break;
         case PMOVMSKB:
@@ -814,3 +819,4 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
 
     return r;
 }
+#undef VERBOSE
