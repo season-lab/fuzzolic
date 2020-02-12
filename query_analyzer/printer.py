@@ -3,7 +3,8 @@ import os
 import sys
 import time
 
-cond_counter = 0
+cond_counter = -1
+
 
 def longestRepeatedSubstring(str):
     # Returns the longest repeating non-overlapping
@@ -71,6 +72,8 @@ class Condition:
         self.size = size
         self.opkind = opkind
         self.args = args
+        self.vars = None
+        self.ops = None
         assert isinstance(args, list)
         assert len(args) > 0
 
@@ -107,6 +110,35 @@ class Condition:
                     s += " %s %s" % (self.opkind, self.args[k])
             s += ')'
         return s
+
+    def get_vars(self):
+        if self.vars is None:
+            if self.opkind in ['extract', 'SExt']:
+                self.vars = self.args[0].get_vars()
+            elif self.opkind == 'const':
+                self.vars = set()
+            elif self.opkind == 'input':
+                self.vars = {self.args[0]}
+            else:
+                self.vars = set()
+                for a in self.args:
+                    self.vars = self.vars | a.get_vars()
+        return self.vars
+
+    def get_ops(self):
+        if self.ops is None:
+            if self.opkind == 'extract':
+                self.ops = {self.opkind}
+                self.ops |= self.args[0].get_ops()
+            elif self.opkind == 'const':
+                self.ops = set()
+            elif self.opkind == 'input':
+                self.ops = set()
+            else:
+                self.ops = {self.opkind}
+                for a in self.args:
+                    self.ops |= a.get_ops()
+        return self.ops
 
 
 class Transformer:
@@ -591,6 +623,23 @@ class Transformer:
                 return None, Condition(args[0].args[0].size, 'not', [args[0].args[0]])
         return args, None
 
+    def and_ite_const(args, opkind):
+        # from:
+        #   (if (X) { C1#N } else { C2#N }) & 0xff#N
+        # where:
+        #   C1 < 0xff && C2 < 0xff
+        # to:
+        #  if (X) { C1#N } else { C2#N }
+        assert opkind == '&'
+        if args[1].opkind == 'const' and args[1].args[0] == 0xFF \
+                and args[0].opkind == 'ITE' \
+                and args[0].args[1].opkind == 'const' \
+                and args[0].args[1].args[0] < 0xFF \
+                and args[0].args[2].opkind == 'const' \
+                and args[0].args[2].args[0] < 0xFF:
+            return None, args[0]
+        return args, None
+
     def evaluate_concrete(args, opkind, high=None, low=None):
         # from:
         #   C#N op C#N
@@ -647,13 +696,15 @@ def parse_condition(e):
     args = []
 
     op_map = {'ULE': '<=u', 'UGT': '>u', 'UDiv': '/u',
-              'bvudiv_i': '/u_i', 'UGE': '>=u', '>=': '>=', '<=': '<='}
+              'bvudiv_i': '/u_i', 'UGE': '>=u', '>=': '>=', '<=': '<=', 'ULT':'<u'}
 
     if opkind == 'bv':
         val = int(e.params()[0])
         bits = e.params()[1]
         return Condition(bits, 'const', [val])
     elif opkind.startswith('input_'):
+        return Condition(e.size(), 'input', [str(e)])
+    elif opkind.startswith('s_load_'):
         return Condition(e.size(), 'input', [str(e)])
 
     args += [parse_condition(e.arg(0))]
@@ -786,6 +837,10 @@ def parse_condition(e):
         if expr:
             return expr
 
+        args, expr = Transformer.and_ite_const(args, opkind)
+        if expr:
+            return expr
+
     elif opkind in ['|']:
         args, expr = Transformer.or_lshifted_bytes(args, opkind)
         if expr:
@@ -815,38 +870,275 @@ def par_strip(s):
         s = s[1:-1]
     return s
 
+def get_defs(cond, defs, to_skip=[]):
+    s = ''
+    for v in defs:
+        if "x_%s" % v in cond:
+            to_skip += [v]
+            s += get_defs(defs[v], defs, to_skip)
+            s += "x_%s = %s;\n" % (v, par_strip(defs[v]))
+    return s
 
 def traslate_to_pseudocode(query):
 
     global cond_counter
     s = ''
+    S = []
+    C = []
 
     if str(query.decl()) != 'And':
         conjs = [query]
     else:
         conjs = query.children()
 
-    vars = {}
-
+    defs = {}
+    deps = {}
     for e in conjs:
-        cond = str(parse_condition(e))
-        for v in vars:
-            cond = cond.replace(vars[v], 'x%s' % v)
+        c = parse_condition(e)
+        cond = str(c)
+        for v in defs:
+            cond = cond.replace(defs[v], 'x_%s' % v)
 
         r = longestRepeatedSubstring(cond).strip()
         while len(r) > 6 and r[0] == '(' and r[-1] == ')':
-            v = len(vars)
-            vars[v] = r
-            s += "x%s = %s;\n" % (v, par_strip(vars[v]))
-            cond = cond.replace(r, "x%s" % v)
+            v = len(defs)
+            defs[v] = r
+            cond = cond.replace(r, "x_%s" % v)
             r = longestRepeatedSubstring(cond)
 
         cond_counter += 1
-        s += "c%s = %s;\n" % (cond_counter, par_strip(cond))
-        s += 'assert(c%s);\n\n' % cond_counter
+        cs = get_defs(cond, defs)
+        cs += "c%s = %s;\n" % (cond_counter, par_strip(cond))
+        cs += 'assert(c%s);\n' % cond_counter
+        # cs += 'vars_c%s = %s;\n' % (cond_counter, c.get_vars())
+        # cs += '\n'
 
-    return s
+        s += cs
+        S.append(cs)
+        C.append(c)
 
+        for d in c.get_vars():
+            if d not in deps:
+                deps[d] = []
+            deps[d].append(cond_counter)
+
+    return s, S, C, deps
+
+
+def is_checksum(e):
+    # condition 0: (in)equality
+    if e.opkind in ['==', '!=']:
+        assert len(e.args) == 2
+        # condition 1: both operands involve input bytes
+        if not (len(e.args[0].get_vars()) > 0 and len(e.args[1].get_vars()) > 0):
+            return False
+        # condition 2: operands involve disjoint input bytes
+        if e.args[0].get_vars() & e.args[1].get_vars() != set():
+            return False
+        # condition 3: one operand is input-to-state
+        i2s_args = [0, 1]
+        for k in [0, 1]:
+            if len(e.args[k].get_ops() - set(['..', 'extract', '<<l'])) != 0:
+                i2s_args.remove(k)
+        if len(i2s_args) != 1:
+            return False
+        # condition 4: other operand is not input-to-state
+        if len(e.args[(i2s_args[0] + 1) % 2].get_ops() & set(['^'])) == 0:
+            return False
+        # print("Expression is a checksum")
+        return True
+    return False
+
+def get_input_state_arg(e):
+    assert len(e.args) == 2
+    i2s_args = []
+    not_i2s_args = []
+    for k in [0, 1]:
+        if len(e.args[k].get_ops() - set(['..', 'extract', '<<l'])) != 0:
+            not_i2s_args.append(e.args[k])
+        elif e.args[k].get_vars() == set():
+            not_i2s_args.append(e.args[k])
+        else:
+            i2s_args.append(e.args[k])
+    return i2s_args, not_i2s_args
+
+def get_concrete_arg(e):
+    assert len(e.args) == 2
+    concrete = []
+    non_concrete = []
+    for k in [0, 1]:
+        if e.args[k].get_vars() == set():
+            concrete.append(e.args[k])
+        else:
+            non_concrete.append(e.args[k])
+    return concrete, non_concrete
+
+def find_opkind_expr(e, opkinds, depth):
+    if e.opkind in opkinds:
+        return [depth, e, set()]
+    res = []
+    other_opkinds = set([e.opkind])
+    if e.opkind == 'const':
+        return [None, None, None]
+    elif e.opkind == 'input':
+        return [None, None, None]
+    elif e.opkind in ['extract', 'SExt']:
+        r = find_opkind_expr(e.args[0], opkinds, depth + 1)
+        if r[0]:
+            res.append(r)
+    else:
+        for a in e.args:
+            r = find_opkind_expr(a, opkinds, depth + 1)
+            if r[0]:
+                res.append(r)
+    if len(res) == 0:
+        return [None, None, None]
+    else:
+        res = sorted(res, key = lambda x: x[0])
+        for k in range(1, len(res)):
+            other_opkinds |= res[k][2]
+        return [res[0][0], res[0][1], other_opkinds]
+
+def is_mul_overflow_p1(e):
+    # pattern:
+    #   (a * b) / b == a
+    #   (b * a) / b == a
+    # where a is not concrete
+    if e.opkind in ['==', '!=']:
+        assert len(e.args) == 2
+        i2s_args, others = get_input_state_arg(e)
+        if len(i2s_args) != 1:
+            return False
+        i2s_arg = i2s_args[0]
+        other_arg = others[0]
+
+        if not i2s_arg.get_vars().issubset(other_arg.get_vars()):
+            return False
+        if '/u' not in other_arg.get_ops():
+            return False
+        if '*' not in other_arg.get_ops() and '<<' not in other_arg.get_ops() and '>>l' not in other_arg.get_ops():
+            return False
+
+        depth_1, a_mul_b_div_b, _= find_opkind_expr(other_arg, ['/u'], 0)
+        depth_2, a_mul_b, _ = find_opkind_expr(other_arg, ['*', '<<', '>>l'], 0)
+
+        if depth_1 is None:
+            return False
+
+        if depth_2 is None:
+            return False
+
+        if depth_1 >= depth_2:
+            return False
+        if not i2s_arg.get_vars().issubset(a_mul_b.get_vars()):
+            return False
+        # pattern: (a * b) / b == a
+        if i2s_arg.get_vars() == a_mul_b.args[0].get_vars():
+            if a_mul_b.args[1].get_vars() == a_mul_b_div_b.args[1].get_vars():
+                # print("Expression is a mul overflow\n")
+                return True
+        # pattern: (a * b) / a == b
+        if i2s_arg.get_vars() == a_mul_b.args[1].get_vars():
+            if a_mul_b.args[0].get_vars() == a_mul_b_div_b.args[1].get_vars():
+                # print("Expression is a mul overflow\n")
+                return True
+    return False
+
+def is_mul_overflow_p2(e):
+    # pattern:
+    #   (a * b) / b == a
+    #   (b * a) / b == a
+    # where a is concrete
+    if e.opkind in ['==', '!=']:
+        assert len(e.args) == 2
+        concrete_args, non_concrete_args = get_concrete_arg(e)
+        if len(concrete_args) != 1:
+            return False
+        concrete_arg = concrete_args[0]
+        other_arg = non_concrete_args[0]
+
+        if '/u' not in other_arg.get_ops():
+            return False
+        if '*' not in other_arg.get_ops() and '<<' not in other_arg.get_ops() and '>>l' not in other_arg.get_ops():
+            return False
+
+        # pattern: (a * b) / b == a
+        depth_1, a_mul_b_div_b, _ = find_opkind_expr(other_arg, ['/u'], 0)
+        depth_2, a_mul_b, _ = find_opkind_expr(other_arg, ['*', '<<'], 0)
+
+        if depth_1 is None:
+            return False
+
+        if depth_2 is None:
+            return False
+
+        # pattern: (a * b) / b == a
+        if concrete_arg.get_vars() == a_mul_b.args[0].get_vars():
+            if a_mul_b.args[1].get_vars() == a_mul_b_div_b.args[1].get_vars():
+                # print("Expression is a mul overflow\n")
+                return True
+        # pattern: (a * b) / a == b
+        if concrete_arg.get_vars() == a_mul_b.args[1].get_vars():
+            if a_mul_b.args[0].get_vars() == a_mul_b_div_b.args[1].get_vars():
+                # print("Expression is a mul overflow\n")
+                return True
+
+    return False
+
+def is_mul_overflow(e):
+    if is_mul_overflow_p1(e):
+        return True
+    return is_mul_overflow_p2(e)
+
+def is_add_overflow(e):
+    #   a + b < b
+    #   a + b < a
+    if e.opkind in ['<', '<u','>=', '>=u', '>', '>=', '>u', '>=u', '<=', '<=u']:
+        assert len(e.args) == 2
+        depth_1, x, other_ops_x = find_opkind_expr(e.args[0], ['+'], 0)
+        depth_2, y, other_ops_y = find_opkind_expr(e.args[1], ['+'], 0)
+        if depth_1 is None and depth_2 is None:
+            return False
+        if depth_1 is None:
+            a_add_b = y
+            other_ops = other_ops_y
+            b = e.args[0]
+        elif depth_2 is None:
+            a_add_b = x
+            other_ops = other_ops_x
+            b = e.args[1]
+        elif depth_1 < depth_2:
+            a_add_b = x
+            other_ops = other_ops_x
+            b = e.args[1]
+        else:
+            a_add_b = y
+            other_ops = other_ops_y
+            b = e.args[0]
+
+        if len(other_ops - set(['..', 'extract'])) > 0:
+            return False
+
+        if b.get_vars() == a_add_b.args[0].get_vars():
+            if b.get_vars() != set():
+                return True
+            else:
+                return b.args[0] == a_add_b.args[0]
+        if b.get_vars() == a_add_b.args[1].get_vars():
+            if b.get_vars() != set():
+                return True
+            else:
+                return b.args[0] == a_add_b.args[1]
+    return False
+
+def remove_condition(e):
+    if is_checksum(e):
+        return True
+    if is_mul_overflow(e):
+        return True
+    if is_add_overflow(e):
+        return True
+    return False
 
 if len(sys.argv) != 2:
     print("Usage: %s <query_smtlib_file>" % sys.argv[0])
@@ -860,32 +1152,61 @@ if False:
     print(query)
     print("\n##########\n")
 
-if str(query) not in ['True', 'False']:
-    code = traslate_to_pseudocode(query)
-    print(code)
+if str(query) in ['True', 'False']:
+    print(query)
+    sys.exit(0)
+
+s, S, C, deps = traslate_to_pseudocode(query)
+
+if False:
+    print(s)
+else:
+    last_branch = C[-1]
+    C_deps = set()
+    for v in last_branch.get_vars():
+        C_deps |= set(deps[v])
+
+    S_deps = []
+    for x in C_deps:
+        S_deps.append(x)
+    S_deps = sorted(S_deps)
+    for x in S_deps:
+        print("%s" % S[x])
+        if is_checksum(C[x]):
+            print("Condition c%s detected as checksum\n" % x)
+        if is_mul_overflow(C[x]):
+            print("Condition c%s detected as mul overflow\n" % x)
+        if is_add_overflow(C[x]):
+            print("Condition c%s detected as add overflow\n" % x)
+    print("\n#######\n")
 
 if True:
     solver = z3.Solver()
     prev = query.children()[:-1]
     assert len(query.children()) - 1 == len(prev)
-    for c in prev:
-        solver.add(c)
+    for k in range(len(prev)):
+        if not remove_condition(C[k]):
+            solver.add(prev[k])
     start = time.time()
     r = solver.check()
     end = time.time()
-    print("prev branches = %s - time %s\n" % (r, str(end - start)))
+    print("prev branches is %s - time %s\n" % (r, str(end - start)))
 
     solver = z3.Solver()
-    solver.add(query.children()[-1])
+    if not remove_condition(C[-1]):
+        solver.add(query.children()[-1])
     start = time.time()
     r = solver.check()
     end = time.time()
-    print("current branch = %s - time %s\n" % (r, str(end - start)))
+    print("current branch is %s - time %s\n" % (r, str(end - start)))
 
 if True:
     solver = z3.Solver()
-    solver.add(query)
+    E = query.children()
+    for k in range(len(E)):
+        if not remove_condition(C[k]):
+            solver.add(E[k])
     start = time.time()
     r = solver.check()
     end = time.time()
-    print("query = %s - time %s\n" % (r, str(end - start)))
+    print("query is %s - time %s\n" % (r, str(end - start)))
