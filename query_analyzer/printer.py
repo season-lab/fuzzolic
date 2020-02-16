@@ -1,7 +1,22 @@
 import z3
 import os
-import sys
 import time
+
+class Unbuffered(object):
+   def __init__(self, stream):
+       self.stream = stream
+   def write(self, data):
+       self.stream.write(data)
+       self.stream.flush()
+   def writelines(self, datas):
+       self.stream.writelines(datas)
+       self.stream.flush()
+   def __getattr__(self, attr):
+       return getattr(self.stream, attr)
+
+import sys
+sys.stdout = Unbuffered(sys.stdout)
+sys.setrecursionlimit(2000)
 
 cond_counter = -1
 
@@ -77,9 +92,6 @@ class Condition:
         assert isinstance(args, list)
         assert len(args) > 0
 
-        if opkind == '-':
-            assert len(args) == 2
-
     def __repr__(self):
 
         s = ''
@@ -99,6 +111,8 @@ class Condition:
                 s = "!(%s)" % par_strip(str(self.args[0]))
             elif self.opkind == '~':
                 s = "~(%s)" % par_strip(str(self.args[0]))
+            elif self.opkind == 'neg':
+                s = "-(%s)" % par_strip(str(self.args[0]))
             else:
                 print("Unknown %s opkind" % self.opkind)
                 sys.exit(1)
@@ -127,7 +141,7 @@ class Condition:
 
     def get_ops(self):
         if self.ops is None:
-            if self.opkind == 'extract':
+            if  self.opkind in ['extract', 'SExt']:
                 self.ops = {self.opkind}
                 self.ops |= self.args[0].get_ops()
             elif self.opkind == 'const':
@@ -686,6 +700,8 @@ def get_invert_opkind(opkind):
         return '<u'
     elif opkind == '>=':
         return '<'
+    elif opkind == '<u':
+        return '>=u'
 
     print("Inverting %s not yet implemented" % opkind)
     sys.exit(1)
@@ -696,7 +712,7 @@ def parse_condition(e):
     args = []
 
     op_map = {'ULE': '<=u', 'UGT': '>u', 'UDiv': '/u',
-              'bvudiv_i': '/u_i', 'UGE': '>=u', '>=': '>=', '<=': '<=', 'ULT':'<u'}
+              'bvudiv_i': '/u_i', 'UGE': '>=u', '>=': '>=', '<=': '<=', 'ULT':'<u', '>':'>', '<':'<'}
 
     if opkind == 'bv':
         val = int(e.params()[0])
@@ -713,7 +729,7 @@ def parse_condition(e):
         assert e.num_args() == 1
         if args[0].opkind == 'not':
             return args[0].args[0]
-        elif args[0].opkind in ['==', '!=', '<=u', '>u', '>=u', '>=']:
+        elif args[0].opkind in ['==', '!=', '<=u', '>u', '>=u', '>=', '<u']:
             args[0].opkind = get_invert_opkind(args[0].opkind)
             return args[0]
         else:
@@ -722,6 +738,9 @@ def parse_condition(e):
     elif opkind == '~':
         assert e.num_args() == 1
         return Condition(e.size(), '~', args)
+
+    elif opkind == '-' and e.num_args() == 1:
+        return Condition(e.size(), 'neg', args)
 
     elif opkind == 'SignExt':
         assert e.num_args() == 1
@@ -807,7 +826,7 @@ def parse_condition(e):
         if expr:
             return expr
 
-    elif opkind in ['+', '-', '<<', 'LShR', '^', '*']:
+    elif opkind in ['+', '-', '<<', 'LShR', '^', '*', '>>']:
         if opkind == 'LShR':
             opkind = '>>l'
             args, expr = Transformer.shift_to_const(args, opkind)
@@ -870,13 +889,22 @@ def par_strip(s):
         s = s[1:-1]
     return s
 
-def get_defs(cond, defs, to_skip=[]):
+def get_defs(cond, defs, to_skip):
     s = ''
-    for v in defs:
-        if "x_%s" % v in cond:
-            to_skip += [v]
-            s += get_defs(defs[v], defs, to_skip)
-            s += "x_%s = %s;\n" % (v, par_strip(defs[v]))
+    for v in sorted(defs.keys()):
+        if v in to_skip:
+            continue
+        label = "x_%s" % v
+        index = 0
+        while label in cond[index:]:
+            index = cond[index:].index(label)
+            assert index > 0 and len(label) > 0
+            index += len(label)
+            if not cond[index].isdigit() or True:
+                to_skip.append(v)
+                s += get_defs(defs[v], defs, to_skip)
+                s += "x_%s = %s;\n" % (v, par_strip(defs[v]))
+                break
     return s
 
 def traslate_to_pseudocode(query):
@@ -907,7 +935,7 @@ def traslate_to_pseudocode(query):
             r = longestRepeatedSubstring(cond)
 
         cond_counter += 1
-        cs = get_defs(cond, defs)
+        cs = get_defs(cond, defs, [])
         cs += "c%s = %s;\n" % (cond_counter, par_strip(cond))
         cs += 'assert(c%s);\n' % cond_counter
         # cs += 'vars_c%s = %s;\n' % (cond_counter, c.get_vars())
@@ -985,6 +1013,7 @@ def find_opkind_expr(e, opkinds, depth):
     elif e.opkind in ['extract', 'SExt']:
         r = find_opkind_expr(e.args[0], opkinds, depth + 1)
         if r[0]:
+            r[2] |= other_opkinds
             res.append(r)
     else:
         for a in e.args:
@@ -992,12 +1021,28 @@ def find_opkind_expr(e, opkinds, depth):
             if r[0]:
                 res.append(r)
     if len(res) == 0:
-        return [None, None, None]
+        return [None, None, other_opkinds]
     else:
         res = sorted(res, key = lambda x: x[0])
-        for k in range(1, len(res)):
+        for k in range(len(res)):
             other_opkinds |= res[k][2]
         return [res[0][0], res[0][1], other_opkinds]
+
+def find_expr(e, e2):
+    if str(e) == str(e2):
+        return True
+    if e.opkind == 'const':
+        return False
+    elif e.opkind == 'input':
+        return False
+    elif e.opkind in ['extract', 'SExt']:
+        return find_expr(e.args[0], e2)
+    else:
+        for a in e.args:
+            r = find_expr(a, e2)
+            if r:
+                return True
+    return False
 
 def is_mul_overflow_p1(e):
     # pattern:
@@ -1107,14 +1152,16 @@ def is_add_overflow(e):
             a_add_b = x
             other_ops = other_ops_x
             b = e.args[1]
-        elif depth_1 < depth_2:
+        elif depth_1 < depth_2 and not find_expr(e.args[1], x):
             a_add_b = x
             other_ops = other_ops_x
             b = e.args[1]
-        else:
+        elif not find_expr(e.args[0], y):
             a_add_b = y
             other_ops = other_ops_y
             b = e.args[0]
+        else:
+            return False
 
         if len(other_ops - set(['..', 'extract'])) > 0:
             return False
@@ -1163,8 +1210,17 @@ if False:
 else:
     last_branch = C[-1]
     C_deps = set()
-    for v in last_branch.get_vars():
-        C_deps |= set(deps[v])
+    vars_done = set()
+    vars = last_branch.get_vars()
+    while len(vars) > 0:
+        v = vars.pop()
+        vars_done.add(v)
+        X = deps[v]
+        C_deps |= set(X)
+        for x in X:
+            for vv in C[x].get_vars():
+                if vv not in vars_done:
+                    vars.add(vv)
 
     S_deps = []
     for x in C_deps:
@@ -1185,17 +1241,20 @@ if True:
     prev = query.children()[:-1]
     assert len(query.children()) - 1 == len(prev)
     for k in range(len(prev)):
-        if not remove_condition(C[k]):
+        if k in S_deps and not remove_condition(C[k]):
+        #if not remove_condition(C[k]):
             solver.add(prev[k])
     start = time.time()
+    solver.set("timeout", 3000)
     r = solver.check()
     end = time.time()
     print("prev branches is %s - time %s\n" % (r, str(end - start)))
-
+if True:
     solver = z3.Solver()
     if not remove_condition(C[-1]):
         solver.add(query.children()[-1])
     start = time.time()
+    solver.set("timeout", 3000)
     r = solver.check()
     end = time.time()
     print("current branch is %s - time %s\n" % (r, str(end - start)))
@@ -1204,9 +1263,11 @@ if True:
     solver = z3.Solver()
     E = query.children()
     for k in range(len(E)):
-        if not remove_condition(C[k]):
+        if k in S_deps and not remove_condition(C[k]):
+        #if not remove_condition(C[k]):
             solver.add(E[k])
     start = time.time()
+    solver.set("timeout", 3000)
     r = solver.check()
     end = time.time()
     print("query is %s - time %s\n" % (r, str(end - start)))
