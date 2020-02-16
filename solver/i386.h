@@ -17,6 +17,6 @@
 #define SIGN_MASK (1 << ((width * 8) - 1))
 
 Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
-                            size_t width);
+                            size_t width, GHashTable* inputs);
 
 #endif // SOLVER_I386_H
