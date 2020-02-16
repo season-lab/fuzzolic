@@ -41,7 +41,8 @@ static char        testcase_delta = 0;
 
 static void exitf(const char* message)
 {
-    fprintf(stderr, "BUG: %s\n", message);
+    //fprintf(stderr, "BUG: %s\n", message);
+    printf("BUG: %s\n", message);
     exit(1);
 }
 
@@ -109,13 +110,14 @@ static void smt_destroy(void)
     Z3_del_context(smt_solver.ctx);
 }
 
-#define MAX_INPUTS 4096
-static Z3_ast input_exprs[MAX_INPUTS] = {NULL};
+static Z3_ast input_exprs[MAX_INPUT_SIZE * 2] = {NULL};
 
 Z3_ast smt_new_symbol(uintptr_t id, const char* name, size_t n_bits, Expr* e)
 {
-    assert(id < MAX_INPUTS);
-    assert(n_bits == 8 && "Multi-byte input not yet supported.");
+    assert(id < MAX_INPUT_SIZE * 2);
+    if (id < MAX_INPUT_SIZE) {
+        assert(n_bits == 8 && "Multi-byte input not yet supported.");
+    }
     Z3_ast s = input_exprs[id];
     if (s == NULL) {
         Z3_sort   bv_sort = Z3_mk_bv_sort(smt_solver.ctx, n_bits);
@@ -193,7 +195,7 @@ static void smt_query_check(Z3_solver solver, Z3_ast query)
     Z3_solver_assert(smt_solver.ctx, solver, query);
 
     smt_dump_solver(solver);
-
+#if 0
     struct timespec start;
     get_time(&start);
 
@@ -230,6 +232,7 @@ static void smt_query_check(Z3_solver solver, Z3_ast query)
     }
     if (m)
         Z3_model_dec_ref(smt_solver.ctx, m);
+#endif
 }
 
 void smt_print_ast_sort(Z3_ast e)
@@ -270,6 +273,8 @@ void smt_bv_resize(Z3_ast* a, Z3_ast* b, ssize_t bytes_size)
     if (a_size == b_size && (bytes_size == 0 || (bytes_size * 8) == a_size)) {
         return;
     }
+
+    assert(bytes_size >= 0);
 
     size_t size;
     size_t base_index = 0;
@@ -366,7 +371,11 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
             ABORT("Invalid opkind (RESERVER). There is a bug somewhere :(");
         case IS_SYMBOLIC:;
             char* input_name = malloc(16);
-            snprintf(input_name, 16, "input_%lu", (uintptr_t)query->op1);
+            if (CONST(query->op1) < MAX_INPUT_SIZE) {
+                snprintf(input_name, 16, "input_%lu", (uintptr_t)query->op1);
+            } else {
+                snprintf(input_name, 16, "s_load_%lu", (uintptr_t)query->op1);
+            }
             r = smt_new_symbol((uintptr_t)query->op1, input_name,
                                8 * (uintptr_t)query->op2, query);
             break;
@@ -418,6 +427,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
         case MUL:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            ssize_t s = (ssize_t) query->op3;
+            assert(s >= 0);
             smt_bv_resize(&op1, &op2, (ssize_t) query->op3);
 #if VERBOSE
             printf("MUL\n");
@@ -495,6 +506,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
             assert(query->op3 == 0);
+            smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
             printf("XOR\n");
             smt_print_ast_sort(op1);
@@ -524,6 +536,17 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
 #endif
             r   = Z3_mk_bvlshr(smt_solver.ctx, op1, op2);
             break;
+        case SAR:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            assert(query->op3 == 0);
+#if VERBOSE
+            printf("SAR\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r   = Z3_mk_bvashr(smt_solver.ctx, op1, op2);
+            break;
         case ROTL: // 17
             assert(query->op2_is_const && "Second arg of ROL must be concrete");
             op2     = smt_query_to_z3(query->op1, query->op1_is_const, 0);
@@ -535,6 +558,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
             assert(query->op3 == 0);
+            smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
             printf("EQ\n");
             smt_print_ast_sort(op1);
@@ -578,6 +602,17 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
 #endif
             r = Z3_mk_bvsge(smt_solver.ctx, smt_to_bv(op1), smt_to_bv(op2));
             break;
+        case GT:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            assert(query->op3 == 0);
+#if VERBOSE
+            printf("GT\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r = Z3_mk_bvsgt(smt_solver.ctx, smt_to_bv(op1), smt_to_bv(op2));
+            break;
         //
         case LTU:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
@@ -594,6 +629,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
             assert(query->op3 == 0);
+            smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
             printf("LEU\n");
             smt_print_ast_sort(op1);
@@ -616,6 +652,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
             assert(query->op3 == 0);
+            smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
             printf("GTU\n");
             smt_print_ast_sort(op1);
@@ -644,7 +681,6 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
 #if VERBOSE
             printf("EXTRACT + SEXT\n");
             smt_print_ast_sort(op1);
-            smt_print_ast_sort(op2);
 #endif
             r   = Z3_mk_sign_ext(smt_solver.ctx, 64 - n, op1);
             break;
@@ -711,6 +747,55 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
                              smt_new_const(DEPOSIT_MASK(dpos, dlen), 64));
             r  = Z3_mk_bvor(smt_solver.ctx, r0, r1);
             break;
+        //
+        case MUL_HIGH:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            smt_bv_resize(&op1, &op2, 8);
+            if (query->op3 != 0 && CONST(query->op3) != 8) {
+                ssize_t s = (ssize_t) query->op3;
+                if (s < 0) s = -s;
+                op1 = Z3_mk_extract(smt_solver.ctx, s * 8 - 1, 0, op1);
+                op2 = Z3_mk_extract(smt_solver.ctx, s * 8 - 1, 0, op2);
+                op1 = Z3_mk_sign_ext(smt_solver.ctx, 64 - (s * 8), op1);
+                op2 = Z3_mk_sign_ext(smt_solver.ctx, 64 - (s * 8), op2);
+            } else {
+                op1 = Z3_mk_sign_ext(smt_solver.ctx, 64, op1);
+                op2 = Z3_mk_sign_ext(smt_solver.ctx, 64, op2);
+            }
+#if VERBOSE
+            printf("MUL_HIGH\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r = Z3_mk_bvmul(smt_solver.ctx, op1, op2);
+            if (query->op3 != 0 && CONST(query->op3) != 8) {
+                ssize_t s = (ssize_t) query->op3;
+                if(s > 0) {
+                    assert(0);
+                    r = Z3_mk_extract(smt_solver.ctx, s * 8 - 1, 0, r);
+                } else {
+                    s = -s;
+                    r = Z3_mk_extract(smt_solver.ctx, 2 * (s * 8) - 1, s * 8, r);
+                }
+            } else {
+                r = Z3_mk_extract(smt_solver.ctx, 127, 64, r);
+            }
+            break;
+        case MULU_HIGH:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0);
+            assert(query->op3 == 0);
+            op1 = Z3_mk_concat(smt_solver.ctx, smt_new_const(0, 64), op1);
+            op2 = Z3_mk_concat(smt_solver.ctx, smt_new_const(0, 64), op2);
+#if VERBOSE
+            printf("MULU_HIGH\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r = Z3_mk_bvmul(smt_solver.ctx, op1, op2);
+            r = Z3_mk_extract(smt_solver.ctx, 127, 64, r);
+            break;
 
         // x86 specific
         case RCL:
@@ -754,7 +839,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width)
             break;
 
         default:
-            ABORT("Unknown expr opkind: %u", query->opkind);
+            ABORT("Unknown expr opkind: %s", opkind_to_str(query->opkind));
     }
 
     // printf("%s\n", Z3_ast_to_string(smt_solver.ctx, r));
@@ -999,8 +1084,8 @@ int main(int argc, char* argv[])
 #endif
             smt_query(&next_query[0]);
             next_query++;
-#if 0
-            if (next_query - query_queue > 100) {
+#if 1
+            if (next_query - query_queue > 1000) {
                 printf("Exiting...\n");
                 exit(0);
             }
