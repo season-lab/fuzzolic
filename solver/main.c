@@ -38,9 +38,9 @@ typedef struct Dependency {
     GHashTable* exprs;
 } Dependency;
 
-static Z3_ast input_exprs[MAX_INPUT_SIZE * 2]      = {NULL};
-static Z3_ast        z3_ast_exprs[EXPR_QUERY_CAPACITY]    = {0};
-static Dependency*   dependency_graph[MAX_INPUT_SIZE * 2] = {0};
+static Z3_ast      input_exprs[MAX_INPUT_SIZE * 2]      = {NULL};
+static Z3_ast      z3_ast_exprs[EXPR_QUERY_CAPACITY]    = {0};
+static Dependency* dependency_graph[MAX_INPUT_SIZE * 2] = {0};
 
 static uint8_t*    testcase       = NULL;
 static size_t      testcase_size  = 0;
@@ -127,32 +127,33 @@ static void smt_destroy(void)
     Z3_del_context(smt_solver.ctx);
 }
 
-static inline void add_deps_to_solver(GHashTable* inputs, size_t query_idx, Z3_solver solver)
+static inline void add_deps_to_solver(GHashTable* inputs, size_t query_idx,
+                                      Z3_solver solver)
 {
     GHashTableIter iter, iter2;
     gpointer       key, value;
     gboolean       res;
 
     GHashTable* to_be_deallocated = g_hash_table_new(NULL, NULL);
-    Dependency* current = NULL;
+    Dependency* current           = NULL;
 
     g_hash_table_iter_init(&iter, inputs);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
         // res = g_hash_table_add(inputs_to_check, input_idx);
         // assert(res == TRUE);
 
-        size_t input_idx = (size_t) key;
-        Dependency* dep = dependency_graph[input_idx];
+        size_t      input_idx = (size_t)key;
+        Dependency* dep       = dependency_graph[input_idx];
         if (dep && dep == current) {
             continue;
         } else if (current == NULL) {
             if (dep) {
                 current = dep;
             } else {
-                current = malloc(sizeof(Dependency));
+                current         = malloc(sizeof(Dependency));
                 current->inputs = g_hash_table_new(NULL, NULL);
-                current->exprs = g_hash_table_new(NULL, NULL);
-                res = g_hash_table_add(current->inputs, key);
+                current->exprs  = g_hash_table_new(NULL, NULL);
+                res             = g_hash_table_add(current->inputs, key);
                 assert(res == TRUE);
             }
         } else if (dep == NULL) {
@@ -181,7 +182,7 @@ static inline void add_deps_to_solver(GHashTable* inputs, size_t query_idx, Z3_s
     // add exprs as assertions
     g_hash_table_iter_init(&iter, current->exprs);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
-        size_t query_dep_idx = (size_t) key;
+        size_t query_dep_idx = (size_t)key;
         assert(z3_ast_exprs[query_dep_idx]);
         Z3_solver_assert(smt_solver.ctx, solver, z3_ast_exprs[query_dep_idx]);
         // printf("Adding expr %lu for %lu\n", query_dep_idx, query_idx);
@@ -193,14 +194,14 @@ static inline void add_deps_to_solver(GHashTable* inputs, size_t query_idx, Z3_s
     // update dependency graph for each input in current
     g_hash_table_iter_init(&iter, current->inputs);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
-        size_t input_idx = (size_t) key;
+        size_t input_idx            = (size_t)key;
         dependency_graph[input_idx] = current;
     }
 
     // housekeeping
     g_hash_table_iter_init(&iter, to_be_deallocated);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
-        Dependency* dep = (Dependency*) key;
+        Dependency* dep = (Dependency*)key;
         g_hash_table_destroy(dep->inputs);
         g_hash_table_destroy(dep->exprs);
         free(dep);
@@ -232,14 +233,13 @@ Z3_ast smt_new_const(uint64_t value, size_t n_bits)
     return s;
 }
 
-static uint32_t file_next_id = 0;
-static void     smt_dump_solution(Z3_model m)
+static void smt_dump_solution(Z3_model m, size_t idx)
 {
     size_t input_size = get_input_size(testcase_fname);
 
     char test_case_name[128];
-    int n = snprintf(test_case_name, sizeof(test_case_name), "test_case_%u.dat",
-                     file_next_id - 1);
+    int  n = snprintf(test_case_name, sizeof(test_case_name),
+                     "test_case_%lu.dat", idx);
     assert(n > 0 && n < sizeof(test_case_name) && "test case name too long");
     // SAYF("Dumping solution into %s\n", test_case_name);
     FILE* fp = fopen(test_case_name, "w");
@@ -272,12 +272,12 @@ static void     smt_dump_solution(Z3_model m)
     fclose(fp);
 }
 
-static void inline smt_dump_solver(Z3_solver solver)
+static void inline smt_dump_solver(Z3_solver solver, size_t idx)
 {
     Z3_string s_query = Z3_solver_to_string(smt_solver.ctx, solver);
     char      test_case_name[128];
     int       n = snprintf(test_case_name, sizeof(test_case_name),
-                     "test_case_%u.query", file_next_id++);
+                     "test_case_%lu.query", idx);
     assert(n > 0 && n < sizeof(test_case_name) && "test case name too long");
     // SAYF("Dumping solution into %s\n", test_case_name);
     FILE* fp = fopen(test_case_name, "w");
@@ -285,16 +285,13 @@ static void inline smt_dump_solver(Z3_solver solver)
     fclose(fp);
 }
 
-static void smt_query_check(Z3_solver solver, Z3_ast query)
+static void smt_query_check(Z3_solver solver, size_t idx)
 {
-    Z3_solver_assert(smt_solver.ctx, solver, query);
-
-    smt_dump_solver(solver);
 #if 1
     struct timespec start;
     get_time(&start);
 
-    Z3_model m = NULL;
+    Z3_model m   = NULL;
     Z3_lbool res = Z3_solver_check(smt_solver.ctx, solver);
 
     struct timespec end;
@@ -321,7 +318,7 @@ static void smt_query_check(Z3_solver solver, Z3_ast query)
             m = Z3_solver_get_model(smt_solver.ctx, solver);
             if (m) {
                 Z3_model_inc_ref(smt_solver.ctx, m);
-                smt_dump_solution(m);
+                smt_dump_solution(m, idx);
             }
             break;
     }
@@ -996,9 +993,20 @@ static void smt_branch_query(Query* q)
 
     Z3_solver solver = smt_new_solver();
     add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver);
+    Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
     SAYF("Running a query...\n");
-    smt_query_check(solver, z3_neg_query);
+    smt_query_check(solver, GET_QUERY_IDX(q));
     smt_del_solver(solver);
+
+#if 1
+    solver = smt_new_solver();
+    for (size_t i = 0; i < GET_QUERY_IDX(q); i++) {
+        Z3_solver_assert(smt_solver.ctx, solver, z3_ast_exprs[i]);
+    }
+    Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
+    smt_dump_solver(solver, GET_QUERY_IDX(q));
+    smt_del_solver(solver);
+#endif
 
     g_hash_table_destroy(inputs);
 }
