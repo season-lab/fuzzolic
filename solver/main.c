@@ -442,7 +442,7 @@ ExprAnnotation* get_expr_annotation(Expr* e)
     }
 }
 
-#define VERBOSE 0
+#define VERBOSE 1
 Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
                        GHashTable* inputs)
 {
@@ -852,8 +852,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, inputs);
             smt_bv_resize(&op1, &op2, 8);
             dpos = (uintptr_t)query->op3;
-#if 0
-            printf("QZEXTRACT2\n");
+#if VERBOSE
+            printf("QZEXTRACT2: %lu\n", dpos);
             smt_print_ast_sort(op1);
             smt_print_ast_sort(op2);
 #endif
