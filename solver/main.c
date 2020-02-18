@@ -668,6 +668,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, inputs);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, inputs);
             assert(query->op3 == 0);
+            smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
             printf("NE\n");
             smt_print_ast_sort(op1);
