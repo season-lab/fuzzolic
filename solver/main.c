@@ -998,7 +998,7 @@ static void smt_branch_query(Query* q)
     smt_query_check(solver, GET_QUERY_IDX(q));
     smt_del_solver(solver);
 
-#if 1
+#if 0
     solver = smt_new_solver();
     for (size_t i = 0; i < GET_QUERY_IDX(q); i++) {
         Z3_solver_assert(smt_solver.ctx, solver, z3_ast_exprs[i]);
@@ -1192,8 +1192,8 @@ int main(int argc, char* argv[])
 #endif
             smt_query(&next_query[0]);
             next_query++;
-#if 1
-            if (GET_QUERY_IDX(next_query) > 1000) {
+#if 0
+            if (GET_QUERY_IDX(next_query) > 2000) {
                 printf("Exiting...\n");
                 exit(0);
             }
