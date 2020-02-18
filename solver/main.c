@@ -991,12 +991,25 @@ static void smt_branch_query(Query* q)
     SAYF("%s", z3_query_str);
 #endif
 
-    Z3_solver solver = smt_new_solver();
-    add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver);
-    Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
-    SAYF("Running a query...\n");
-    smt_query_check(solver, GET_QUERY_IDX(q));
-    smt_del_solver(solver);
+    uint8_t has_real_inputs = 0;
+    GHashTableIter iter;
+    gpointer       key, value;
+    g_hash_table_iter_init(&iter, inputs);
+    while (g_hash_table_iter_next(&iter, &key, &value)) {
+        if ((uintptr_t) key < MAX_INPUT_SIZE) {
+            has_real_inputs = 1;
+            break;
+        }
+    }
+
+    if (has_real_inputs) {
+        Z3_solver solver = smt_new_solver();
+        add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver);
+        Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
+        SAYF("Running a query...\n");
+        smt_query_check(solver, GET_QUERY_IDX(q));
+        smt_del_solver(solver);
+    }
 
 #if 0
     solver = smt_new_solver();
