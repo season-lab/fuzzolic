@@ -856,7 +856,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
             smt_print_ast_sort(op2);
 #endif
             r  = Z3_mk_concat(smt_solver.ctx, op2, op1);
-            r  = Z3_mk_extract(smt_solver.ctx, pos + 64, pos, r);
+            r  = Z3_mk_extract(smt_solver.ctx, pos + 64 - 1, pos, r);
             smt_print_ast_sort(r);
             break;
         //
