@@ -578,6 +578,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
                     Z3_ast args[2] = {op1, op2};
                     r              = Z3_mk_and(smt_solver.ctx, 2, args);
                 } else {
+                    smt_bv_resize(&op1, &op2, 0);
                     r = Z3_mk_bvand(smt_solver.ctx, op1, op2);
                 }
             }
