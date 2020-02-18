@@ -850,13 +850,14 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, inputs);
             smt_bv_resize(&op1, &op2, 8);
             dpos = (uintptr_t)query->op3;
-#if VERBOSE
+#if 1
             printf("QZEXTRACT2\n");
             smt_print_ast_sort(op1);
             smt_print_ast_sort(op2);
 #endif
-            r  = Z3_mk_concat(smt_solver.ctx, op1, op2);
+            r  = Z3_mk_concat(smt_solver.ctx, op2, op1);
             r  = Z3_mk_extract(smt_solver.ctx, pos + 64, pos, r);
+            smt_print_ast_sort(r);
             break;
         //
         case MUL_HIGH:
