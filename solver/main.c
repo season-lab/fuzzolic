@@ -351,7 +351,7 @@ Z3_ast smt_to_bv_n(Z3_ast e, size_t width) // cast boolean to a bitvector
     }
 }
 
-#define VERBOSE 1
+#define VERBOSE 0
 void smt_bv_resize(Z3_ast* a, Z3_ast* b, ssize_t bytes_size)
 {
 #if VERBOSE
@@ -442,7 +442,7 @@ ExprAnnotation* get_expr_annotation(Expr* e)
     }
 }
 
-#define VERBOSE 1
+#define VERBOSE 0
 Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
                        GHashTable* inputs)
 {
