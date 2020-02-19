@@ -351,7 +351,7 @@ Z3_ast smt_to_bv_n(Z3_ast e, size_t width) // cast boolean to a bitvector
     }
 }
 
-#define VERBOSE 0
+#define VERBOSE 1
 void smt_bv_resize(Z3_ast* a, Z3_ast* b, ssize_t bytes_size)
 {
 #if VERBOSE
@@ -763,15 +763,22 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
         case ZEXT:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, inputs);
             unsigned n = (uintptr_t)query->op2;
-            op1        = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
-            op2        = smt_new_const(0, 64 - n);
 #if VERBOSE
             printf("EXTRACT + ZEXT\n");
             smt_print_ast_sort(op1);
-            smt_print_ast_sort(op2);
 #endif
-            r = Z3_mk_concat(smt_solver.ctx, op2, op1);
-            // smt_print_ast_sort(r);
+            Z3_sort sort = Z3_get_sort(smt_solver.ctx, op1);
+            size_t size = Z3_get_bv_sort_size(smt_solver.ctx, sort);
+            if (size >= n) {
+                if (size > n) {
+                    op1        = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
+                }
+                op2        = smt_new_const(0, 64 - n);
+                r = Z3_mk_concat(smt_solver.ctx, op2, op1);
+            } else if (size < n) {
+                op2        = smt_new_const(0, 64 - size);
+                r = Z3_mk_concat(smt_solver.ctx, op2, op1);
+            }
             break;
         case SEXT:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, inputs);
@@ -1019,12 +1026,14 @@ static void smt_branch_query(Query* q)
     }
 
     if (has_real_inputs) {
+#if 1
         Z3_solver solver = smt_new_solver();
         add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver);
         Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
         SAYF("Running a query...\n");
         smt_query_check(solver, GET_QUERY_IDX(q));
         smt_del_solver(solver);
+#endif
     }
 
 #if 0
