@@ -773,16 +773,16 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
             smt_print_ast_sort(op1);
 #endif
             Z3_sort sort = Z3_get_sort(smt_solver.ctx, op1);
-            size_t size = Z3_get_bv_sort_size(smt_solver.ctx, sort);
+            size_t  size = Z3_get_bv_sort_size(smt_solver.ctx, sort);
             if (size >= n) {
                 if (size > n) {
-                    op1        = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
+                    op1 = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
                 }
-                op2        = smt_new_const(0, 64 - n);
-                r = Z3_mk_concat(smt_solver.ctx, op2, op1);
+                op2 = smt_new_const(0, 64 - n);
+                r   = Z3_mk_concat(smt_solver.ctx, op2, op1);
             } else if (size < n) {
-                op2        = smt_new_const(0, 64 - size);
-                r = Z3_mk_concat(smt_solver.ctx, op2, op1);
+                op2 = smt_new_const(0, 64 - size);
+                r   = Z3_mk_concat(smt_solver.ctx, op2, op1);
             }
             break;
         case SEXT:
@@ -869,8 +869,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
             smt_print_ast_sort(op1);
             smt_print_ast_sort(op2);
 #endif
-            r  = Z3_mk_concat(smt_solver.ctx, op2, op1);
-            r  = Z3_mk_extract(smt_solver.ctx, dpos + 64 - 1, dpos, r);
+            r = Z3_mk_concat(smt_solver.ctx, op2, op1);
+            r = Z3_mk_extract(smt_solver.ctx, dpos + 64 - 1, dpos, r);
             break;
         //
         case MUL_HIGH:
@@ -996,6 +996,274 @@ static void smt_stats(Z3_solver solver)
     }
 }
 
+static void print_z3_original(Z3_ast e) {
+    Z3_set_ast_print_mode(smt_solver.ctx, Z3_PRINT_LOW_LEVEL);
+    const char* z3_query_str = Z3_ast_to_string(smt_solver.ctx, e);
+    SAYF("\n%s\n", z3_query_str);
+}
+
+static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op)
+{
+    Z3_context   ctx = smt_solver.ctx;
+    Z3_app       app;
+    Z3_func_decl decl;
+    Z3_decl_kind decl_kind;
+    unsigned     num_operands;
+
+    const char* s_op          = NULL;
+    uint8_t     op_is_boolean = 0;
+    uint8_t     propagate_op  = 0;
+
+    switch (Z3_get_ast_kind(ctx, e)) {
+
+        case Z3_NUMERAL_AST: {
+            Z3_sort  sort = Z3_get_sort(ctx, e);
+            size_t   size = Z3_get_bv_sort_size(ctx, sort);
+            uint64_t value;
+            Z3_bool  r =
+                Z3_get_numeral_uint64(ctx, e, (long long unsigned int*)&value);
+            assert(r == Z3_TRUE);
+            printf("%lx#%lu", value, size);
+            return;
+        }
+
+        case Z3_APP_AST: {
+
+            app          = Z3_to_app(ctx, e);
+            decl         = Z3_get_app_decl(ctx, app);
+            decl_kind    = Z3_get_decl_kind(ctx, decl);
+            num_operands = Z3_get_app_num_args(ctx, app);
+
+            switch (decl_kind) {
+
+                case Z3_OP_UNINTERPRETED: {
+                    Z3_symbol   symbol = Z3_get_decl_name(ctx, decl);
+                    const char* s      = Z3_get_symbol_string(ctx, symbol);
+                    printf("%s", s);
+                    return;
+                }
+
+                case Z3_OP_TRUE:
+                    printf("TRUE");
+                    return;
+                case Z3_OP_FALSE:
+                    printf("FALSE");
+                    return;
+
+                case Z3_OP_EQ: {
+                    s_op = invert_op == 0 ? "==" : "!=";
+                    break;
+                }
+                case Z3_OP_NOT: {
+                    propagate_op = 1;
+                    break;
+                }
+                case Z3_OP_SGEQ: {
+                    s_op = invert_op == 0 ? ">=" : "u";
+                    break;
+                }
+                case Z3_OP_SGT: {
+                    s_op = invert_op == 0 ? ">" : "<=";
+                    break;
+                }
+                case Z3_OP_SLEQ: {
+                    s_op = invert_op == 0 ? "<=" : ">";
+                    break;
+                }
+                case Z3_OP_SLT: {
+                    s_op = invert_op == 0 ? "<" : ">=";
+                    break;
+                }
+                case Z3_OP_UGEQ: {
+                    s_op = invert_op == 0 ? ">=u" : "<u";
+                    break;
+                }
+                case Z3_OP_UGT: {
+                    s_op = invert_op == 0 ? ">u" : "<=u";
+                    break;
+                }
+                case Z3_OP_ULEQ: {
+                    s_op = invert_op == 0 ? "<=u" : ">u";
+                    break;
+                }
+                case Z3_OP_ULT: {
+                    s_op = invert_op == 0 ? "<u" : ">=u";
+                    break;
+                }
+
+                case Z3_OP_CONCAT: {
+                    assert(invert_op == 0);
+                    s_op = "..";
+                    break;
+                }
+                case Z3_OP_EXTRACT: {
+                    assert(invert_op == 0);
+                    break;
+                }
+                case Z3_OP_SIGN_EXT: {
+                    assert(invert_op == 0);
+                    break;
+                }
+
+                case Z3_OP_AND: {
+                    s_op = "&&";
+                    break;
+                }
+
+                case Z3_OP_BNOT: {
+                    s_op = "~";
+                    break;
+                }
+                case Z3_OP_BNEG: {
+                    s_op = "-";
+                    break;
+                }
+
+                case Z3_OP_BADD: {
+                    s_op = "+";
+                    break;
+                }
+                case Z3_OP_BSUB: {
+                    s_op = "-";
+                    break;
+                }
+                case Z3_OP_BMUL: {
+                    s_op = "*";
+                    break;
+                }
+
+                case Z3_OP_BUDIV: {
+                    s_op = "/u";
+                    break;
+                }
+                case Z3_OP_BUREM: {
+                    s_op = "%u";
+                    break;
+                }
+                case Z3_OP_BSDIV: {
+                    s_op = "/";
+                    break;
+                }
+                case Z3_OP_BSREM: {
+                    s_op = "%";
+                    break;
+                }
+
+                case Z3_OP_BSHL: {
+                    s_op = "<<";
+                    break;
+                }
+                case Z3_OP_BLSHR: {
+                    s_op = ">>l";
+                    break;
+                }
+                case Z3_OP_BASHR: {
+                    s_op = ">>";
+                    break;
+                }
+
+                case Z3_OP_BAND: {
+                    s_op = "&";
+                    break;
+                }
+                case Z3_OP_BOR: {
+                    s_op = "|";
+                    break;
+                }
+                case Z3_OP_BXOR: {
+                    s_op = "^";
+                    break;
+                }
+
+                case Z3_OP_ITE: {
+                    break;
+                }
+
+                default: {
+                    // printf("OTHER");
+                    // return;
+                }
+            }
+        }
+    }
+
+    if (num_operands == 1) {
+        Z3_ast op1 = Z3_get_app_arg(ctx, app, 0);
+
+        if (propagate_op && decl_kind == Z3_OP_NOT) {
+            print_z3_ast_internal(op1, !invert_op);
+        } else {
+            assert(propagate_op == 0);
+            if (decl_kind == Z3_OP_EXTRACT) {
+
+                int high = Z3_get_decl_int_parameter(ctx, decl, 0);
+                int low  = Z3_get_decl_int_parameter(ctx, decl, 1);
+                assert(low >= 0 && high >= low);
+
+                printf("(");
+                print_z3_ast_internal(op1, 0);
+                printf(")[%d:%d]", high, low);
+
+            } else if (decl_kind == Z3_OP_SIGN_EXT) {
+
+                int n = Z3_get_decl_int_parameter(ctx, decl, 0);
+                assert(n > 0);
+
+                printf("(");
+                print_z3_ast_internal(op1, 0);
+                printf(" SExt %d)", n);
+
+            } else if (s_op) {
+
+                assert(s_op);
+                printf("%s", s_op);
+                printf("(");
+                print_z3_ast_internal(op1, 0);
+                printf(")\n");
+
+            } else {
+                print_z3_original(e);
+                ABORT();
+            }
+        }
+
+    } else if (num_operands == 2 && s_op) {
+        Z3_ast op1 = Z3_get_app_arg(ctx, app, 0);
+        Z3_ast op2 = Z3_get_app_arg(ctx, app, 1);
+
+        printf("(");
+        print_z3_ast_internal(op1, 0);
+        printf(" %s ", s_op);
+        print_z3_ast_internal(op2, 0);
+        printf(")");
+
+    } else if (num_operands == 3 && decl_kind == Z3_OP_ITE) {
+        Z3_ast op1 = Z3_get_app_arg(ctx, app, 0);
+        Z3_ast op2 = Z3_get_app_arg(ctx, app, 1);
+        Z3_ast op3 = Z3_get_app_arg(ctx, app, 2);
+
+        printf("ITE(");
+        print_z3_ast_internal(op1, 0);
+        printf(", ");
+        print_z3_ast_internal(op2, 0);
+        printf(", ");
+        print_z3_ast_internal(op3, 0);
+        printf(")");
+
+    } else {
+        printf("\nNumber of operands: %u\n", num_operands);
+        print_z3_original(e);
+        ABORT();
+    }
+}
+
+static void print_z3_ast(Z3_ast e)
+{
+    printf("\n");
+    print_z3_ast_internal(e, 0);
+    printf("\n\n");
+}
+
 static void smt_branch_query(Query* q)
 {
 #if 0
@@ -1013,25 +1281,28 @@ static void smt_branch_query(Query* q)
     z3_neg_query = Z3_simplify(smt_solver.ctx, z3_neg_query);
 #endif
 
-#if 1
+#if 0
     Z3_set_ast_print_mode(smt_solver.ctx, Z3_PRINT_LOW_LEVEL);
     const char* z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
     SAYF("%s", z3_query_str);
 #endif
+#if 1
+    print_z3_ast(z3_neg_query);
+#endif
 
-    uint8_t has_real_inputs = 0;
+    uint8_t        has_real_inputs = 0;
     GHashTableIter iter;
     gpointer       key, value;
     g_hash_table_iter_init(&iter, inputs);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
-        if ((uintptr_t) key < MAX_INPUT_SIZE) {
+        if ((uintptr_t)key < MAX_INPUT_SIZE) {
             has_real_inputs = 1;
             break;
         }
     }
 
     if (has_real_inputs) {
-#if 1
+#if 0
         Z3_solver solver = smt_new_solver();
         add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver);
         Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
@@ -1062,10 +1333,19 @@ static void smt_query(Query* q)
 
     switch (q->query->opkind) {
         case SYMBOLIC_PC:
-            ABORT("Not yet implemented"); // ToDo
+            // ABORT("Not yet implemented"); // ToDo
             break;
         case SYMBOLIC_JUMP_TABLE_ACCESS:
-            ABORT("Not yet implemented"); // ToDo
+            // ABORT("Not yet implemented"); // ToDo
+            break;
+        case MEMORY_SLICE_ACCESS:
+            // ABORT("Not yet implemented"); // ToDo
+            break;
+        case SYMBOLIC_LOAD:
+            // ABORT("Not yet implemented"); // ToDo
+            break;
+        case SYMBOLIC_STORE:
+            // ABORT("Not yet implemented"); // ToDo
             break;
         default:
             printf("\nBranch at 0x%lx\n", q->address);
@@ -1236,7 +1516,7 @@ int main(int argc, char* argv[])
             smt_query(&next_query[0]);
             next_query++;
 #if 0
-            if (GET_QUERY_IDX(next_query) > 2000) {
+            if (GET_QUERY_IDX(next_query) > 100) {
                 printf("Exiting...\n");
                 exit(0);
             }

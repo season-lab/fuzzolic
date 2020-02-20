@@ -11,6 +11,9 @@ int all_concrete(uint32_t input);
 // jump table
 int switchf(int v);
 
+// symbolic load loop
+int atoi_check(const char* s);
+
 // all flags add
 int addq(uint64_t);
 int addl(uint32_t);
@@ -72,6 +75,11 @@ Testcase tests[] = {
      .input_type = VAR,
      .input_mode = FIXED_SIZE,
      .input_size = 4},
+    //
+    {.name       = "atoi",
+     .f          = F(atoi_check),
+     .input_type = BUFFER,
+     .input_size = 128},
     //
     {.name       = "addq",
      .f          = F(addq),

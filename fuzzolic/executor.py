@@ -156,7 +156,7 @@ class Executor(object):
 
         if self.debug != 'gdb':
             p_tracer_args += ['-symbolic']
-            if self.debug == 'trace' or self.debug == 'no_solver': # 
+            if self.debug == 'trace': #  or self.debug == 'no_solver'
                 p_tracer_args += ['-d']
                 p_tracer_args += ['in_asm,op']  # 'in_asm,op_opt,out_asm'
 
