@@ -2160,7 +2160,7 @@ static void smt_branch_query(Query* q)
     const char* z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
     SAYF("%s", z3_query_str);
 #endif
-#if 1
+#if 0
     print_z3_ast(z3_neg_query);
 #endif
 
