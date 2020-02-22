@@ -672,8 +672,11 @@ static inline uint8_t is_const(Z3_ast e, uint64_t* value)
     Z3_ast_kind kind = Z3_get_ast_kind(ctx, e);
 
     if (kind == Z3_NUMERAL_AST) {
-        Z3_bool r =
-            Z3_get_numeral_uint64(ctx, e, (long long unsigned int*)value);
+        Z3_bool r = Z3_get_numeral_uint64(ctx, e, 
+#if Z3_VERSION <= 451
+            (long long unsigned int*)
+#endif
+            value);
         assert(r == Z3_TRUE);
         return 1;
     }
