@@ -139,9 +139,6 @@ static inline void add_deps_to_solver(GHashTable* inputs, size_t query_idx,
 
     g_hash_table_iter_init(&iter, inputs);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
-        // res = g_hash_table_add(inputs_to_check, input_idx);
-        // assert(res == TRUE);
-
         size_t      input_idx = (size_t)key;
         Dependency* dep       = dependency_graph[input_idx];
         if (dep && dep == current) {
@@ -327,6 +324,286 @@ static void smt_query_check(Z3_solver solver, size_t idx)
 #endif
 }
 
+static void print_z3_original(Z3_ast e)
+{
+    Z3_set_ast_print_mode(smt_solver.ctx, Z3_PRINT_LOW_LEVEL);
+    const char* z3_query_str = Z3_ast_to_string(smt_solver.ctx, e);
+    SAYF("\n%s\n", z3_query_str);
+}
+
+static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op,
+                                  uint8_t parent_is_concat)
+{
+    Z3_context   ctx = smt_solver.ctx;
+    Z3_app       app;
+    Z3_func_decl decl;
+    Z3_decl_kind decl_kind;
+    unsigned     num_operands;
+
+    const char* s_op          = NULL;
+    uint8_t     op_is_boolean = 0;
+    uint8_t     propagate_op  = 0;
+
+    switch (Z3_get_ast_kind(ctx, e)) {
+
+        case Z3_NUMERAL_AST: {
+            Z3_sort  sort = Z3_get_sort(ctx, e);
+            size_t   size = Z3_get_bv_sort_size(ctx, sort);
+            uint64_t value;
+            Z3_bool  r =
+                Z3_get_numeral_uint64(ctx, e, (long long unsigned int*)&value);
+            assert(r == Z3_TRUE);
+            printf("%lx#%lu", value, size);
+            return;
+        }
+
+        case Z3_APP_AST: {
+
+            app          = Z3_to_app(ctx, e);
+            decl         = Z3_get_app_decl(ctx, app);
+            decl_kind    = Z3_get_decl_kind(ctx, decl);
+            num_operands = Z3_get_app_num_args(ctx, app);
+
+            switch (decl_kind) {
+
+                case Z3_OP_UNINTERPRETED: {
+                    Z3_symbol   symbol = Z3_get_decl_name(ctx, decl);
+                    const char* s      = Z3_get_symbol_string(ctx, symbol);
+                    printf("%s", s);
+                    return;
+                }
+
+                case Z3_OP_TRUE:
+                    printf("TRUE");
+                    return;
+                case Z3_OP_FALSE:
+                    printf("FALSE");
+                    return;
+
+                case Z3_OP_EQ: {
+                    s_op = invert_op == 0 ? "==" : "!=";
+                    break;
+                }
+                case Z3_OP_NOT: {
+                    propagate_op = 1;
+                    break;
+                }
+                case Z3_OP_SGEQ: {
+                    s_op = invert_op == 0 ? ">=" : "<";
+                    break;
+                }
+                case Z3_OP_SGT: {
+                    s_op = invert_op == 0 ? ">" : "<=";
+                    break;
+                }
+                case Z3_OP_SLEQ: {
+                    s_op = invert_op == 0 ? "<=" : ">";
+                    break;
+                }
+                case Z3_OP_SLT: {
+                    s_op = invert_op == 0 ? "<" : ">=";
+                    break;
+                }
+                case Z3_OP_UGEQ: {
+                    s_op = invert_op == 0 ? ">=u" : "<u";
+                    break;
+                }
+                case Z3_OP_UGT: {
+                    s_op = invert_op == 0 ? ">u" : "<=u";
+                    break;
+                }
+                case Z3_OP_ULEQ: {
+                    s_op = invert_op == 0 ? "<=u" : ">u";
+                    break;
+                }
+                case Z3_OP_ULT: {
+                    s_op = invert_op == 0 ? "<u" : ">=u";
+                    break;
+                }
+
+                case Z3_OP_CONCAT: {
+                    assert(invert_op == 0);
+                    s_op = "..";
+                    break;
+                }
+                case Z3_OP_EXTRACT: {
+                    assert(invert_op == 0);
+                    break;
+                }
+                case Z3_OP_SIGN_EXT: {
+                    assert(invert_op == 0);
+                    break;
+                }
+
+                case Z3_OP_AND: {
+                    s_op = "&&";
+                    break;
+                }
+
+                case Z3_OP_BNOT: {
+                    s_op = "~";
+                    break;
+                }
+                case Z3_OP_BNEG: {
+                    s_op = "-";
+                    break;
+                }
+
+                case Z3_OP_BADD: {
+                    s_op = "+";
+                    break;
+                }
+                case Z3_OP_BSUB: {
+                    s_op = "-";
+                    break;
+                }
+                case Z3_OP_BMUL: {
+                    s_op = "*";
+                    break;
+                }
+
+                case Z3_OP_BUDIV: {
+                    s_op = "/u";
+                    break;
+                }
+                case Z3_OP_BUREM: {
+                    s_op = "%u";
+                    break;
+                }
+                case Z3_OP_BSDIV: {
+                    s_op = "/";
+                    break;
+                }
+                case Z3_OP_BSREM: {
+                    s_op = "%";
+                    break;
+                }
+
+                case Z3_OP_BSHL: {
+                    s_op = "<<";
+                    break;
+                }
+                case Z3_OP_BLSHR: {
+                    s_op = ">>l";
+                    break;
+                }
+                case Z3_OP_BASHR: {
+                    s_op = ">>";
+                    break;
+                }
+
+                case Z3_OP_BAND: {
+                    s_op = "&";
+                    break;
+                }
+                case Z3_OP_BOR: {
+                    s_op = "|";
+                    break;
+                }
+                case Z3_OP_BXOR: {
+                    s_op = "^";
+                    break;
+                }
+
+                case Z3_OP_ITE: {
+                    break;
+                }
+
+                default: {
+                    // printf("OTHER");
+                    // return;
+                }
+            }
+        }
+    }
+
+    if (num_operands == 1) {
+        Z3_ast op1 = Z3_get_app_arg(ctx, app, 0);
+
+        if (propagate_op && decl_kind == Z3_OP_NOT) {
+            print_z3_ast_internal(op1, !invert_op, 0);
+        } else {
+            assert(propagate_op == 0);
+            if (decl_kind == Z3_OP_EXTRACT) {
+
+                int high = Z3_get_decl_int_parameter(ctx, decl, 0);
+                int low  = Z3_get_decl_int_parameter(ctx, decl, 1);
+                assert(low >= 0 && high >= low);
+
+                printf("(");
+                print_z3_ast_internal(op1, 0, 0);
+                printf(")[%d:%d]", high, low);
+
+            } else if (decl_kind == Z3_OP_SIGN_EXT) {
+
+                int n = Z3_get_decl_int_parameter(ctx, decl, 0);
+                assert(n > 0);
+
+                printf("(");
+                print_z3_ast_internal(op1, 0, 0);
+                printf(" SExt %d)", n);
+
+            } else if (decl_kind == Z3_OP_BNOT) {
+
+                printf("%s", s_op);
+                print_z3_ast_internal(op1, 0, 0);
+
+            } else if (s_op) {
+
+                assert(s_op);
+                printf("%s", s_op);
+                printf("(");
+                print_z3_ast_internal(op1, 0, 0);
+                printf(")");
+
+            } else {
+                print_z3_original(e);
+                ABORT();
+            }
+        }
+
+    } else if (num_operands == 2 && s_op) {
+        Z3_ast op1 = Z3_get_app_arg(ctx, app, 0);
+        Z3_ast op2 = Z3_get_app_arg(ctx, app, 1);
+
+        if (!parent_is_concat || decl_kind != Z3_OP_CONCAT) {
+            printf("(");
+        }
+        print_z3_ast_internal(op1, 0, decl_kind == Z3_OP_CONCAT);
+        printf(" %s ", s_op);
+        print_z3_ast_internal(op2, 0, decl_kind == Z3_OP_CONCAT);
+        if (!parent_is_concat || decl_kind != Z3_OP_CONCAT) {
+            printf(")");
+        }
+
+    } else if (num_operands == 3 && decl_kind == Z3_OP_ITE) {
+        Z3_ast op1 = Z3_get_app_arg(ctx, app, 0);
+        Z3_ast op2 = Z3_get_app_arg(ctx, app, 1);
+        Z3_ast op3 = Z3_get_app_arg(ctx, app, 2);
+
+        printf("ITE(");
+        print_z3_ast_internal(op1, 0, 0);
+        printf(", ");
+        print_z3_ast_internal(op2, 0, 0);
+        printf(", ");
+        print_z3_ast_internal(op3, 0, 0);
+        printf(")");
+
+    } else {
+        printf("\nNumber of operands: %u\n", num_operands);
+        print_z3_original(e);
+        ABORT();
+    }
+}
+
+static void print_z3_ast(Z3_ast e)
+{
+    // print_z3_original(e);
+    printf("\n");
+    print_z3_ast_internal(e, 0, 0);
+    printf("\n\n");
+}
+
 void smt_print_ast_sort(Z3_ast e)
 {
     Z3_sort sort = Z3_get_sort(smt_solver.ctx, e);
@@ -349,6 +626,58 @@ Z3_ast smt_to_bv_n(Z3_ast e, size_t width) // cast boolean to a bitvector
     } else {
         return e;
     }
+}
+
+#define APP(e)    ((Z3_app)e)
+#define N_ARGS(e) Z3_get_app_num_args(smt_solver.ctx, APP(e))
+#define ARG1(e)   Z3_get_app_arg(smt_solver.ctx, APP(e), 0)
+#define ARG2(e)   Z3_get_app_arg(smt_solver.ctx, APP(e), 1)
+#define ARG3(e)   Z3_get_app_arg(smt_solver.ctx, APP(e), 2)
+#define PARAM1(e)                                                              \
+    Z3_get_decl_int_parameter(smt_solver.ctx,                                  \
+                              Z3_get_app_decl(smt_solver.ctx, APP(e)), 0);
+#define PARAM2(e)                                                              \
+    Z3_get_decl_int_parameter(smt_solver.ctx,                                  \
+                              Z3_get_app_decl(smt_solver.ctx, APP(e)), 1);
+#define OP(e) get_op(APP(e))
+#define SIZE(e)                                                                \
+    Z3_get_bv_sort_size(smt_solver.ctx, Z3_get_sort(smt_solver.ctx, e))
+
+static inline uint8_t is_zero_const(Z3_ast e)
+{
+    Z3_context  ctx  = smt_solver.ctx;
+    Z3_ast_kind kind = Z3_get_ast_kind(ctx, e);
+
+    if (kind == Z3_NUMERAL_AST) {
+        uint64_t value;
+        Z3_bool  r =
+            Z3_get_numeral_uint64(ctx, e, (long long unsigned int*)&value);
+        assert(r == Z3_TRUE);
+        return value == 0;
+    }
+
+    return 0;
+}
+
+static inline uint8_t is_const(Z3_ast e, uint64_t* value)
+{
+    Z3_context  ctx  = smt_solver.ctx;
+    Z3_ast_kind kind = Z3_get_ast_kind(ctx, e);
+
+    if (kind == Z3_NUMERAL_AST) {
+        Z3_bool r =
+            Z3_get_numeral_uint64(ctx, e, (long long unsigned int*)value);
+        assert(r == Z3_TRUE);
+        return 1;
+    }
+
+    return 0;
+}
+
+static inline Z3_decl_kind get_op(Z3_app app)
+{
+    Z3_func_decl decl = Z3_get_app_decl(smt_solver.ctx, app);
+    return Z3_get_decl_kind(smt_solver.ctx, decl);
 }
 
 #define VERBOSE 0
@@ -399,7 +728,14 @@ void smt_bv_resize(Z3_ast* a, Z3_ast* b, ssize_t bytes_size)
         printf("CONCAT in resize A: size_a=%lu size=%lu\n", a_size, size);
         smt_print_ast_sort(*a);
 #endif
-        *a = Z3_mk_concat(smt_solver.ctx, smt_new_const(0, size - a_size), *a);
+        if (OP(*a) == Z3_OP_CONCAT && is_zero_const(ARG1(*a))) {
+            *a =
+                Z3_mk_concat(smt_solver.ctx,
+                             smt_new_const(0, size - SIZE(ARG2(*a))), ARG2(*a));
+        } else {
+            *a = Z3_mk_concat(smt_solver.ctx, smt_new_const(0, size - a_size),
+                              *a);
+        }
     }
 
     if (Z3_get_sort_kind(smt_solver.ctx, b_sort) == Z3_BOOL_SORT) {
@@ -417,7 +753,14 @@ void smt_bv_resize(Z3_ast* a, Z3_ast* b, ssize_t bytes_size)
         printf("CONCAT in resize B\n");
         smt_print_ast_sort(*b);
 #endif
-        *b = Z3_mk_concat(smt_solver.ctx, smt_new_const(0, size - b_size), *b);
+        if (OP(*b) == Z3_OP_CONCAT && is_zero_const(ARG1(*b))) {
+            *b =
+                Z3_mk_concat(smt_solver.ctx,
+                             smt_new_const(0, size - SIZE(ARG2(*b))), ARG2(*b));
+        } else {
+            *b = Z3_mk_concat(smt_solver.ctx, smt_new_const(0, size - b_size),
+                              *b);
+        }
     }
 }
 #undef VERBOSE
@@ -442,20 +785,765 @@ ExprAnnotation* get_expr_annotation(Expr* e)
     }
 }
 
+typedef Z3_ast (*maker_op_t)(Z3_context, Z3_ast, Z3_ast);
+
+static inline maker_op_t get_make_op(Z3_decl_kind decl_kind)
+{
+    switch (decl_kind) {
+        case Z3_OP_EQ:
+            return Z3_mk_eq;
+
+        case Z3_OP_ULEQ:
+            return Z3_mk_bvule;
+        case Z3_OP_ULT:
+            return Z3_mk_bvult;
+        case Z3_OP_UGEQ:
+            return Z3_mk_bvuge;
+        case Z3_OP_UGT:
+            return Z3_mk_bvugt;
+
+        case Z3_OP_SLEQ:
+            return Z3_mk_bvsle;
+        case Z3_OP_SLT:
+            return Z3_mk_bvslt;
+        case Z3_OP_SGEQ:
+            return Z3_mk_bvsge;
+        case Z3_OP_SGT:
+            return Z3_mk_bvsgt;
+
+        default:
+            ABORT();
+    }
+}
+
+static inline uint8_t get_shifted_bytes(Z3_ast e, Z3_ast* bytes, int n)
+{
+    if (OP(e) == Z3_OP_BSHL) {
+        // printf("Check SHL\n");
+        assert(N_ARGS(e) == 2);
+        uint64_t value;
+        if (!is_const(ARG2(e), &value) || OP(ARG1(e)) != Z3_OP_CONCAT) {
+            // printf("Check SHL KO 1\n");
+            return 0;
+        }
+        if ((value / 8) >= n || value % 8 != 0 || bytes[value / 8]) {
+            // printf("Check SHL KO 2\n");
+            return 0;
+        }
+        Z3_ast  bytes_concat[8] = {0};
+        uint8_t r               = get_shifted_bytes(ARG1(e), bytes_concat, 8);
+        if (r) {
+            Z3_ast byte       = NULL;
+            int    byte_index = -1;
+            for (size_t i = 0; i < 8; i++) {
+                if (bytes_concat[i]) {
+                    if (byte) {
+                        // printf("Check SHL KO 3\n");
+                        return 0;
+                    } else {
+                        byte       = bytes_concat[i];
+                        byte_index = i;
+                    }
+                }
+            }
+            if (byte) {
+
+                assert(byte_index >= 0);
+                int new_index = byte_index - (value / 8);
+
+                // printf("Found byte: ");
+                // print_z3_ast_internal(byte, 0);
+                // printf("\nbyte_index=%d new_index=%d value=%lu\n",
+                // byte_index, new_index, value);
+
+                assert(new_index < n);
+                if (!bytes[new_index]) {
+                    bytes[new_index] = byte;
+                }
+
+                return 1;
+            }
+        }
+
+        // printf("Check SHL KO 5\n");
+
+    } else if (OP(e) == Z3_OP_CONCAT) {
+
+        // printf("Check CONCAT\n");
+
+        assert(N_ARGS(e) == 2);
+        if (OP(ARG1(e)) == Z3_OP_CONCAT || OP(ARG1(e)) == Z3_OP_BSHL) {
+            Z3_ast  bytes_1[8] = {0};
+            uint8_t r          = get_shifted_bytes(ARG1(e), bytes_1, 8);
+            if (!r) {
+                return 0;
+            }
+            for (size_t i = 0; i < 8; i++) {
+                if (bytes[i]) {
+                    // printf("Check CONCAT KO 9\n");
+                    return 0;
+                } else {
+                    bytes[i] = bytes_1[i];
+                }
+            }
+        } else if (is_zero_const(ARG1(e))) {
+            // nothing to be done
+        } else if (SIZE(ARG1(e)) == 8) {
+            if (bytes[0]) {
+                // printf("Check CONCAT KO 1\n");
+                return 0;
+            } else {
+                bytes[0] = ARG1(e);
+            }
+        } else {
+            // printf("Check CONCAT KO 2\n");
+            return 0;
+        }
+
+        if (OP(ARG2(e)) == Z3_OP_CONCAT || OP(ARG2(e)) == Z3_OP_BSHL) {
+            Z3_ast  bytes_1[8] = {0};
+            uint8_t r          = get_shifted_bytes(ARG2(e), bytes_1, 8);
+            if (!r) {
+                return 0;
+            }
+            for (size_t i = 0; i < 8; i++) {
+                if (bytes_1[i]) {
+                    if (bytes[(SIZE(ARG1(e)) / 8) + i]) {
+                        // printf("Check CONCAT KO 7 %lu %p\n", i,
+                        //  (SIZE(ARG1(e)) / 8) + i);
+                        return 0;
+                    } else {
+                        bytes[(SIZE(ARG1(e)) / 8) + i] = bytes_1[i];
+                    }
+                }
+            }
+        } else if (is_zero_const(ARG2(e))) {
+            // nothing to be done
+        } else if (SIZE(ARG2(e)) == 8) {
+            if (bytes[SIZE(ARG1(e)) / 8]) {
+                // printf("Check CONCAT KO 3\n");
+                return 0;
+            } else {
+                bytes[SIZE(ARG1(e)) / 8] = ARG2(e);
+            }
+        } else {
+            // printf("Check CONCAT KO 4: %u %u\n", OP(ARG2(e)), Z3_OP_BSHL);
+            return 0;
+        }
+
+        // printf("Check CONCAT OK\n");
+        return 1;
+
+    } else if (OP(e) == Z3_OP_BOR) {
+        // printf("Check OR\n");
+        assert(N_ARGS(e) == 2);
+        uint8_t r1 = get_shifted_bytes(ARG1(e), bytes, n);
+        uint8_t r2 = get_shifted_bytes(ARG2(e), bytes, n);
+        // printf("Check OR %u %u\n", r1, r2);
+        if (r1 && r2) {
+            // printf("Check OR OK\n");
+            return 1;
+        }
+    }
+
+    // printf("Check CONCAT KO 5\n");
+    return 0;
+}
+
+#define FF_MASK(bits) ((1LU << bits) - 1)
+
+static inline Z3_ast optimize_z3_query(Z3_ast e)
+{
+#if 0
+    printf("Transformation on: ");
+    print_z3_ast_internal(e, 0, 0);
+    printf("\n");
+#endif
+
+    Z3_context  ctx  = smt_solver.ctx;
+    Z3_ast_kind kind = Z3_get_ast_kind(ctx, e);
+    if (kind != Z3_APP_AST) {
+        return e;
+    }
+
+    Z3_decl_kind decl_kind    = OP(e);
+    unsigned     num_operands = N_ARGS(e);
+
+    if (decl_kind == Z3_OP_NOT) {
+        Z3_ast op1          = ARG1(e);
+        Z3_ast op1_original = op1;
+        op1                 = optimize_z3_query(op1);
+        if (op1_original != op1) {
+            return Z3_mk_not(ctx, op1);
+        } else {
+            return e;
+        }
+    }
+
+    uint64_t value;
+
+    // if (decl_kind == Z3_OP_EXTRACT)
+    // printf("\ndecl_kind: %u %u\n", decl_kind, Z3_OP_EQ);
+
+    if (decl_kind == Z3_OP_EQ ||
+        (decl_kind >= Z3_OP_ULEQ && decl_kind <= Z3_OP_SGT)) {
+
+        assert(num_operands == 2);
+
+        Z3_ast op1 = ARG1(e);
+        Z3_ast op2 = ARG2(e);
+
+        // from:
+        //  X - Y op 0
+        // whereL
+        //  op is a comparison operator
+        // to:
+        //  X == Y
+        if (is_zero_const(op1) && OP(op2) == Z3_OP_BSUB) {
+            e = get_make_op(decl_kind)(ctx, ARG1(op2), ARG2(op2));
+            return optimize_z3_query(e);
+        } else if (is_zero_const(op2) && OP(op1) == Z3_OP_BSUB) {
+            e = get_make_op(decl_kind)(ctx, ARG1(op1), ARG2(op1));
+            return optimize_z3_query(e);
+        }
+
+        // from:
+        //  (0x0#N .. X#M) op Y#(N+M)
+        // where:
+        //  Y is a constant smaller than 0xFF
+        //  op is a comparison operator
+        //  M == 8
+        // to:
+        //  X == Y
+        if (is_const(op2, &value) && value < 0xFF && OP(op1) == Z3_OP_CONCAT &&
+            N_ARGS(op1) == 2 && SIZE(ARG2(op1)) == 8 &&
+            is_zero_const(ARG1(op1))) {
+            op2 = smt_new_const(value, 8);
+            e   = get_make_op(decl_kind)(ctx, ARG2(op1), op2);
+            return optimize_z3_query(e);
+        }
+
+        // from:
+        //  (0x0#N .. X#M) == 0#(N+M)
+        // to:
+        //  X == 0#size(X)
+        if (decl_kind == Z3_OP_EQ && is_zero_const(op2) &&
+            OP(op1) == Z3_OP_CONCAT && N_ARGS(op1) == 2 &&
+            is_zero_const(ARG1(op1))) {
+            op2 = smt_new_const(0, SIZE(ARG2(op1)));
+            e   = get_make_op(decl_kind)(ctx, ARG2(op1), op2);
+            return optimize_z3_query(e);
+        }
+
+        // from:
+        //  (0x0#N .. X#M) op C#(N+M)
+        // where:
+        //  - op is an unsigned comparison op
+        //  - C <= MASK_FF(M)
+        // to:
+        //  X == C#size(X)
+        if ((decl_kind == Z3_OP_EQ || decl_kind == Z3_OP_ULEQ ||
+             decl_kind == Z3_OP_UGEQ || decl_kind == Z3_OP_ULT ||
+             decl_kind == Z3_OP_UGT) &&
+            OP(op1) == Z3_OP_CONCAT && is_const(op2, &value) &&
+            value <= FF_MASK(SIZE(ARG2(op1))) && is_zero_const(ARG1(op1))) {
+
+            op2 = smt_new_const(value, SIZE(ARG2(op1)));
+            e   = get_make_op(decl_kind)(ctx, ARG2(op1), op2);
+            return optimize_z3_query(e);
+        }
+        if ((decl_kind == Z3_OP_EQ || decl_kind == Z3_OP_ULEQ ||
+             decl_kind == Z3_OP_UGEQ || decl_kind == Z3_OP_ULT ||
+             decl_kind == Z3_OP_UGT) &&
+            OP(op2) == Z3_OP_CONCAT && is_const(op1, &value) &&
+            value <= FF_MASK(SIZE(ARG2(op2))) && is_zero_const(ARG1(op2))) {
+
+            op1 = smt_new_const(value, SIZE(ARG2(op2)));
+            e   = get_make_op(decl_kind)(ctx, op1, ARG2(op2));
+            return optimize_z3_query(e);
+        }
+
+        // from:
+        //   ((0#M .. X) - C#N)[high:0] == 0
+        // where:
+        //   - C <= (1 << high + 1) - 1
+        // to:
+        //   X == C#size(X)
+        if (decl_kind == Z3_OP_EQ && is_zero_const(op2) &&
+            OP(op1) == Z3_OP_EXTRACT) {
+
+            int high = PARAM1(op1);
+            int low  = PARAM2(op1);
+            assert(low >= 0 && high >= low);
+
+            if (low == 0 && OP(ARG1(op1)) == Z3_OP_BSUB &&
+                N_ARGS(ARG1(op1)) == 2 && is_const(ARG2(ARG1(op1)), &value) &&
+                value <= FF_MASK(high + 1) &&
+                OP(ARG1(ARG1(op1))) == Z3_OP_CONCAT &&
+                N_ARGS(ARG1(ARG1(op1))) == 2 &&
+                is_zero_const(ARG1(ARG1(ARG1(op1))))) {
+
+                op2 = smt_new_const(value, SIZE(ARG2(ARG1(ARG1(op1)))));
+                op1 = ARG2(ARG1(ARG1(op1)));
+                e   = Z3_mk_eq(ctx, op1, op2);
+                return optimize_z3_query(e);
+            }
+        }
+
+        // from:
+        //   (0#M .. X)[high:0] op Y
+        // where:
+        //   - size(X) == high + 1
+        // to:
+        //   X op Y
+        if (OP(op1) == Z3_OP_EXTRACT && OP(ARG1(op1)) == Z3_OP_CONCAT &&
+            is_zero_const(ARG1(ARG1(op1)))) {
+
+            int high = PARAM1(op1);
+            int low  = PARAM2(op1);
+            assert(low >= 0 && high >= low);
+
+            if (low == 0 && SIZE(ARG2(ARG1(op1))) == high + 1) {
+                printf("Here");
+                op1 = ARG2(ARG1(op1));
+                e   = get_make_op(decl_kind)(ctx, op1, op2);
+                return optimize_z3_query(e);
+            }
+        }
+
+        // from:
+        //   if (X) { 0#N } else { C#N } == 0#N
+        // to:
+        //   X
+        // from:
+        //   if (X) { C#N } else { 0#N } == 0#N
+        // to:
+        //   !X
+        uint64_t value2;
+        if (decl_kind == Z3_OP_EQ && OP(op1) == Z3_OP_ITE &&
+            is_zero_const(op2) && is_const(ARG2(op1), &value) &&
+            is_const(ARG3(op1), &value2)) {
+
+            if (value == 0 && value2 != 0) {
+                e = ARG1(op1);
+                return e;
+            }
+
+            if (value != 0 && value2 == 0) {
+                e = Z3_mk_not(ctx, ARG1(op1));
+                return e;
+            }
+        }
+
+        // from:
+        //  (0x0#N .. X#M) == (0x0#N .. Y#M)
+        // to:
+        //  X == Y
+        if ((decl_kind == Z3_OP_EQ || decl_kind == Z3_OP_ULEQ ||
+             decl_kind == Z3_OP_UGEQ || decl_kind == Z3_OP_ULT ||
+             decl_kind == Z3_OP_UGT) &&
+            OP(op1) == Z3_OP_CONCAT && OP(op2) == Z3_OP_CONCAT &&
+            is_zero_const(ARG1(op1)) && is_zero_const(ARG1(op2)) &&
+            SIZE(ARG1(op1)) == SIZE(ARG1(op2))) {
+
+            e = get_make_op(decl_kind)(ctx, ARG2(op1), ARG2(op2));
+            return optimize_z3_query(e);
+        }
+
+        // from:
+        //  ((0x0#N .. X#M) - (0x0#N .. Y#M))[high:0] op 0
+        // where:
+        //  - op is an unsigned comparison operator
+        //  - M == high + 1
+        // to:
+        //  X == Y
+        if ((decl_kind == Z3_OP_EQ || decl_kind == Z3_OP_ULEQ ||
+             decl_kind == Z3_OP_UGEQ || decl_kind == Z3_OP_ULT ||
+             decl_kind == Z3_OP_UGT) &&
+            OP(op1) == Z3_OP_EXTRACT && is_zero_const(op2) &&
+            OP(ARG1(op1)) == Z3_OP_BSUB &&
+            OP(ARG1(ARG1(op1))) == Z3_OP_CONCAT &&
+            OP(ARG2(ARG1(op1))) == Z3_OP_CONCAT &&
+            is_zero_const(ARG1(ARG1(ARG1(op1)))) &&
+            is_zero_const(ARG1(ARG2(ARG1(op1))))) {
+
+            int high = PARAM1(op1);
+            int low  = PARAM2(op1);
+
+            if (low == 0 && high + 1 == SIZE(ARG2(ARG1(ARG1(op1)))) &&
+                high + 1 == SIZE(ARG2(ARG2(ARG1(op1))))) {
+                
+                e = get_make_op(decl_kind)(ctx, ARG2(ARG1(ARG1(op1))), ARG2(ARG2(ARG1(op1))));
+                return optimize_z3_query(e);
+            }
+        }
+
+        // from:
+        //  C1 op ((0 .. X) >>l C2)
+        // where:
+        //  - op is an unsigned comparison operator
+        //  - C1 < FF_MASK(SIZE(X))
+        //  - C2 < FF_MASK(SIZE(X))
+        // to:
+        //  C1 op X >>l C2
+        if ((decl_kind == Z3_OP_EQ || decl_kind == Z3_OP_ULEQ ||
+             decl_kind == Z3_OP_UGEQ || decl_kind == Z3_OP_ULT ||
+             decl_kind == Z3_OP_UGT) &&
+            is_const(op1, &value) &&
+            OP(op2) == Z3_OP_BLSHR &&
+            OP(ARG1(op2)) == Z3_OP_CONCAT &&
+            is_zero_const(ARG1(ARG1(op2))) &&
+            value < FF_MASK(SIZE(ARG2(ARG1(op2)))) &&
+            is_const(ARG2(op2), &value2) && 
+            value2 < FF_MASK(SIZE(ARG2(ARG1(op2))))) {
+
+            Z3_ast c1 = smt_new_const(value, SIZE(ARG2(ARG1(op2))));
+            Z3_ast c2 = smt_new_const(value2, SIZE(ARG2(ARG1(op2))));
+            e = Z3_mk_bvlshr(ctx, ARG2(ARG1(op2)), c2);
+            e = get_make_op(decl_kind)(ctx, c1, e);
+            return optimize_z3_query(e);
+        }
+
+    } else if (decl_kind == Z3_OP_EXTRACT) {
+
+        Z3_ast op1  = ARG1(e);
+        int    high = PARAM1(e);
+        int    low  = PARAM2(e);
+
+        uint64_t value2;
+
+        // from:
+        //   (if (X) { C1#N } else { C2#N })[high:0]
+        // where:
+        //   C <= FF_MASK(high + 1)
+        // to:
+        //   if (X) { C1#(high + 1) } else { C2#(high + 1) }
+        if (OP(op1) == Z3_OP_ITE && low == 0 && is_const(ARG2(op1), &value) &&
+            is_const(ARG3(op1), &value2) && value <= FF_MASK(high + 1) &&
+            value2 <= FF_MASK(high + 1)) {
+
+            Z3_ast c1 = smt_new_const(value, high + 1);
+            Z3_ast c2 = smt_new_const(value2, high + 1);
+            e         = Z3_mk_ite(ctx, ARG1(op1), c1, c2);
+            return e;
+        }
+
+        // from:
+        //   (0#M .. X)[high:0]))
+        // where:
+        //   - size(X) == high + 1
+        // to:
+        //   X
+        if (OP(op1) == Z3_OP_CONCAT && is_zero_const(ARG1(op1))) {
+
+            int high = PARAM1(e);
+            int low  = PARAM2(e);
+
+            if (low == 0 && SIZE(ARG2(op1)) <= high + 1) {
+                if (SIZE(ARG2(op1)) == high + 1) {
+                    e = ARG2(op1);
+                } else {
+                    Z3_ast z = smt_new_const(0, (high + 1) - SIZE(ARG2(op1)));
+                    e        = Z3_mk_concat(ctx, z, ARG2(op1));
+                }
+                return optimize_z3_query(e);
+            }
+        }
+
+        // from:
+        //   ((0#M .. X) - C#N)[high:0]))
+        // where:
+        //   - C < MASK_FF(SIZE(X))
+        //   - size(X) == high + 1
+        // to:
+        //   X - C#size(X)
+        if (OP(op1) == Z3_OP_BSUB && OP(ARG1(op1)) == Z3_OP_CONCAT &&
+            is_zero_const(ARG1(ARG1(op1))) && is_const(ARG2(op1), &value) &&
+            value < FF_MASK(SIZE(ARG2(ARG1(op1))))) {
+
+            int high = PARAM1(e);
+            int low  = PARAM2(e);
+
+            if (SIZE(ARG2(ARG1(op1))) == high + 1) {
+                Z3_ast c = smt_new_const(value, high + 1);
+                e        = Z3_mk_bvsub(ctx, ARG2(ARG1(op1)), c);
+                return optimize_z3_query(e);
+            }
+        }
+        // symmetric
+        if (OP(op1) == Z3_OP_BSUB && OP(ARG2(op1)) == Z3_OP_CONCAT &&
+            is_zero_const(ARG1(ARG2(op1))) && is_const(ARG1(op1), &value) &&
+            value < FF_MASK(SIZE(ARG2(ARG2(op1))))) {
+
+            int high = PARAM1(e);
+            int low  = PARAM2(e);
+
+            if (SIZE(ARG2(ARG2(op1))) == high + 1) {
+                Z3_ast c = smt_new_const(value, high + 1);
+                e        = Z3_mk_bvsub(ctx, c, ARG2(ARG2(op1)));
+                return optimize_z3_query(e);
+            }
+        }
+        // same but with addition
+        if (OP(op1) == Z3_OP_BADD && OP(ARG1(op1)) == Z3_OP_CONCAT &&
+            is_zero_const(ARG1(ARG1(op1))) && is_const(ARG2(op1), &value) &&
+            value < FF_MASK(SIZE(ARG2(ARG1(op1))))) {
+
+            int high = PARAM1(e);
+            int low  = PARAM2(e);
+
+            if (SIZE(ARG2(ARG1(op1))) == high + 1) {
+                Z3_ast c = smt_new_const(value, high + 1);
+                e        = Z3_mk_bvadd(ctx, ARG2(ARG1(op1)), c);
+                return optimize_z3_query(e);
+            }
+        }
+        // symmetric with addition
+        if (OP(op1) == Z3_OP_BADD && OP(ARG2(op1)) == Z3_OP_CONCAT &&
+            is_zero_const(ARG1(ARG2(op1))) && is_const(ARG1(op1), &value) &&
+            value < FF_MASK(SIZE(ARG2(ARG2(op1))))) {
+
+            int high = PARAM1(e);
+            int low  = PARAM2(e);
+
+            if (SIZE(ARG2(ARG2(op1))) == high + 1) {
+                Z3_ast c = smt_new_const(value, high + 1);
+                e        = Z3_mk_bvadd(ctx, c, ARG2(ARG2(op1)));
+                return optimize_z3_query(e);
+            }
+        }
+
+        // from:
+        //  (X & ffffffffffffff00#64))[7:0]
+        // to:
+        //  0#8
+        if (OP(op1) == Z3_OP_BAND && is_const(ARG2(op1), &value) &&
+            value == 0xffffffffffffff00) {
+
+            int high = PARAM1(e);
+            int low  = PARAM2(e);
+
+            if (low == 0 && high == 7) {
+                return smt_new_const(0, 8);
+            }
+        }
+
+        // from:
+        //  (X & C#N)[high:0]
+        // to:
+        //  (X[high:0] & C#(high + 1))
+        if (OP(op1) == Z3_OP_BAND && is_const(ARG2(op1), &value)) {
+
+            int high = PARAM1(e);
+            int low  = PARAM2(e);
+
+            if (low == 0) {
+                Z3_ast c = smt_new_const(value, high + 1);
+                Z3_ast o = Z3_mk_extract(ctx, high, 0, ARG1(op1));
+                o = optimize_z3_query(o);
+                e = Z3_mk_bvand(ctx, o, c);
+                return e;
+            }
+        }
+
+        // from:
+        //  ((0#N .. X) << C#M)[high:0]
+        // to:
+        //  (X << C#M) iff size(X) == high + 1
+        //  ((0#M .. X) << C#M) iff size(X) + M == high + 1
+        if (OP(op1) == Z3_OP_BSHL && OP(ARG1(op1)) == Z3_OP_CONCAT &&
+            is_zero_const(ARG1(ARG1(op1))) && is_const(ARG2(op1), &value)) {
+
+            int high = PARAM1(e);
+            int low  = PARAM2(e);
+
+            if (low == 0 && high + 1 == SIZE(ARG2(ARG1(op1)))) {
+                Z3_ast c = smt_new_const(value, high + 1);
+                e        = Z3_mk_bvshl(ctx, ARG2(ARG1(op1)), c);
+                return optimize_z3_query(e);
+            }
+
+            if (low == 0 && high + 1 > SIZE(ARG2(ARG1(op1)))) {
+                Z3_ast c = smt_new_const(value, high + 1);
+                Z3_ast z = smt_new_const(0, (high + 1) - SIZE(ARG2(ARG1(op1))));
+                Z3_ast t = Z3_mk_concat(ctx, z, ARG2(ARG1(op1)));
+                e        = Z3_mk_bvshl(ctx, t, c);
+                return optimize_z3_query(e);
+            }
+        }
+
+        // from:
+        //  ((0#M .. X) >>l C)[high:0]
+        // where:
+        //  - high + 1 <= size(X)
+        //  - high > 7
+        // to:
+        //  X >>l Y
+        if (OP(op1) == Z3_OP_BLSHR &&
+            OP(ARG1(op1)) == Z3_OP_CONCAT &&
+            is_const(ARG2(op1), &value) &&
+            is_zero_const(ARG1(ARG1(op1)))
+            ) {
+
+            int high = PARAM1(e);
+            int low  = PARAM2(e);
+
+            if (low == 0 && high > 7 && SIZE(ARG2(ARG1(op1))) >= high + 1) {
+                Z3_ast c = smt_new_const(value, high + 1);
+                e = Z3_mk_bvlshr(ctx, ARG2(ARG1(op1)), c);
+                return e;
+            }
+        }
+
+    } else if (decl_kind == Z3_OP_BOR) {
+        assert(num_operands == 2);
+
+        Z3_ast op1 = ARG1(e);
+        Z3_ast op2 = ARG2(e);
+
+        uint64_t value;
+        if (is_zero_const(op1)) {
+            return op2;
+        }
+        if (is_zero_const(op2)) {
+            return op1;
+        }
+
+        Z3_ast  bytes[8] = {0};
+        uint8_t r        = get_shifted_bytes(e, bytes, 8);
+        if (r) {
+            int orig_size = SIZE(e);
+            int zero_size = 0;
+            e             = NULL;
+            Z3_ast z;
+            for (ssize_t i = (orig_size / 8) - 1; i >= 0; i--) {
+                // printf("Index #%lu\n", i);
+                if (bytes[i]) {
+                    if (zero_size > 0) {
+                        z = smt_new_const(0, zero_size);
+                        if (e) {
+                            e = Z3_mk_concat(ctx, z, e);
+                        } else {
+                            e = z;
+                        }
+                        zero_size = 0;
+                    }
+                    if (e) {
+                        e = Z3_mk_concat(ctx, bytes[i], e);
+                    } else {
+                        e = bytes[i];
+                    }
+                } else {
+                    zero_size += 8;
+                }
+            }
+            if (zero_size > 0) {
+                z = smt_new_const(0, zero_size);
+                if (e) {
+                    e = Z3_mk_concat(ctx, z, e);
+                } else {
+                    ABORT();
+                }
+            }
+            // print_z3_ast_internal(e, 0);
+            // printf("\n");
+            assert(SIZE(e) == orig_size);
+            return optimize_z3_query(e);
+        }
+    } else if (decl_kind == Z3_OP_CONCAT) {
+
+        Z3_ast op1 = ARG1(e);
+        Z3_ast op2 = ARG2(e);
+
+        // from:
+        //   (Y .. ((0#M .. X)[high:0]))
+        // where:
+        //   - size(X) == high + 1
+        // to:
+        //   Y .. X
+        if (OP(op2) == Z3_OP_EXTRACT && OP(ARG1(op2)) == Z3_OP_CONCAT &&
+            is_zero_const(ARG1(ARG1(op2)))) {
+
+            int high = PARAM1(op2);
+            int low  = PARAM2(op2);
+            assert(low >= 0 && high >= low);
+
+            if (low == 0 && SIZE(ARG2(ARG1(op2))) == high + 1) {
+                op2 = ARG2(ARG1(op2));
+                e   = Z3_mk_concat(ctx, op1, op2);
+                return optimize_z3_query(e);
+            }
+
+            if (low == 0 && SIZE(ARG2(ARG1(op2))) < high + 1) {
+                Z3_ast z = smt_new_const(0, (high + 1) - SIZE(ARG2(ARG1(op2))));
+                op2      = Z3_mk_concat(ctx, z, ARG2(ARG1(op2)));
+                e        = Z3_mk_concat(ctx, op1, op2);
+                return optimize_z3_query(e);
+            }
+        }
+
+        if (OP(op2) == Z3_OP_CONCAT && is_zero_const(op1) &&
+            is_zero_const(ARG1(op2))) {
+
+            op1 = smt_new_const(0, SIZE(op1) + SIZE(ARG1(op2)));
+            e   = Z3_mk_concat(ctx, op1, ARG2(op2));
+            return optimize_z3_query(e);
+        }
+
+    } else if (decl_kind == Z3_OP_BAND) {
+
+        Z3_ast op1 = ARG1(e);
+        Z3_ast op2 = ARG2(e);
+
+        uint64_t value, value2;
+        if (is_const(op1, &value) && is_const(op2, &value2)) {
+            return smt_new_const(value & value2, SIZE(e));
+        }
+
+        if (is_zero_const(op1)) {
+            return op2;
+        }
+
+        if (is_zero_const(op2)) {
+            return op1;
+        }
+
+        // from:
+        //   (if (X) { C1#N } else { C2#N }) & 0xff#N
+        // where:
+        //   C1 < 0xff && C2 < 0xff
+        // to:
+        //  if (X) { C1#N } else { C2#N }
+        if (OP(op1) == Z3_OP_ITE && is_const(op2, &value) && value == 0xFF &&
+            is_const(ARG2(op1), &value) && value <= 0xFF &&
+            is_const(ARG3(op1), &value2) && value2 <= 0xFF) {
+
+            Z3_ast c1 = smt_new_const(value, SIZE(e));
+            Z3_ast c2 = smt_new_const(value2, SIZE(e));
+            e         = Z3_mk_ite(ctx, ARG1(op1), c1, c2);
+            return e;
+        }
+    }
+
+    return e;
+}
+
 #define VERBOSE 0
-Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
+Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                        GHashTable* inputs)
 {
     if (width <= 0)
         width = sizeof(void*);
 
-    if (is_const) {
+    if (is_const_value) {
         // printf("IS_CONST: %lx\n", (uintptr_t)query);
         return smt_new_const((uintptr_t)query, 8 * width);
     }
 
     if (query == NULL)
         return Z3_mk_true(smt_solver.ctx);
+
+    // printf("START opkind: %s\n", opkind_to_str(query->opkind));
 
     Z3_ast   op1 = NULL;
     Z3_ast   op2 = NULL;
@@ -506,7 +1594,36 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
             smt_print_ast_sort(op1);
             smt_print_ast_sort(op2);
 #endif
-            r = Z3_mk_bvadd(smt_solver.ctx, op1, op2);
+            r = NULL;
+            uint64_t value, value2;
+            if (is_const(op1, &value)) {
+                if (value == 0) {
+                    r = op2;
+                } else if (OP(op2) == Z3_OP_BADD) {
+                    if (is_const(ARG1(op2), &value2)) {
+                        Z3_ast c = smt_new_const(value + value2, SIZE(op1));
+                        r = Z3_mk_bvadd(smt_solver.ctx, c, ARG2(op2));
+                    } else if (is_const(ARG2(op2), &value2)) {
+                        Z3_ast c = smt_new_const(value + value2, SIZE(op1));
+                        r = Z3_mk_bvadd(smt_solver.ctx, ARG1(op2), c);
+                    }
+                }
+            } else if (is_const(op2, &value)) {
+                if (value == 0) {
+                    r = op1;
+                } else if (OP(op1) == Z3_OP_BADD) {
+                    if (is_const(ARG1(op1), &value2)) {
+                        Z3_ast c = smt_new_const(value + value2, SIZE(op1));
+                        r = Z3_mk_bvadd(smt_solver.ctx, c, ARG2(op1));
+                    } else if (is_const(ARG2(op1), &value2)) {
+                        Z3_ast c = smt_new_const(value + value2, SIZE(op1));
+                        r = Z3_mk_bvadd(smt_solver.ctx, ARG1(op1), c);
+                    }
+                }
+            }
+            if (!r) {
+                r = Z3_mk_bvadd(smt_solver.ctx, op1, op2);
+            }
             break;
         case SUB:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, inputs);
@@ -777,6 +1894,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
             if (size >= n) {
                 if (size > n) {
                     op1 = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
+                    op1 = optimize_z3_query(op1);
                 }
                 op2 = smt_new_const(0, 64 - n);
                 r   = Z3_mk_concat(smt_solver.ctx, op2, op1);
@@ -789,6 +1907,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, inputs);
             n   = (uintptr_t)query->op2;
             op1 = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
+            op1 = optimize_z3_query(op1);
 #if VERBOSE
             printf("EXTRACT + SEXT\n");
             smt_print_ast_sort(op1);
@@ -833,7 +1952,11 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
             printf("EXTRACT\n");
             smt_print_ast_sort(op1);
 #endif
-            r = Z3_mk_extract(smt_solver.ctx, high, low, op1);
+            if (low == 0 && SIZE(op1) == high + 1) {
+                r = op1;
+            } else {
+                r = Z3_mk_extract(smt_solver.ctx, high, low, op1);
+            }
             break;
         case DEPOSIT:
             // DEPOSIT(arg0, arg1, arg2, pos, len):
@@ -856,6 +1979,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
                 Z3_mk_bvshl(smt_solver.ctx, op2, smt_new_const(dpos, 64));
             r1 = Z3_mk_bvand(smt_solver.ctx, op2,
                              smt_new_const(DEPOSIT_MASK(dpos, dlen), 64));
+            r0 = optimize_z3_query(r0);
+            r1 = optimize_z3_query(r1);
             r  = Z3_mk_bvor(smt_solver.ctx, r0, r1);
             break;
         //
@@ -915,6 +2040,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
             assert(query->op3 == 0);
             op1 = Z3_mk_concat(smt_solver.ctx, smt_new_const(0, 64), op1);
             op2 = Z3_mk_concat(smt_solver.ctx, smt_new_const(0, 64), op2);
+            op1 = optimize_z3_query(op1);
+            op2 = optimize_z3_query(op2);
 #if VERBOSE
             printf("MULU_HIGH\n");
             smt_print_ast_sort(op1);
@@ -962,7 +2089,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
         case EFLAGS_C_SBBQ:
         case EFLAGS_C_LOGIC:
         case EFLAGS_C_SHL:
-            r = smt_query_i386_to_z3(smt_solver.ctx, query, is_const, width,
+            r = smt_query_i386_to_z3(smt_solver.ctx, query, is_const_value, width,
                                      inputs);
             break;
 
@@ -971,6 +2098,11 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
     }
 
     // printf("%s\n", Z3_ast_to_string(smt_solver.ctx, r));
+
+    // printf("PRE OPTIMIZE\n");
+    r = optimize_z3_query(r);
+    // printf("POST OPTIMIZE\n");
+    // printf("END opkind: %s\n", opkind_to_str(query->opkind));
     return r;
 }
 
@@ -994,274 +2126,6 @@ static void smt_stats(Z3_solver solver)
         printf("UNKNOWN queries: count=%lu avg=%lu\n", smt_solver.unknown_count,
                (smt_solver.unknown_time / smt_solver.unknown_count));
     }
-}
-
-static void print_z3_original(Z3_ast e) {
-    Z3_set_ast_print_mode(smt_solver.ctx, Z3_PRINT_LOW_LEVEL);
-    const char* z3_query_str = Z3_ast_to_string(smt_solver.ctx, e);
-    SAYF("\n%s\n", z3_query_str);
-}
-
-static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op)
-{
-    Z3_context   ctx = smt_solver.ctx;
-    Z3_app       app;
-    Z3_func_decl decl;
-    Z3_decl_kind decl_kind;
-    unsigned     num_operands;
-
-    const char* s_op          = NULL;
-    uint8_t     op_is_boolean = 0;
-    uint8_t     propagate_op  = 0;
-
-    switch (Z3_get_ast_kind(ctx, e)) {
-
-        case Z3_NUMERAL_AST: {
-            Z3_sort  sort = Z3_get_sort(ctx, e);
-            size_t   size = Z3_get_bv_sort_size(ctx, sort);
-            uint64_t value;
-            Z3_bool  r =
-                Z3_get_numeral_uint64(ctx, e, (long long unsigned int*)&value);
-            assert(r == Z3_TRUE);
-            printf("%lx#%lu", value, size);
-            return;
-        }
-
-        case Z3_APP_AST: {
-
-            app          = Z3_to_app(ctx, e);
-            decl         = Z3_get_app_decl(ctx, app);
-            decl_kind    = Z3_get_decl_kind(ctx, decl);
-            num_operands = Z3_get_app_num_args(ctx, app);
-
-            switch (decl_kind) {
-
-                case Z3_OP_UNINTERPRETED: {
-                    Z3_symbol   symbol = Z3_get_decl_name(ctx, decl);
-                    const char* s      = Z3_get_symbol_string(ctx, symbol);
-                    printf("%s", s);
-                    return;
-                }
-
-                case Z3_OP_TRUE:
-                    printf("TRUE");
-                    return;
-                case Z3_OP_FALSE:
-                    printf("FALSE");
-                    return;
-
-                case Z3_OP_EQ: {
-                    s_op = invert_op == 0 ? "==" : "!=";
-                    break;
-                }
-                case Z3_OP_NOT: {
-                    propagate_op = 1;
-                    break;
-                }
-                case Z3_OP_SGEQ: {
-                    s_op = invert_op == 0 ? ">=" : "u";
-                    break;
-                }
-                case Z3_OP_SGT: {
-                    s_op = invert_op == 0 ? ">" : "<=";
-                    break;
-                }
-                case Z3_OP_SLEQ: {
-                    s_op = invert_op == 0 ? "<=" : ">";
-                    break;
-                }
-                case Z3_OP_SLT: {
-                    s_op = invert_op == 0 ? "<" : ">=";
-                    break;
-                }
-                case Z3_OP_UGEQ: {
-                    s_op = invert_op == 0 ? ">=u" : "<u";
-                    break;
-                }
-                case Z3_OP_UGT: {
-                    s_op = invert_op == 0 ? ">u" : "<=u";
-                    break;
-                }
-                case Z3_OP_ULEQ: {
-                    s_op = invert_op == 0 ? "<=u" : ">u";
-                    break;
-                }
-                case Z3_OP_ULT: {
-                    s_op = invert_op == 0 ? "<u" : ">=u";
-                    break;
-                }
-
-                case Z3_OP_CONCAT: {
-                    assert(invert_op == 0);
-                    s_op = "..";
-                    break;
-                }
-                case Z3_OP_EXTRACT: {
-                    assert(invert_op == 0);
-                    break;
-                }
-                case Z3_OP_SIGN_EXT: {
-                    assert(invert_op == 0);
-                    break;
-                }
-
-                case Z3_OP_AND: {
-                    s_op = "&&";
-                    break;
-                }
-
-                case Z3_OP_BNOT: {
-                    s_op = "~";
-                    break;
-                }
-                case Z3_OP_BNEG: {
-                    s_op = "-";
-                    break;
-                }
-
-                case Z3_OP_BADD: {
-                    s_op = "+";
-                    break;
-                }
-                case Z3_OP_BSUB: {
-                    s_op = "-";
-                    break;
-                }
-                case Z3_OP_BMUL: {
-                    s_op = "*";
-                    break;
-                }
-
-                case Z3_OP_BUDIV: {
-                    s_op = "/u";
-                    break;
-                }
-                case Z3_OP_BUREM: {
-                    s_op = "%u";
-                    break;
-                }
-                case Z3_OP_BSDIV: {
-                    s_op = "/";
-                    break;
-                }
-                case Z3_OP_BSREM: {
-                    s_op = "%";
-                    break;
-                }
-
-                case Z3_OP_BSHL: {
-                    s_op = "<<";
-                    break;
-                }
-                case Z3_OP_BLSHR: {
-                    s_op = ">>l";
-                    break;
-                }
-                case Z3_OP_BASHR: {
-                    s_op = ">>";
-                    break;
-                }
-
-                case Z3_OP_BAND: {
-                    s_op = "&";
-                    break;
-                }
-                case Z3_OP_BOR: {
-                    s_op = "|";
-                    break;
-                }
-                case Z3_OP_BXOR: {
-                    s_op = "^";
-                    break;
-                }
-
-                case Z3_OP_ITE: {
-                    break;
-                }
-
-                default: {
-                    // printf("OTHER");
-                    // return;
-                }
-            }
-        }
-    }
-
-    if (num_operands == 1) {
-        Z3_ast op1 = Z3_get_app_arg(ctx, app, 0);
-
-        if (propagate_op && decl_kind == Z3_OP_NOT) {
-            print_z3_ast_internal(op1, !invert_op);
-        } else {
-            assert(propagate_op == 0);
-            if (decl_kind == Z3_OP_EXTRACT) {
-
-                int high = Z3_get_decl_int_parameter(ctx, decl, 0);
-                int low  = Z3_get_decl_int_parameter(ctx, decl, 1);
-                assert(low >= 0 && high >= low);
-
-                printf("(");
-                print_z3_ast_internal(op1, 0);
-                printf(")[%d:%d]", high, low);
-
-            } else if (decl_kind == Z3_OP_SIGN_EXT) {
-
-                int n = Z3_get_decl_int_parameter(ctx, decl, 0);
-                assert(n > 0);
-
-                printf("(");
-                print_z3_ast_internal(op1, 0);
-                printf(" SExt %d)", n);
-
-            } else if (s_op) {
-
-                assert(s_op);
-                printf("%s", s_op);
-                printf("(");
-                print_z3_ast_internal(op1, 0);
-                printf(")\n");
-
-            } else {
-                print_z3_original(e);
-                ABORT();
-            }
-        }
-
-    } else if (num_operands == 2 && s_op) {
-        Z3_ast op1 = Z3_get_app_arg(ctx, app, 0);
-        Z3_ast op2 = Z3_get_app_arg(ctx, app, 1);
-
-        printf("(");
-        print_z3_ast_internal(op1, 0);
-        printf(" %s ", s_op);
-        print_z3_ast_internal(op2, 0);
-        printf(")");
-
-    } else if (num_operands == 3 && decl_kind == Z3_OP_ITE) {
-        Z3_ast op1 = Z3_get_app_arg(ctx, app, 0);
-        Z3_ast op2 = Z3_get_app_arg(ctx, app, 1);
-        Z3_ast op3 = Z3_get_app_arg(ctx, app, 2);
-
-        printf("ITE(");
-        print_z3_ast_internal(op1, 0);
-        printf(", ");
-        print_z3_ast_internal(op2, 0);
-        printf(", ");
-        print_z3_ast_internal(op3, 0);
-        printf(")");
-
-    } else {
-        printf("\nNumber of operands: %u\n", num_operands);
-        print_z3_original(e);
-        ABORT();
-    }
-}
-
-static void print_z3_ast(Z3_ast e)
-{
-    printf("\n");
-    print_z3_ast_internal(e, 0);
-    printf("\n\n");
 }
 
 static void smt_branch_query(Query* q)
@@ -1302,7 +2166,7 @@ static void smt_branch_query(Query* q)
     }
 
     if (has_real_inputs) {
-#if 0
+#if 1
         Z3_solver solver = smt_new_solver();
         add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver);
         Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
@@ -1516,7 +2380,7 @@ int main(int argc, char* argv[])
             smt_query(&next_query[0]);
             next_query++;
 #if 0
-            if (GET_QUERY_IDX(next_query) > 100) {
+            if (GET_QUERY_IDX(next_query) > 550) {
                 printf("Exiting...\n");
                 exit(0);
             }
