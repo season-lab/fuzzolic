@@ -350,8 +350,11 @@ static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op,
             Z3_sort  sort = Z3_get_sort(ctx, e);
             size_t   size = Z3_get_bv_sort_size(ctx, sort);
             uint64_t value;
-            Z3_bool  r =
-                Z3_get_numeral_uint64(ctx, e, (long long unsigned int*)&value);
+            Z3_bool  r = Z3_get_numeral_uint64(ctx, e,
+#if Z3_VERSION <= 451
+                (long long unsigned int*)
+#endif
+                &value);
             assert(r == Z3_TRUE);
             printf("%lx#%lu", value, size);
             return;
@@ -651,7 +654,11 @@ static inline uint8_t is_zero_const(Z3_ast e)
     if (kind == Z3_NUMERAL_AST) {
         uint64_t value;
         Z3_bool  r =
-            Z3_get_numeral_uint64(ctx, e, (long long unsigned int*)&value);
+            Z3_get_numeral_uint64(ctx, e,
+#if Z3_VERSION <= 451
+                (long long unsigned int*)
+#endif
+                &value);
         assert(r == Z3_TRUE);
         return value == 0;
     }
