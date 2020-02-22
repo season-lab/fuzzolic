@@ -10,13 +10,13 @@ ABORTING_COUNT = 0
 
 
 def handler(signo, stackframe):
-    print("Aborting....")
+    print("[FUZZOLIC] Aborting....")
     executor.SHUTDOWN = True
 
     global ABORTING_COUNT
     ABORTING_COUNT += 1
-    if ABORTING_COUNT >= 3:
-        sys.exit("Killing fuzzolic without cleanup.")
+    #if ABORTING_COUNT >= 3:
+    #    sys.exit("Killing fuzzolic without cleanup.")
 
 
 def main():
