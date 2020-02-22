@@ -2249,7 +2249,7 @@ static void cleanup(void)
 
 void sig_handler(int signo)
 {
-    printf("\nReceived SIGINT\n\n");
+    printf("\n[SOLVER] Received SIGINT\n\n");
     cleanup();
     exit(0);
 }
