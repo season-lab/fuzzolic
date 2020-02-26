@@ -216,7 +216,20 @@ class Executor(object):
                 p_solver.send_signal(signal.SIGINT)
 
         if self.debug != 'no_solver':
-            p_solver.wait()
+            while not SHUTDOWN:
+                try:
+                    p_solver.wait(2)
+                    break
+                except:
+                    pass
+            if SHUTDOWN:
+                print("[FUZZOLIC] Sending SIGINT to solver")
+                p_solver.send_signal(signal.SIGINT)
+                time.sleep(10)
+                try:
+                    p_solver.send_signal(signal.SIGTERM)
+                except:
+                    pass
         """
         if self.debug != 'no_solver':
             try:
