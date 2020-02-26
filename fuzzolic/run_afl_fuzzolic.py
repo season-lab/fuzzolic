@@ -70,7 +70,7 @@ afl_slave = subprocess.Popen(afl_slave_args, stdout=DEVNULL, stderr=DEVNULL)
 p_children.append(afl_slave)
 
 # wait for afl slave to create the bitmap
-time.sleep(18)
+time.sleep(1800) #
 
 fuzzolic_args = [ FUZZOLIC_BIN, '-a', '-i', run_dir + '/afl-slave/queue/', '-o', run_dir + '/fuzzolic'] + program_args
 fuzzolic = subprocess.Popen(fuzzolic_args, stdout=None, stderr=None)

@@ -318,6 +318,8 @@ class Executor(object):
             testcase = self.__pick_testcase()
             self.__check_shutdown_flag()
 
+        print("[FUZZOLIC] no more testcase. Finishing.")
+
         if len(self.__warning_log):
             print()
         for w in self.__warning_log:
