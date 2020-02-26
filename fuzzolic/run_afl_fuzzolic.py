@@ -73,7 +73,7 @@ p_children.append(afl_slave)
 time.sleep(18)
 
 fuzzolic_args = [ FUZZOLIC_BIN, '-a', '-i', run_dir + '/afl-slave/queue/', '-o', run_dir + '/fuzzolic'] + program_args
-fuzzolic = subprocess.Popen(qsym_args, stdout=None, stderr=None)
+fuzzolic = subprocess.Popen(fuzzolic_args, stdout=None, stderr=None)
 p_children.append(fuzzolic)
 
 for p in p_children:
