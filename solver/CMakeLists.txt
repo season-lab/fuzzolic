@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.7)
 
 project(Solver)
 
-add_executable(solver main.c i386.c)
+add_executable(solver main.c i386.c branch_coverage.c opts.c xxHash/xxhash.c)
 
 # z3
 target_link_libraries(solver z3)

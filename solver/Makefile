@@ -123,6 +123,33 @@ solver/fast:
 	$(MAKE) -f CMakeFiles/solver.dir/build.make CMakeFiles/solver.dir/build
 .PHONY : solver/fast
 
+branch_coverage.o: branch_coverage.c.o
+
+.PHONY : branch_coverage.o
+
+# target to build an object file
+branch_coverage.c.o:
+	$(MAKE) -f CMakeFiles/solver.dir/build.make CMakeFiles/solver.dir/branch_coverage.c.o
+.PHONY : branch_coverage.c.o
+
+branch_coverage.i: branch_coverage.c.i
+
+.PHONY : branch_coverage.i
+
+# target to preprocess a source file
+branch_coverage.c.i:
+	$(MAKE) -f CMakeFiles/solver.dir/build.make CMakeFiles/solver.dir/branch_coverage.c.i
+.PHONY : branch_coverage.c.i
+
+branch_coverage.s: branch_coverage.c.s
+
+.PHONY : branch_coverage.s
+
+# target to generate assembly for a file
+branch_coverage.c.s:
+	$(MAKE) -f CMakeFiles/solver.dir/build.make CMakeFiles/solver.dir/branch_coverage.c.s
+.PHONY : branch_coverage.c.s
+
 i386.o: i386.c.o
 
 .PHONY : i386.o
@@ -177,6 +204,60 @@ main.c.s:
 	$(MAKE) -f CMakeFiles/solver.dir/build.make CMakeFiles/solver.dir/main.c.s
 .PHONY : main.c.s
 
+opts.o: opts.c.o
+
+.PHONY : opts.o
+
+# target to build an object file
+opts.c.o:
+	$(MAKE) -f CMakeFiles/solver.dir/build.make CMakeFiles/solver.dir/opts.c.o
+.PHONY : opts.c.o
+
+opts.i: opts.c.i
+
+.PHONY : opts.i
+
+# target to preprocess a source file
+opts.c.i:
+	$(MAKE) -f CMakeFiles/solver.dir/build.make CMakeFiles/solver.dir/opts.c.i
+.PHONY : opts.c.i
+
+opts.s: opts.c.s
+
+.PHONY : opts.s
+
+# target to generate assembly for a file
+opts.c.s:
+	$(MAKE) -f CMakeFiles/solver.dir/build.make CMakeFiles/solver.dir/opts.c.s
+.PHONY : opts.c.s
+
+xxHash/xxhash.o: xxHash/xxhash.c.o
+
+.PHONY : xxHash/xxhash.o
+
+# target to build an object file
+xxHash/xxhash.c.o:
+	$(MAKE) -f CMakeFiles/solver.dir/build.make CMakeFiles/solver.dir/xxHash/xxhash.c.o
+.PHONY : xxHash/xxhash.c.o
+
+xxHash/xxhash.i: xxHash/xxhash.c.i
+
+.PHONY : xxHash/xxhash.i
+
+# target to preprocess a source file
+xxHash/xxhash.c.i:
+	$(MAKE) -f CMakeFiles/solver.dir/build.make CMakeFiles/solver.dir/xxHash/xxhash.c.i
+.PHONY : xxHash/xxhash.c.i
+
+xxHash/xxhash.s: xxHash/xxhash.c.s
+
+.PHONY : xxHash/xxhash.s
+
+# target to generate assembly for a file
+xxHash/xxhash.c.s:
+	$(MAKE) -f CMakeFiles/solver.dir/build.make CMakeFiles/solver.dir/xxHash/xxhash.c.s
+.PHONY : xxHash/xxhash.c.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -186,12 +267,21 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... solver"
 	@echo "... edit_cache"
+	@echo "... branch_coverage.o"
+	@echo "... branch_coverage.i"
+	@echo "... branch_coverage.s"
 	@echo "... i386.o"
 	@echo "... i386.i"
 	@echo "... i386.s"
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
+	@echo "... opts.o"
+	@echo "... opts.i"
+	@echo "... opts.s"
+	@echo "... xxHash/xxhash.o"
+	@echo "... xxHash/xxhash.i"
+	@echo "... xxHash/xxhash.s"
 .PHONY : help
 
 

@@ -2,14 +2,17 @@
 #include "i386.h"
 
 #define VERBOSE 0
-static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width, GHashTable* inputs)
+static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width,
+                                  GHashTable* inputs)
 {
     // from TCG cc_helper.c
     // src3 ? dst <= src1 : dst < src1;
     // src3, dst, and src1 must be evaluated based on operation size
 
-    Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
-    Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width, inputs);
+    Z3_ast dst =
+        smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
+    Z3_ast src1 =
+        smt_query_to_z3(query->op2, query->op2_is_const, width, inputs);
 
     if (width < sizeof(uintptr_t)) {
         dst  = smt_bv_extract(dst, width);
@@ -41,7 +44,8 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width, GHa
         printf("EFLAGS_C_ADCQ: symbolic src3\n");
         print_expr(query->op3);
 #endif
-        Z3_ast src3 = smt_query_to_z3(query->op3, query->op3_is_const, width, inputs);
+        Z3_ast src3 =
+            smt_query_to_z3(query->op3, query->op3_is_const, width, inputs);
         // src3 is a boolean, no need to cast it
 #if VERBOSE
         printf("EFLAGS_C_ADCQ: symbolic src3 2\n");
@@ -62,14 +66,18 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width, GHa
 #undef VERBOSE
 
 #define VERBOSE 0
-static inline Z3_ast eflags_c_sbb(Z3_context ctx, Expr* query, size_t width, GHashTable* inputs)
+static inline Z3_ast eflags_c_sbb(Z3_context ctx, Expr* query, size_t width,
+                                  GHashTable* inputs)
 {
     // DATA_TYPE src1 = dst + src2 + src3;
     // return (src3 ? src1 <= src2 : src1 < src2);
 
-    Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
-    Z3_ast src2 = smt_query_to_z3(query->op2, query->op2_is_const, width, inputs);
-    Z3_ast src3 = smt_query_to_z3(query->op3, query->op3_is_const, width, inputs);
+    Z3_ast dst =
+        smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
+    Z3_ast src2 =
+        smt_query_to_z3(query->op2, query->op2_is_const, width, inputs);
+    Z3_ast src3 =
+        smt_query_to_z3(query->op3, query->op3_is_const, width, inputs);
 
     Z3_ast src1 = Z3_mk_bvadd(ctx, dst, src2);
     src1        = Z3_mk_bvadd(ctx, src1, src3);
@@ -101,10 +109,13 @@ static inline Z3_ast eflags_c_sbb(Z3_context ctx, Expr* query, size_t width, GHa
 #undef VERBOSE
 
 #define VERBOSE 0
-static inline Z3_ast eflags_c_binary(Z3_context ctx, Expr* query, size_t width, GHashTable* inputs)
+static inline Z3_ast eflags_c_binary(Z3_context ctx, Expr* query, size_t width,
+                                     GHashTable* inputs)
 {
-    Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
-    Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width, inputs);
+    Z3_ast dst =
+        smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
+    Z3_ast src1 =
+        smt_query_to_z3(query->op2, query->op2_is_const, width, inputs);
 
     if (width < sizeof(uintptr_t)) {
         dst  = smt_bv_extract(dst, width);
@@ -229,8 +240,10 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
 
     Z3_ast one = smt_new_const(1, width * 8);
 
-    Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
-    Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width, inputs);
+    Z3_ast dst =
+        smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
+    Z3_ast src1 =
+        smt_query_to_z3(query->op2, query->op2_is_const, width, inputs);
 
     if (width < sizeof(uintptr_t)) {
         dst = smt_bv_extract(dst, width);
@@ -506,9 +519,12 @@ static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
 
     Z3_ast one = smt_new_const(1, width * 8);
 
-    Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
-    Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width, inputs);
-    Z3_ast src3 = smt_query_to_z3(query->op3, query->op3_is_const, width, inputs);
+    Z3_ast dst =
+        smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
+    Z3_ast src1 =
+        smt_query_to_z3(query->op2, query->op2_is_const, width, inputs);
+    Z3_ast src3 =
+        smt_query_to_z3(query->op3, query->op3_is_const, width, inputs);
 
     if (width < sizeof(uintptr_t)) {
         dst  = smt_bv_extract(dst, width);
@@ -659,9 +675,12 @@ static inline Z3_ast eflags_all_adcxo(Z3_context ctx, Expr* query, size_t width,
     Z3_ast zero = smt_new_const(0, sizeof(uintptr_t));
 
     // these are defined as target_ulong
-    Z3_ast dst  = smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
-    Z3_ast src1 = smt_query_to_z3(query->op2, query->op2_is_const, width, inputs);
-    Z3_ast src2 = smt_query_to_z3(query->op3, query->op3_is_const, width, inputs);
+    Z3_ast dst =
+        smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
+    Z3_ast src1 =
+        smt_query_to_z3(query->op2, query->op2_is_const, width, inputs);
+    Z3_ast src2 =
+        smt_query_to_z3(query->op3, query->op3_is_const, width, inputs);
 
     Z3_ast r, r0, r1, r2;
     switch (opkind) {
@@ -717,12 +736,14 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             // case RCL:
 
         case CMP_EQ:;
-            size_t slice = (uintptr_t) query->op3;
+            size_t slice = (uintptr_t)query->op3;
             if (slice > sizeof(uintptr_t))
                 printf("CMPQ slice=%ld\n", slice);
             assert(slice <= sizeof(uintptr_t));
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, slice, inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, slice, inputs);
+            op1 =
+                smt_query_to_z3(query->op1, query->op1_is_const, slice, inputs);
+            op2 =
+                smt_query_to_z3(query->op2, query->op2_is_const, slice, inputs);
 #if VERBOSE
             printf("CMP_EQ\n");
             smt_print_ast_sort(op1);
