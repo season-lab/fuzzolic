@@ -16,8 +16,8 @@ def handler(signo, stackframe):
 
     global ABORTING_COUNT
     ABORTING_COUNT += 1
-    if ABORTING_COUNT >= 3:
-        sys.exit("Killing fuzzolic without cleanup. Not good.")
+    # if ABORTING_COUNT >= 3:
+    #    sys.exit("Killing fuzzolic without cleanup. Not good.")
 
 
 def main():
