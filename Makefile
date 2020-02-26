@@ -1,11 +1,11 @@
 COUNT=3850
 
 all: build-tracer build-solver kill-solver clean-work-dir
-	./fuzzolic/fuzzolic.py tests/simple_if_0.dat tests/driver simple_if
+	./fuzzolic/fuzzolic.py -o workdir -i tests/simple_if_0.dat tests/driver simple_if
 	./utils/print_test_cases.py workdir/tests
 
 simpleif: build-tracer build-solver kill-solver clean-work-dir
-	time -p ./fuzzolic/fuzzolic.py --debug out tests/simple_if_0.dat tests/driver simple_if
+	time -p ./fuzzolic/fuzzolic.py --debug out -o workdir -i tests/simple_if_0.dat tests/driver simple_if
 	./utils/print_test_cases.py workdir/tests
 
 native:
@@ -13,11 +13,11 @@ native:
 	grep 'IN: foo' -A 200 asm_in_out.log | head -n 200
 
 all-concrete: clean-work-dir kill-solver
-	time -p ./fuzzolic/fuzzolic.py --debug out tests/all_concrete_0.dat tests/driver all_concrete
+	time -p ./fuzzolic/fuzzolic.py --debug out -o workdir -i tests/all_concrete_0.dat tests/driver all_concrete
 	./utils/print_test_cases.py workdir/tests
 
 all-concrete-full: build-tracer build-solver kill-solver clean-work-dir
-	time -p ./fuzzolic/fuzzolic.py tests/all_concrete_0.dat tests/driver all_concrete
+	time -p ./fuzzolic/fuzzolic.py -o workdir -i tests/all_concrete_0.dat tests/driver all_concrete
 	./utils/print_test_cases.py workdir/tests
 
 strcmp-debug: clean-work-dir kill-solver
@@ -29,7 +29,7 @@ strcmp: clean-work-dir kill-solver
 	./utils/print_test_cases.py workdir/tests
 
 mystrcmp: clean-work-dir kill-solver
-	time -p ./fuzzolic/fuzzolic.py tests/mystrcmp_0.dat tests/driver mystrcmp
+	time -p ./fuzzolic/fuzzolic.py -o workdir -i tests/mystrcmp_0.dat tests/driver mystrcmp
 	./utils/print_test_cases.py workdir/tests
 
 configure:
