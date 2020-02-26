@@ -15,31 +15,31 @@ import re
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 SOLVER_BIN = SCRIPT_DIR + '/../solver/solver'
 TRACER_BIN = SCRIPT_DIR + '/../tracer/x86_64-linux-user/qemu-x86_64'
-SOLVER_WAIT_TIME_AT_STARTUP = 0.0005
+SOLVER_WAIT_TIME_AT_STARTUP = 0.0010
 SOLVER_TIMEOUT = 10
 SHUTDOWN = False
 
 
 class Executor(object):
 
-    def __init__(self, binary, initial_seed, working_dir, binary_args, debug, delta_solving):
+    def __init__(self, binary, initial_seed, output_dir, binary_args, debug):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
-        self.binary = binary
+        self.binary = os.path.abspath(binary)
+
         self.binary_args = binary_args
         self.testcase_from_stdin = '@@' not in self.binary_args
 
-        if not os.path.exists(working_dir):
+        if not os.path.exists(output_dir):
             sys.exit('ERROR: invalid working directory')
-        self.working_dir = os.path.abspath(working_dir)
+        self.output_dir = os.path.abspath(output_dir)
 
         if not os.path.exists(initial_seed):
             sys.exit('ERROR: invalid initial seed')
-        self.initial_seed = initial_seed
+        self.initial_seed = os.path.abspath(initial_seed)
 
         self.debug = debug
-        self.delta_solving = delta_solving
 
         self.__load_config()
         self.__warning_log = set()
@@ -60,11 +60,9 @@ class Executor(object):
         self.config = config
 
     def __get_root_dir(self):
-        # root dir
-        root_dir = self.working_dir + '/workdir'
-        if not os.path.exists(root_dir):
-            os.system('mkdir ' + root_dir)
-        return root_dir
+        if not os.path.exists(self.output_dir):
+            os.system('mkdir ' + self.output_dir)
+        return self.output_dir
 
     def __get_queue_dir(self):
         queue_dir = self.__get_root_dir() + '/queue'
@@ -72,7 +70,7 @@ class Executor(object):
             os.system('mkdir ' + queue_dir)
         return queue_dir
 
-    def __get_test_cases_dir(self):
+    def __get_testcases_dir(self):
         testcases_dir = self.__get_root_dir() + '/tests'
         if not os.path.exists(testcases_dir):
             os.system('mkdir ' + testcases_dir)
@@ -94,8 +92,6 @@ class Executor(object):
 
         # run dir
         run_dir = root_dir + '/fuzzolic-' + str(run_id)
-        if os.path.exists(run_dir):
-            os.system('echo rm -rf ' + run_dir)
         os.system('mkdir ' + run_dir)
 
         # increment id for the next run
@@ -128,10 +124,11 @@ class Executor(object):
             p_solver_args = []
             p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
             p_solver_args += [SOLVER_BIN]
-            p_solver_args += [testcase]
-            p_solver_args += [self.__get_test_cases_dir()]
-            if self.delta_solving:
-                p_solver_args += ['-d']
+            p_solver_args += ['-i', testcase]
+            p_solver_args += ['-t', self.__get_testcases_dir()]
+            p_solver_args += ['-o', run_dir]
+            p_solver_args += ['-b', self.__get_root_dir() + '/branch_bitmap']
+            p_solver_args += ['-c', self.__get_root_dir() + '/context_bitmap']
             p_solver = subprocess.Popen(p_solver_args,
                                         stdout=p_solver_log if not self.debug else None,
                                         stderr=subprocess.STDOUT if not self.debug else None,
@@ -144,11 +141,10 @@ class Executor(object):
         # launch tracer
         p_tracer_log_name = run_dir + '/tracer.log'
         p_tracer_log = open(p_tracer_log_name, 'w')
-        p_tracer_args = []
 
+        p_tracer_args = []
         if self.debug != 'gdb':
             p_tracer_args += ['stdbuf', '-o0']  # No buffering on stdout
-            #p_tracer_args += ['strace']
         else:
             p_tracer_args += ['gdb']
 
@@ -167,7 +163,7 @@ class Executor(object):
                     args[k] = testcase
 
         if self.debug != 'gdb':
-            p_tracer_args += [self.working_dir + '/' + self.binary]
+            p_tracer_args += [self.binary]
             p_tracer_args += args
 
         p_tracer = subprocess.Popen(p_tracer_args,
@@ -189,7 +185,7 @@ class Executor(object):
                     p_tracer.stdin.write(f.read())
                     p_tracer.stdin.close()
         else:
-            gdb_cmd = 'run -symbolic ' + self.working_dir + \
+            gdb_cmd = 'run -symbolic ' + self.output_dir + \
                 '/' + self.binary + ' ' + ' '.join(args)
             if self.testcase_from_stdin:
                 gdb_cmd += ' < ' + testcase
@@ -218,30 +214,18 @@ class Executor(object):
         if self.debug != 'no_solver':
             while not SHUTDOWN:
                 try:
-                    p_solver.wait(2)
+                    p_solver.wait(SOLVER_TIMEOUT)
                     break
-                except:
+                except subprocess.TimeoutExpired:
                     pass
+
             if SHUTDOWN:
-                print("[FUZZOLIC] Sending SIGINT to solver")
-                p_solver.send_signal(signal.SIGINT)
-                time.sleep(10)
-                try:
-                    p_solver.send_signal(signal.SIGTERM)
-                except:
-                    pass
-        """
-        if self.debug != 'no_solver':
-            try:
-                p_solver.wait(SOLVER_TIMEOUT)
-            except subprocess.TimeoutExpired:
                 p_solver.send_signal(signal.SIGINT)
                 try:
                     p_solver.wait(SOLVER_TIMEOUT)
                 except subprocess.TimeoutExpired:
                     print('Solver will be killed.')
                     p_solver.send_signal(signal.SIGKILL)
-        """
 
         p_solver_log.close()
 
@@ -274,7 +258,7 @@ class Executor(object):
             # check whether this a duplicate test case
             discard = False
             known_tests = glob.glob(
-                self.__get_test_cases_dir() + "/*.dat")
+                self.__get_testcases_dir() + "/*.dat")
             for kt in known_tests:
                 if filecmp.cmp(kt, t):
                     print('Discarding %s since it is a duplicate' % t)
@@ -290,7 +274,7 @@ class Executor(object):
     def __import_test_case(self, testcase, name):
         os.system('cp ' + testcase + ' ' + self.__get_queue_dir() + '/' + name)
         os.system('cp ' + testcase + ' ' +
-                  self.__get_test_cases_dir() + '/' + name)
+                  self.__get_testcases_dir() + '/' + name)
         return self.__get_queue_dir() + '/' + name
 
     def __pick_testcase(self, initial_run=False):
@@ -303,8 +287,7 @@ class Executor(object):
                 return None
 
             # copy the initial seed in the queue
-            test_case_path = self.__import_test_case(
-                self.working_dir + '/' + self.initial_seed, 'seed.dat')
+            test_case_path = self.__import_test_case(self.initial_seed, 'seed.dat')
             queued_inputs.append(test_case_path)
 
         elif len(queued_inputs) > 1:

@@ -5,6 +5,7 @@ import sys
 import executor
 import signal
 import argparse
+import shutil
 
 ABORTING_COUNT = 0
 
@@ -15,47 +16,64 @@ def handler(signo, stackframe):
 
     global ABORTING_COUNT
     ABORTING_COUNT += 1
-    #if ABORTING_COUNT >= 3:
-    #    sys.exit("Killing fuzzolic without cleanup.")
+    if ABORTING_COUNT >= 3:
+        sys.exit("Killing fuzzolic without cleanup. Not good.")
 
 
 def main():
 
     parser = argparse.ArgumentParser(
         description='fuzzing + concolic = fuzzolic :)')
-    # optional args start with "-" for argparse
-    # action='store_true',
-    parser.add_argument(
-        '--debug', choices=['gdb', 'trace', 'out', 'no_solver'], help='enable debug mode')
-    parser.add_argument('--delta-solving', action='store_true',
-                        help='reuse bytes from testcase when no constraint fix them')
+
+    # version
     parser.add_argument('--version', action='version',
                         version='%(prog)s pre-{\\alpha}^{\infty}')
+
+    # optional args
+    parser.add_argument(
+        '-d', '--debug', choices=['gdb', 'trace', 'out', 'no_solver'], help='enable debug mode')
+
+    # required args
+    parser.add_argument(
+        '-i', '--input', help='path to the initial seed', required=True)
+    parser.add_argument(
+        '-o', '--output', help='output directory', required=True)
+
     # positional args
-    parser.add_argument('seed', metavar='<seed>', type=str,
-                        help='path to the initial seed')
     parser.add_argument('binary', metavar='<binary>',
                         type=str, help='path to the binary to run')
     parser.add_argument('args', metavar='<args>', type=str, help='args for to the binary to run',
                         nargs='*')  # argparse.REMAINDER
+
     args = parser.parse_args()
 
     binary = args.binary
     if not os.path.exists(binary):
-        sys.exit('ERROR: invalid binary')
+        sys.exit('ERROR: binary does not exist.')
 
-    seed = args.seed
-    if not os.path.exists(seed):
-        sys.exit('ERROR: invalid seed')
+    input = args.input
+    if not os.path.exists(input):
+        sys.exit('ERROR: input does not exist.')
+
+    output_dir = args.output
+    if os.path.exists(output_dir):
+        if os.path.exists(output_dir + '/.fuzzolic_workdir'):
+            shutil.rmtree(output_dir)
+        else:
+            sys.exit("Unsafe to remove %s. Do it manually." % output_dir)
+    if not os.path.exists(output_dir):
+        os.system("mkdir -p " + output_dir)
+        if not os.path.exists(output_dir):
+            sys.exit('ERROR: cannot create output directory.')
+        os.system("touch " + output_dir + '/.fuzzolic_workdir')
 
     binary_args = args.args
     debug = args.debug
-    delta_solving = args.delta_solving
 
     signal.signal(signal.SIGINT, handler)
 
     fuzzolic_executor = executor.Executor(
-        binary, seed, os.getcwd(), binary_args, debug, delta_solving)
+        binary, input, output_dir, binary_args, debug)
     fuzzolic_executor.run()
 
 
