@@ -22,7 +22,7 @@ SHUTDOWN = False
 
 class Executor(object):
 
-    def __init__(self, binary, initial_seed, output_dir, binary_args, debug):
+    def __init__(self, binary, input, output_dir, binary_args, debug=None, afl_mode=False):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
@@ -35,10 +35,11 @@ class Executor(object):
             sys.exit('ERROR: invalid working directory')
         self.output_dir = os.path.abspath(output_dir)
 
-        if not os.path.exists(initial_seed):
-            sys.exit('ERROR: invalid initial seed')
-        self.initial_seed = os.path.abspath(initial_seed)
+        if not os.path.exists(input):
+            sys.exit('ERROR: invalid input')
+        self.input = os.path.abspath(input)
 
+        self.afl_mode = afl_mode
         self.debug = debug
 
         self.__load_config()
@@ -286,9 +287,14 @@ class Executor(object):
             if not initial_run:
                 return None
 
-            # copy the initial seed in the queue
-            test_case_path = self.__import_test_case(self.initial_seed, 'seed.dat')
-            queued_inputs.append(test_case_path)
+            # copy the initial seed(s) in the queue
+            if not os.path.isdir(self.input):
+                test_case_path = self.__import_test_case(self.input, 'seed.dat')
+                queued_inputs.append(test_case_path)
+            else:
+                for t in glob.glob(self.input + '/*'):
+                    test_case_path = self.__import_test_case(t, os.path.basename(t))
+                    queued_inputs.append(test_case_path)
 
         elif len(queued_inputs) > 1:
             # sort the queue

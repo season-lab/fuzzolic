@@ -32,10 +32,12 @@ def main():
     # optional args
     parser.add_argument(
         '-d', '--debug', choices=['gdb', 'trace', 'out', 'no_solver'], help='enable debug mode')
+    parser.add_argument(
+        '-a', '--afl', help='enable AFL mode', action='store_true')
 
     # required args
     parser.add_argument(
-        '-i', '--input', help='path to the initial seed', required=True)
+        '-i', '--input', help='path to the initial seed (or seed directory)', required=True)
     parser.add_argument(
         '-o', '--output', help='output directory', required=True)
 
@@ -67,13 +69,14 @@ def main():
             sys.exit('ERROR: cannot create output directory.')
         os.system("touch " + output_dir + '/.fuzzolic_workdir')
 
+    afl_mode = args.afl
     binary_args = args.args
     debug = args.debug
 
     signal.signal(signal.SIGINT, handler)
 
     fuzzolic_executor = executor.Executor(
-        binary, input, output_dir, binary_args, debug)
+        binary, input, output_dir, binary_args, debug, afl_mode)
     fuzzolic_executor.run()
 
 
