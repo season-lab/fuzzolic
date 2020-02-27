@@ -8,6 +8,7 @@ import atexit
 import os
 import subprocess as sp
 import tempfile
+import copy
 
 # status for TestCaseMinimizer
 NEW = 0
