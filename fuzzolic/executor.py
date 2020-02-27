@@ -295,7 +295,7 @@ class Executor(object):
     def __check_testcase_afl(self, t, run_id, k, target):
         if self.minimizer.check_testcase(t):
             print("Importing %s" % t)
-            name = "id:%06d%06d,src:%s" % (run_id, k, target)
+            name = "id:0%s0%s,src:%s" % (run_id, k, target)
             self.__import_test_case(name)
             return True
         else:
