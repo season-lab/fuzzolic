@@ -10,19 +10,23 @@ import time
 import signal
 import configparser
 import re
+import shutil
+
+import minimizer
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 SOLVER_BIN = SCRIPT_DIR + '/../solver/solver'
 TRACER_BIN = SCRIPT_DIR + '/../tracer/x86_64-linux-user/qemu-x86_64'
+AFL_PATH = SCRIPT_DIR + '/../../AFL/'
+
 SOLVER_WAIT_TIME_AT_STARTUP = 0.0010
 SOLVER_TIMEOUT = 10
 SHUTDOWN = False
 
-
 class Executor(object):
 
-    def __init__(self, binary, input, output_dir, binary_args, debug=None, afl_mode=False):
+    def __init__(self, binary, input, output_dir, binary_args, debug=None, afl=None):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
@@ -39,7 +43,16 @@ class Executor(object):
             sys.exit('ERROR: invalid input')
         self.input = os.path.abspath(input)
 
-        self.afl_mode = afl_mode
+        if afl:
+            if not os.path.exists(afl):
+                sys.exit('ERROR: invalid AFL workdir')
+            self.afl = os.path.abspath(afl)
+            self.minimizer = TestcaseMinimizer([binary] + binary_args, AFL_PATH, output_dir, True)
+        else:
+            self.afl = None
+            self.minimizer = None
+        self.afl_processed_testcases = set()
+
         self.debug = debug
 
         self.__load_config()
@@ -245,32 +258,43 @@ class Executor(object):
                         if line not in self.__warning_log:
                             self.__warning_log.add("[solver warning]: %s" % line)
 
-        # remove test case from queue dir
-        os.system('rm ' + testcase)
-
         # check new test cases
         files = list(filter(os.path.isfile, glob.glob(
             run_dir + "/test_case_*.dat")))
         files.sort(key=lambda x: os.path.getmtime(x))
-
-        k = 0
         for t in files:
+            if self.afl:
+                self.__check_testcase_afl(t, run_id)
+            else:
+                self.__check_testcase(t, run_id)
 
-            # check whether this a duplicate test case
-            discard = False
-            known_tests = glob.glob(
-                self.__get_testcases_dir() + "/*.dat")
-            for kt in known_tests:
-                if filecmp.cmp(kt, t):
-                    print('Discarding %s since it is a duplicate' % t)
-                    discard = True
-                    break
+    def __check_testcase(self, t, run_id):
+        # check whether this a duplicate test case
+        discard = False
+        k = 0
+        known_tests = glob.glob(
+            self.__get_testcases_dir() + "/*.dat")
+        for kt in known_tests:
+            if filecmp.cmp(kt, t):
+                print('Discarding %s since it is a duplicate' % t)
+                discard = True
+                break
 
-            if not discard:
-                print("Importing %s" % t)
-                self.__import_test_case(
-                    t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')
-                k += 1
+        if not discard:
+            print("Importing %s" % t)
+            self.__import_test_case(
+                t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')
+            k += 1
+
+    def __check_testcase_afl(self, t, run_id):
+        k = 0
+        if self.minimizer.check_testcase(t):
+            print("Importing %s" % t)
+            self.__import_test_case(
+                t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')
+            k += 1
+        else:
+            print('Discarding %s since it is not interesting.' % t)
 
     def __import_test_case(self, testcase, name):
         os.system('cp ' + testcase + ' ' + self.__get_queue_dir() + '/' + name)
@@ -278,33 +302,69 @@ class Executor(object):
                   self.__get_testcases_dir() + '/' + name)
         return self.__get_queue_dir() + '/' + name
 
+    @property
+    def cur_input(self):
+        return self.__get_root_dir() + '/.input'
+
     def __pick_testcase(self, initial_run=False):
-        queued_inputs = list(
-            filter(os.path.isfile, glob.glob(self.__get_queue_dir() + "/*")))
 
-        if len(queued_inputs) == 0:
+        if self.afl:
+            queued_inputs = self.__import_from_afl()
+            while len(queued_inputs) == 0:
+                time.sleep(1)
+                queued_inputs = self.__import_from_afl()
 
-            if not initial_run:
-                return None
+            self.afl_processed_testcases.add(queued_inputs[0])
+            shutil.copy2(queued_inputs[0], self.cur_input)
+            return self.cur_input
 
-            # copy the initial seed(s) in the queue
-            if not os.path.isdir(self.input):
-                test_case_path = self.__import_test_case(self.input, 'seed.dat')
-                queued_inputs.append(test_case_path)
-            else:
-                for t in glob.glob(self.input + '/*'):
-                    test_case_path = self.__import_test_case(t, os.path.basename(t))
+        else:
+            queued_inputs = list(
+                filter(os.path.isfile, glob.glob(self.__get_queue_dir() + "/*")))
+
+            if len(queued_inputs) == 0:
+                if not initial_run:
+                    return None
+
+                # copy the initial seed(s) in the queue
+                if not os.path.isdir(self.input):
+                    test_case_path = self.__import_test_case(self.input, 'seed.dat')
                     queued_inputs.append(test_case_path)
+                else:
+                    for t in glob.glob(self.input + '/*'):
+                        test_case_path = self.__import_test_case(t, os.path.basename(t))
+                        queued_inputs.append(test_case_path)
 
-        elif len(queued_inputs) > 1:
-            # sort the queue
-            queued_inputs.sort(key=lambda x: os.path.getmtime(x))
+            elif len(queued_inputs) > 1:
+                # sort the queue
+                queued_inputs.sort(key=lambda x: os.path.getmtime(x))
 
-        return queued_inputs[0]
+            shutil.copy2(queued_inputs[0], self.cur_input)
+
+            # remove from the queue
+            os.unlink(queued_inputs[0])
+
+            return self.cur_input
 
     def __check_shutdown_flag(self):
         if SHUTDOWN:
             sys.exit("Forcefully terminating...")
+
+    def __import_from_afl(self):
+        if not self.afl:
+            return []
+
+        afl_queue = self.afl + '/queue/'
+        files = []
+        for name in os.listdir(afl_queue):
+            path = os.path.join(afl_queue, name)
+            if os.path.isfile(path):
+                files.append(path)
+
+        files = list(set(files) - self.afl_processed_testcases)
+        return sorted(files,
+                      key=functools.cmp_to_key(testcase_compare),
+                      reverse=True)
 
     def run(self):
 

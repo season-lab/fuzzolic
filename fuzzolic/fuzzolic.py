@@ -33,7 +33,7 @@ def main():
     parser.add_argument(
         '-d', '--debug', choices=['gdb', 'trace', 'out', 'no_solver'], help='enable debug mode')
     parser.add_argument(
-        '-a', '--afl', help='enable AFL mode', action='store_true')
+        '-a', '--afl', help='path to afl workdir')
 
     # required args
     parser.add_argument(
@@ -69,14 +69,17 @@ def main():
             sys.exit('ERROR: cannot create output directory.')
         os.system("touch " + output_dir + '/.fuzzolic_workdir')
 
-    afl_mode = args.afl
+    if args.afl and not os.path.exits(args.afl):
+        sys.exit('ERROR: AFL wordir does not exist.')
+    afl = args.afl
+
     binary_args = args.args
     debug = args.debug
 
     signal.signal(signal.SIGINT, handler)
 
     fuzzolic_executor = executor.Executor(
-        binary, input, output_dir, binary_args, debug, afl_mode)
+        binary, input, output_dir, binary_args, debug, afl)
     fuzzolic_executor.run()
 
 
