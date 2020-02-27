@@ -113,7 +113,7 @@ class TestcaseMinimizer(object):
 
         # Maybe need to port in C to speed up
         interesting = False
-        for i in xrange(len(bitmap)):
+        for i in range(len(bitmap)):
             old = my_bitmap[i]
             new = my_bitmap[i] | bitmap[i]
             if old != new:
