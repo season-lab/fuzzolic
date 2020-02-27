@@ -66,6 +66,7 @@ class TestcaseMinimizer(object):
         _, self.temp_file = tempfile.mkstemp(dir=out_dir)
         atexit.register(self.cleanup)
 
+        self.map_size = map_size
         self.bitmap = self.initialize_bitmap(self.bitmap_file, map_size)
         self.crash_bitmap = self.initialize_bitmap(self.crash_bitmap_file, map_size)
 
@@ -73,7 +74,7 @@ class TestcaseMinimizer(object):
         if os.path.exists(filename):
             print("Importing existing bitmap for minimizer")
             bitmap = read_bitmap_file(filename)
-            assert len(bitmap) == map_size
+            assert len(list(bitmap)) == map_size
         else:
             print("Iniziatilazing bitmap for minimizer")
             bitmap = [0] * map_size
@@ -113,7 +114,7 @@ class TestcaseMinimizer(object):
 
         # Maybe need to port in C to speed up
         interesting = False
-        for i in range(len(bitmap)):
+        for i in range(self.map_size):
             old = my_bitmap[i]
             new = my_bitmap[i] | bitmap[i]
             if old != new:
