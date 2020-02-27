@@ -265,16 +265,18 @@ class Executor(object):
         files = list(filter(os.path.isfile, glob.glob(
             run_dir + "/test_case_*.dat")))
         files.sort(key=lambda x: os.path.getmtime(x))
+        k = 0
         for t in files:
             if self.afl:
-                self.__check_testcase_afl(t, run_id)
+                good = self.__check_testcase_afl(t, run_id, k)
             else:
-                self.__check_testcase(t, run_id)
+                good = self.__check_testcase(t, run_id, k)
+            if good:
+                k += 1
 
-    def __check_testcase(self, t, run_id):
+    def __check_testcase(self, t, run_id, k):
         # check whether this a duplicate test case
         discard = False
-        k = 0
         known_tests = glob.glob(
             self.__get_testcases_dir() + "/*.dat")
         for kt in known_tests:
@@ -287,17 +289,18 @@ class Executor(object):
             print("Importing %s" % t)
             self.__import_test_case(
                 t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')
-            k += 1
 
-    def __check_testcase_afl(self, t, run_id):
-        k = 0
+        return not discard
+
+    def __check_testcase_afl(self, t, run_id, k):
         if self.minimizer.check_testcase(t):
             print("Importing %s" % t)
             self.__import_test_case(
                 t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')
-            k += 1
+            return True
         else:
             print('Discarding %s since it is not interesting.' % t)
+            return False
 
     def __import_test_case(self, testcase, name):
         os.system('cp ' + testcase + ' ' + self.__get_queue_dir() + '/' + name)
