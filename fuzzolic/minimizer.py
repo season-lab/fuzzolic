@@ -38,16 +38,17 @@ def testcase_compare(a, b):
 
 def read_bitmap_file(bitmap_file):
     b = []
-    with open(bitmap_file, "r") as f:
+    with open(bitmap_file, "rb") as f:
         byte = f.read(1)
         while byte:
-            b.append(ord(byte))
+            b.append(byte)
             byte = f.read(1)
     return b
 
 def write_bitmap_file(bitmap_file, bitmap):
-    with open(bitmap_file, "w") as f:
-        f.write(''.join(map(chr, bitmap)))
+    with open(bitmap_file, "wb") as f:
+        for b in bitmap:
+            f.write(b)
 
 def fix_at_file(cmd, testcase):
     cmd = copy.copy(cmd)
@@ -81,7 +82,7 @@ class TestcaseMinimizer(object):
             bitmap = read_bitmap_file(filename)
             assert len(bitmap) == map_size
         else:
-            print("Iniziatilazing bitmap for minimizer")
+            print("Initializing bitmap for minimizer")
             bitmap = [0] * map_size
         return bitmap
 
