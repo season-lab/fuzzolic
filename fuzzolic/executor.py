@@ -11,6 +11,7 @@ import signal
 import configparser
 import re
 import shutil
+import functools
 
 import minimizer
 
@@ -363,7 +364,7 @@ class Executor(object):
 
         files = list(set(files) - self.afl_processed_testcases)
         return sorted(files,
-                      key=functools.cmp_to_key(testcase_compare),
+                      key=functools.cmp_to_key(minimizer.testcase_compare),
                       reverse=True)
 
     def run(self):

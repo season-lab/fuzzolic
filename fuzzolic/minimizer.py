@@ -17,6 +17,23 @@ CRASH = 2
 TIMEOUT = 5 * 1000
 MAP_SIZE = 65536
 
+def get_score(testcase):
+    # New coverage is the best
+    score1 = testcase.endswith("+cov")
+    # NOTE: seed files are not marked with "+cov"
+    # even though it contains new coverage
+    score2 = "orig:" in testcase
+    # Smaller size is better
+    score3 = -os.path.getsize(testcase)
+    # Since name contains id, so later generated one will be chosen earlier
+    score4 = testcase
+    return (score1, score2, score3, score4)
+
+def testcase_compare(a, b):
+    a_score = get_score(a)
+    b_score = get_score(b)
+    return 1 if a_score > b_score else -1
+
 def read_bitmap_file(bitmap_file):
     with open(bitmap_file, "rb") as f:
         return map(ord, list(f.read()))
