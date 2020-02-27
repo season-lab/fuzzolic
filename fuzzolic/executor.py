@@ -317,6 +317,10 @@ class Executor(object):
 
             self.afl_processed_testcases.add(queued_inputs[0])
             shutil.copy2(queued_inputs[0], self.cur_input)
+
+            if initial_run:
+                self.minimizer.check_testcase(self.cur_input)
+
             return self.cur_input
 
         else:
