@@ -208,6 +208,9 @@ Z3_ast smt_new_symbol(uintptr_t id, const char* name, size_t n_bits, Expr* e)
 {
     assert(id < MAX_INPUTS_EXPRS);
     if (id < MAX_INPUT_SIZE) {
+        if (n_bits != 8) {
+            print_expr(e);
+        }
         assert(n_bits == 8 && "Multi-byte input not yet supported.");
     }
     Z3_ast s = input_exprs[id];
