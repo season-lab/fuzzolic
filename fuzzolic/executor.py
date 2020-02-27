@@ -47,7 +47,7 @@ class Executor(object):
             if not os.path.exists(afl):
                 sys.exit('ERROR: invalid AFL workdir')
             self.afl = os.path.abspath(afl)
-            self.minimizer = TestcaseMinimizer([binary] + binary_args, AFL_PATH, output_dir, True)
+            self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, AFL_PATH, output_dir, True)
         else:
             self.afl = None
             self.minimizer = None
