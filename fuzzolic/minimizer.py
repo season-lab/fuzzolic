@@ -9,6 +9,7 @@ import os
 import subprocess as sp
 import tempfile
 import copy
+import struct
 
 # status for TestCaseMinimizer
 NEW = 0
@@ -41,14 +42,14 @@ def read_bitmap_file(bitmap_file):
     with open(bitmap_file, "rb") as f:
         byte = f.read(1)
         while byte:
-            b.append(byte)
+            b.append(struct.unpack('B', byte)[0])
             byte = f.read(1)
     return b
 
 def write_bitmap_file(bitmap_file, bitmap):
     with open(bitmap_file, "wb") as f:
         for b in bitmap:
-            f.write(b)
+            f.write(struct.pack('B', b))
 
 def fix_at_file(cmd, testcase):
     cmd = copy.copy(cmd)
