@@ -17,6 +17,7 @@ CRASH = 2
 
 TIMEOUT = 5 * 1000
 MAP_SIZE = 65536
+AT_FILE = "@@"
 
 def get_score(testcase):
     # New coverage is the best
