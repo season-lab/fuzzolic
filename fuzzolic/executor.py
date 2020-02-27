@@ -123,6 +123,8 @@ class Executor(object):
         print('\nRunning using testcase: %s' % testcase)
         print('Running directory: %s' % run_dir)
 
+        os.system("cp " + testcase + " " + run_dir)
+
         env = os.environ.copy()
         for c in self.config:
             env[c] = self.config[c]
