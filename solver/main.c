@@ -2126,6 +2126,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             break;
 
         default:
+            print_expr(query);
             ABORT("Unknown expr opkind: %s", opkind_to_str(query->opkind));
     }
 
