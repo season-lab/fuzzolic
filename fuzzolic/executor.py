@@ -115,7 +115,7 @@ class Executor(object):
 
         return run_dir, run_id
 
-    def fuzz_one(self, testcase):
+    def fuzz_one(self, testcase, target):
 
         self.__check_shutdown_flag()
 
@@ -268,13 +268,13 @@ class Executor(object):
         k = 0
         for t in files:
             if self.afl:
-                good = self.__check_testcase_afl(t, run_id, k)
+                good = self.__check_testcase_afl(t, run_id, k, target)
             else:
-                good = self.__check_testcase(t, run_id, k)
+                good = self.__check_testcase(t, run_id, k, target)
             if good:
                 k += 1
 
-    def __check_testcase(self, t, run_id, k):
+    def __check_testcase(self, t, run_id, k, target):
         # check whether this a duplicate test case
         discard = False
         known_tests = glob.glob(
@@ -292,11 +292,11 @@ class Executor(object):
 
         return not discard
 
-    def __check_testcase_afl(self, t, run_id, k):
+    def __check_testcase_afl(self, t, run_id, k, target):
         if self.minimizer.check_testcase(t):
             print("Importing %s" % t)
-            self.__import_test_case(
-                t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')
+            name = "id:%06d%06d,src:%s" % (run_id, k, target)
+            self.__import_test_case(name)
             return True
         else:
             print('Discarding %s since it is not interesting.' % t)
@@ -327,7 +327,7 @@ class Executor(object):
             # update bitmap
             self.minimizer.check_testcase(self.cur_input)
 
-            return self.cur_input
+            return self.cur_input, os.path.basename(queued_inputs[0])
 
         else:
             queued_inputs = list(
@@ -355,7 +355,7 @@ class Executor(object):
             # remove from the queue
             os.unlink(queued_inputs[0])
 
-            return self.cur_input
+            return self.cur_input, os.path.basename(queued_inputs[0])
 
     def __check_shutdown_flag(self):
         if SHUTDOWN:
@@ -380,9 +380,9 @@ class Executor(object):
     def run(self):
 
         self.__check_shutdown_flag()
-        testcase = self.__pick_testcase(True)
+        testcase, target = self.__pick_testcase(True)
         while testcase:
-            self.fuzz_one(testcase)
+            self.fuzz_one(testcase, target)
             if self.debug:
                 return
             self.__check_shutdown_flag()
