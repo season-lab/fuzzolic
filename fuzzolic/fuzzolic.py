@@ -69,7 +69,7 @@ def main():
             sys.exit('ERROR: cannot create output directory.')
         os.system("touch " + output_dir + '/.fuzzolic_workdir')
 
-    if args.afl and not os.path.exits(args.afl):
+    if args.afl and not os.path.exists(args.afl):
         sys.exit('ERROR: AFL wordir does not exist.')
     afl = args.afl
 
