@@ -2226,7 +2226,7 @@ static void smt_branch_query(Query* q)
 
 static void smt_query(Query* q)
 {
-#if 0
+#if 1
     print_expr(q->query);
 #endif
 
