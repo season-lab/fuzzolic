@@ -296,7 +296,7 @@ class Executor(object):
         if self.minimizer.check_testcase(t):
             print("Importing %s" % t)
             name = "id:0%s0%s,src:%s" % (run_id, k, target)
-            self.__import_test_case(name)
+            self.__import_test_case(t, name)
             return True
         else:
             print('Discarding %s since it is not interesting.' % t)
@@ -386,7 +386,7 @@ class Executor(object):
             if self.debug:
                 return
             self.__check_shutdown_flag()
-            testcase = self.__pick_testcase()
+            testcase, target = self.__pick_testcase()
             self.__check_shutdown_flag()
 
         print("[FUZZOLIC] no more testcase. Finishing.")
