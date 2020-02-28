@@ -760,6 +760,7 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             for (size_t i = 0; i < XMM_BITES; i++) {
                 unsigned msb = (8 * (i + 1)) - 1;
                 Z3_ast   bit = Z3_mk_extract(ctx, msb, msb, op1);
+                bit = optimize_z3_query(bit);
                 if (i == 0) {
                     r = bit;
                 } else {

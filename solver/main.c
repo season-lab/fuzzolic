@@ -44,13 +44,13 @@ static Z3_ast      z3_ast_exprs[EXPR_QUERY_CAPACITY]    = {0};
 static Dependency* dependency_graph[MAX_INPUT_SIZE * 2] = {0};
 
 typedef struct {
-    uint8_t*    data;
-    size_t      size;
+    uint8_t* data;
+    size_t   size;
 } Testcase;
 
 static Testcase testcase;
 
-Config config = { 0 };
+Config config = {0};
 
 static void exitf(const char* message)
 {
@@ -237,8 +237,8 @@ static void smt_dump_solution(Z3_model m, size_t idx)
     size_t input_size = testcase.size;
 
     char testcase_name[128];
-    int  n = snprintf(testcase_name, sizeof(testcase_name),
-                     "test_case_%lu.dat", idx);
+    int  n = snprintf(testcase_name, sizeof(testcase_name), "test_case_%lu.dat",
+                     idx);
     assert(n > 0 && n < sizeof(testcase_name) && "test case name too long");
 
 #if 0
@@ -967,10 +967,10 @@ static inline uint8_t get_shifted_bytes(Z3_ast e, Z3_ast* bytes, int n)
 
 #define FF_MASK(bits) ((1LU << bits) - 1)
 
-static inline Z3_ast optimize_z3_query(Z3_ast e)
+Z3_ast optimize_z3_query(Z3_ast e)
 {
 #if 0
-    printf("Transformation on: ");
+    printf("\nTransformation on: ");
     print_z3_ast_internal(e, 0, 0);
     printf("\n");
 #endif
@@ -1119,7 +1119,6 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
             assert(low >= 0 && high >= low);
 
             if (low == 0 && SIZE(ARG2(ARG1(op1))) == high + 1) {
-                printf("Here");
                 op1 = ARG2(ARG1(op1));
                 e   = get_make_op(decl_kind)(ctx, op1, op2);
                 return optimize_z3_query(e);
@@ -1226,6 +1225,30 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
 
         uint64_t value2;
 
+        if (low == 0 && SIZE(op1) == high + 1) {
+            return op1;
+        }
+
+        if (low == high && is_const(op1, &value)) {
+            return smt_new_const(value >> low, 1);
+        }
+
+        // from:
+        //  (Y .. X)[bit:bit]
+        // to:
+        //  X[bit:bit] iff bit < size(X)
+        //  Y[bit - size(X) : bit - size(X)] iff b >= size(X)
+        if (OP(op1) == Z3_OP_CONCAT && high == low) {
+            if (low < SIZE(ARG2(op1))) {
+                e = Z3_mk_extract(ctx, low, low, ARG2(op1));
+                return optimize_z3_query(e);
+            } else {
+                e = Z3_mk_extract(ctx, low - SIZE(ARG2(op1)),
+                                  low - SIZE(ARG2(op1)), ARG1(op1));
+                return optimize_z3_query(e);
+            }
+        }
+
         // from:
         //   (if (X) { C1#N } else { C2#N })[high:0]
         // where:
@@ -1250,9 +1273,6 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
         //   X
         if (OP(op1) == Z3_OP_CONCAT && is_zero_const(ARG1(op1))) {
 
-            int high = PARAM1(e);
-            int low  = PARAM2(e);
-
             if (low == 0 && SIZE(ARG2(op1)) <= high + 1) {
                 if (SIZE(ARG2(op1)) == high + 1) {
                     e = ARG2(op1);
@@ -1275,9 +1295,6 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
             is_zero_const(ARG1(ARG1(op1))) && is_const(ARG2(op1), &value) &&
             value < FF_MASK(SIZE(ARG2(ARG1(op1))))) {
 
-            int high = PARAM1(e);
-            int low  = PARAM2(e);
-
             if (SIZE(ARG2(ARG1(op1))) == high + 1) {
                 Z3_ast c = smt_new_const(value, high + 1);
                 e        = Z3_mk_bvsub(ctx, ARG2(ARG1(op1)), c);
@@ -1288,9 +1305,6 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
         if (OP(op1) == Z3_OP_BSUB && OP(ARG2(op1)) == Z3_OP_CONCAT &&
             is_zero_const(ARG1(ARG2(op1))) && is_const(ARG1(op1), &value) &&
             value < FF_MASK(SIZE(ARG2(ARG2(op1))))) {
-
-            int high = PARAM1(e);
-            int low  = PARAM2(e);
 
             if (SIZE(ARG2(ARG2(op1))) == high + 1) {
                 Z3_ast c = smt_new_const(value, high + 1);
@@ -1303,9 +1317,6 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
             is_zero_const(ARG1(ARG1(op1))) && is_const(ARG2(op1), &value) &&
             value < FF_MASK(SIZE(ARG2(ARG1(op1))))) {
 
-            int high = PARAM1(e);
-            int low  = PARAM2(e);
-
             if (SIZE(ARG2(ARG1(op1))) == high + 1) {
                 Z3_ast c = smt_new_const(value, high + 1);
                 e        = Z3_mk_bvadd(ctx, ARG2(ARG1(op1)), c);
@@ -1316,9 +1327,6 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
         if (OP(op1) == Z3_OP_BADD && OP(ARG2(op1)) == Z3_OP_CONCAT &&
             is_zero_const(ARG1(ARG2(op1))) && is_const(ARG1(op1), &value) &&
             value < FF_MASK(SIZE(ARG2(ARG2(op1))))) {
-
-            int high = PARAM1(e);
-            int low  = PARAM2(e);
 
             if (SIZE(ARG2(ARG2(op1))) == high + 1) {
                 Z3_ast c = smt_new_const(value, high + 1);
@@ -1334,9 +1342,6 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
         if (OP(op1) == Z3_OP_BAND && is_const(ARG2(op1), &value) &&
             value == 0xffffffffffffff00) {
 
-            int high = PARAM1(e);
-            int low  = PARAM2(e);
-
             if (low == 0 && high == 7) {
                 return smt_new_const(0, 8);
             }
@@ -1347,9 +1352,6 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
         // to:
         //  (X[high:0] & C#(high + 1))
         if (OP(op1) == Z3_OP_BAND && is_const(ARG2(op1), &value)) {
-
-            int high = PARAM1(e);
-            int low  = PARAM2(e);
 
             if (low == 0) {
                 Z3_ast c = smt_new_const(value, high + 1);
@@ -1367,9 +1369,6 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
         //  ((0#M .. X) << C#M) iff size(X) + M == high + 1
         if (OP(op1) == Z3_OP_BSHL && OP(ARG1(op1)) == Z3_OP_CONCAT &&
             is_zero_const(ARG1(ARG1(op1))) && is_const(ARG2(op1), &value)) {
-
-            int high = PARAM1(e);
-            int low  = PARAM2(e);
 
             if (low == 0 && high + 1 == SIZE(ARG2(ARG1(op1)))) {
                 Z3_ast c = smt_new_const(value, high + 1);
@@ -1396,14 +1395,24 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
         if (OP(op1) == Z3_OP_BLSHR && OP(ARG1(op1)) == Z3_OP_CONCAT &&
             is_const(ARG2(op1), &value) && is_zero_const(ARG1(ARG1(op1)))) {
 
-            int high = PARAM1(e);
-            int low  = PARAM2(e);
-
             if (low == 0 && high > 7 && SIZE(ARG2(ARG1(op1))) >= high + 1) {
                 Z3_ast c = smt_new_const(value, high + 1);
                 e        = Z3_mk_bvlshr(ctx, ARG2(ARG1(op1)), c);
                 return e;
             }
+        }
+
+        // from:
+        //  ITE(X){ C1 } { C2 }[bit:bit]
+        // to:
+        //  ITE(X){ C1[bit:bit] }{ C2[bit:bit] }
+        if (OP(op1) == Z3_OP_ITE && high == low &&
+            is_const(ARG2(op1), &value) && is_const(ARG3(op1), &value2)) {
+
+            Z3_ast c1 = smt_new_const(value >> low, 1);
+            Z3_ast c2 = smt_new_const(value2 >> low, 1);
+            e         = Z3_mk_ite(ctx, ARG1(op1), c1, c2);
+            return optimize_z3_query(e);
         }
 
     } else if (decl_kind == Z3_OP_BOR) {
@@ -1416,7 +1425,13 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
         if (is_zero_const(op1)) {
             return op2;
         }
+        if (OP(op1) == Z3_OP_EXTRACT && is_zero_const(ARG1(op1))) {
+            return op2;
+        }
         if (is_zero_const(op2)) {
+            return op1;
+        }
+        if (OP(op2) == Z3_OP_EXTRACT && is_zero_const(ARG1(op2))) {
             return op1;
         }
 
@@ -1533,6 +1548,15 @@ static inline Z3_ast optimize_z3_query(Z3_ast e)
             Z3_ast c2 = smt_new_const(value2, SIZE(e));
             e         = Z3_mk_ite(ctx, ARG1(op1), c1, c2);
             return e;
+        }
+    } else if (decl_kind == Z3_OP_ITE) {
+
+        if (is_const(ARG1(e), &value)) {
+            if (value) {
+                return ARG2(e);
+            } else {
+                return ARG3(e);
+            }
         }
     }
 
@@ -1720,8 +1744,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
         case OR: // 12
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, inputs);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, inputs);
-            assert(((ssize_t) query->op3) >= 0);
-            smt_bv_resize(&op1, &op2, (ssize_t) query->op3);
+            assert(((ssize_t)query->op3) >= 0);
+            smt_bv_resize(&op1, &op2, (ssize_t)query->op3);
 #if VERBOSE
             printf("OR\n");
             smt_print_ast_sort(op1);
@@ -1820,6 +1844,19 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
 #endif
             r = Z3_mk_bvslt(smt_solver.ctx, op1, op2);
             break;
+        //
+        case LE:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, inputs);
+            assert(query->op3 == 0);
+            smt_bv_resize(&op1, &op2, 0);
+#if VERBOSE
+            printf("LE\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r = Z3_mk_bvsle(smt_solver.ctx, op1, op2);
+            break;
         case GE:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, inputs);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, inputs);
@@ -1895,7 +1932,14 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             break;
         //
         case ZEXT:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, inputs);
+            if (query->op1->opkind == ZEXT &&
+                (uintptr_t)query->op2 == (uintptr_t)query->op1->op2) {
+                op1 = smt_query_to_z3(query->op1->op1, query->op1->op1_is_const,
+                                      0, inputs);
+            } else {
+                op1 =
+                    smt_query_to_z3(query->op1, query->op1_is_const, 0, inputs);
+            }
             unsigned n = (uintptr_t)query->op2;
 #if VERBOSE
             printf("EXTRACT + ZEXT\n");
@@ -2080,6 +2124,45 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                 }
             } else {
                 r = Z3_mk_extract(smt_solver.ctx, 127, 64, r);
+            }
+            break;
+        //
+        case CTZ:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, inputs);
+#if VERBOSE
+            printf("CTZ\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            if (op1 != op2) {
+                ABORT("Not yet implemented");
+            } else {
+                for (size_t i = 0; i < SIZE(op1); i++) {
+                    Z3_ast byte =
+                        Z3_mk_extract(smt_solver.ctx, SIZE(op1) - 1 - i,
+                                      SIZE(op1) - 1 - i, op1);
+                    byte = optimize_z3_query(byte);
+
+                    size_t k = SIZE(op1) - i - 1;
+                    if (is_zero_const(byte)) {
+                        if (i == 0) {
+                            r = smt_new_const(k + 1, SIZE(op1));
+                        }
+                    } else {
+                        byte =
+                            Z3_mk_eq(smt_solver.ctx, byte, smt_new_const(0, 1));
+                        byte = optimize_z3_query(byte);
+                        if (i == 0) {
+                            r = Z3_mk_ite(smt_solver.ctx, byte,
+                                          smt_new_const(k + 1, SIZE(op1)),
+                                          smt_new_const(k, SIZE(op1)));
+                        } else {
+                            r = Z3_mk_ite(smt_solver.ctx, byte, r,
+                                          smt_new_const(k, SIZE(op1)));
+                        }
+                    }
+                }
             }
             break;
 
@@ -2291,7 +2374,7 @@ static inline void load_testcase()
     }
     printf("Loaded %d bytes from testcase: %s\n", r, config.testcase_path);
     assert(r > 0);
-    testcase.data      = malloc(r);
+    testcase.data = malloc(r);
     testcase.size = r;
     memmove(testcase.data, &data, r);
 }
