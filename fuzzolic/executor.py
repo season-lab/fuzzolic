@@ -171,7 +171,7 @@ class Executor(object):
             p_tracer_args += ['-symbolic']
             if self.debug == 'trace': #  or self.debug == 'no_solver'
                 p_tracer_args += ['-d']
-                p_tracer_args += ['in_asm,op']  # 'in_asm,op_opt,out_asm'
+                p_tracer_args += ['in_asm,op_opt,out_asm']  # 'in_asm,op_opt,out_asm'
 
         args = self.binary_args
         if not self.testcase_from_stdin:
@@ -202,8 +202,7 @@ class Executor(object):
                     p_tracer.stdin.write(f.read())
                     p_tracer.stdin.close()
         else:
-            gdb_cmd = 'run -symbolic ' + self.output_dir + \
-                '/' + self.binary + ' ' + ' '.join(args)
+            gdb_cmd = 'run -symbolic ' + self.binary + ' ' + ' '.join(args)
             if self.testcase_from_stdin:
                 gdb_cmd += ' < ' + testcase
             gdb_cmd += "\n"
