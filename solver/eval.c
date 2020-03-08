@@ -13,6 +13,7 @@ typedef struct cached_value_t {
     unsigned      valid;
 } cached_value_t;
 
+
 #define DICT_DATA_T cached_value_t
 #define DICT_NO_GET
 #include "dict.h"
@@ -671,4 +672,288 @@ GHashTable* get_inputs_expr(Z3_ast e)
     }
 
     return res;
+}
+
+uintptr_t count      = 0;
+uintptr_t fuzzy_time = 0;
+uintptr_t z3_time    = 0;
+
+static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
+                           GHashTable* solutions)
+{
+    GHashTableIter iter;
+    gpointer       key, value;
+
+    GHashTable* inputs_copy = g_hash_table_new(NULL, NULL);
+    g_hash_table_iter_init(&iter, inputs);
+    while (g_hash_table_iter_next(&iter, &key, &value)) {
+        g_hash_table_add(inputs_copy, key);
+    }
+
+    Z3_ast query = get_deps(inputs);
+#if 0
+    get_inputs_expr(query);
+#endif
+    if (!global_cache) {
+        global_cache = malloc(sizeof(dict__uint64_t));
+        dict_init__uint64_t(global_cache);
+    }
+
+    g_hash_table_iter_init(&iter, inputs_copy);
+    while (g_hash_table_iter_next(&iter, &key, &value)) {
+        size_t index = (size_t)key;
+
+        if (index >= testcase.size) {
+            // printf("Not fuzzing input byte: %lu\n", index);
+            continue;
+        }
+
+        printf("Fuzzing input byte: %lu\n", index);
+        uintptr_t conc_value = testcase.data[index];
+        for (ssize_t i = 0; i < 256; i++) {
+            Z3_model m = fuzz_query_eval_value(query, i, index, testcase.data,
+                                               testcase.size, inputs);
+            // printf("M1\n");
+            if (m) {
+                uintptr_t solution = smt_query_eval_uint64(m, expr);
+                // printf("M2\n");
+
+                if (g_hash_table_contains(solutions, (gpointer)solution) !=
+                    TRUE) {
+                    // printf("Found a valid solution: %lx\n", solution);
+                    g_hash_table_add(solutions, (gpointer)solution);
+                    // printf("Solution: %lx\n", solution);
+                }
+                Z3_model_dec_ref(smt_solver.ctx, m);
+            } else {
+                // printf("M3\n");
+                // printf("Invalid solution\n");
+            }
+        }
+    }
+
+    printf("Fuzzy_time: %lu - z3_time: %lu - local cache: hits=%lu lookups=%lu "
+           "- global cache: hits=%lu lookups=%lu\n",
+           fuzzy_time, z3_time, local_cache_hits, local_cache_lookups,
+           global_cache_hits, global_cache_lookups);
+
+    g_hash_table_destroy(inputs_copy);
+    return g_hash_table_size(solutions) > 1;
+}
+
+static Z3_model fuzz_query_eval_value(Z3_ast query, uintptr_t input_val,
+                                      size_t input_index, uint8_t* data,
+                                      size_t size, GHashTable* inputs)
+{
+    Z3_ast    solution;
+    uintptr_t value, value2;
+    uint8_t   from_cache;
+
+    // printf("Building model\n");
+
+    dict__uint64_t conc_model_other;
+    dict_init__uint64_t(&conc_model_other);
+    uint8_t* conc_model = malloc(size);
+    memcpy(conc_model, data, size);
+    assert(input_index < size);
+    conc_model[input_index] = input_val;
+
+    if (blacklist_inputs) {
+        dict_free__uint64_t(blacklist_inputs, NULL);
+    } else {
+        blacklist_inputs = malloc(sizeof(dict__uint64_t));
+    }
+    dict_init__uint64_t(blacklist_inputs);
+    dict_set__uint64_t(blacklist_inputs, input_index, 0);
+
+    // printf("Model m[%lu] = %lu\n", input_index, input_val);
+
+    // build a model and assign an interpretation for the input symbol
+    Z3_model z3_m = Z3_mk_model(smt_solver.ctx);
+    for (size_t i = 0; i < size; i++) {
+        Z3_sort sort = Z3_mk_bv_sort(smt_solver.ctx, 8);
+        Z3_ast  e    = Z3_mk_unsigned_int64(
+            smt_solver.ctx, input_index == i ? input_val : data[i], sort);
+        char* name = malloc(16);
+        snprintf(name, 16, "input_%lu", i);
+        Z3_symbol s = Z3_mk_string_symbol(smt_solver.ctx, name);
+        free(name);
+        Z3_func_decl decl = Z3_mk_func_decl(smt_solver.ctx, s, 0, NULL, sort);
+        Z3_add_const_interp(smt_solver.ctx, z3_m, decl, e);
+    }
+
+    if (!query) {
+        Z3_model_inc_ref(smt_solver.ctx, z3_m);
+        return z3_m;
+    }
+
+    // printf("Checking sloads\n");
+
+    GSList* el = sloads_exprs;
+    while (el) {
+
+        SLoad* sl = (SLoad*)el->data;
+        el        = el->next;
+
+        size_t i = sl->index;
+        Z3_ast e = sl->expr;
+
+        // printf("Analyzing sloads_%lu\n", i);
+        // print_z3_ast(e);
+
+        Z3_sort sort;
+        if (concretized_sloads[i]) {
+            // print_z3_ast(e);
+            // printf("F1\n");
+            sort = Z3_get_sort(smt_solver.ctx, e);
+            // printf("F2\n");
+
+            assert(is_const(e, &value));
+
+            // printf("s_load_%lu value is %lu\n", i, value);
+
+        } else {
+
+            // printf("F3\n");
+
+            assert(e && OP(e) == Z3_OP_AND);
+
+            // printf("Getting concrete value of s_load_%lu\n", i);
+
+            Z3_ast s    = ARG1(ARG2(e));
+            Z3_ast addr = ARG2(ARG2(e));
+
+            Z3_ast s_expr  = ARG1(ARG1(e));
+            Z3_ast s_value = ARG2(ARG1(e));
+#if 0
+            get_inputs_expr(addr);
+#endif
+            // printf("F4\n");
+
+            // print_z3_ast(addr);
+
+            int r2 = conc_eval_uint64(conc_model, size, &conc_model_other, addr,
+                                      &value2, &from_cache);
+            int r  = get_eval_uint64(z3_m, addr, &value);
+
+            if (r != r2) {
+                printf("[A] r=%d r2=%d value=%lu value2=%lu\n", r, r2, value,
+                       value2);
+                ABORT();
+            }
+
+            if (!r) {
+                return NULL;
+            }
+
+            if (value != value2) {
+                printf("[B] r=%d r2=%d value=%lu value2=%lu\n", r, r2, value,
+                       value2);
+                ABORT();
+            }
+
+            // printf("Getting concrete value for value if s_load_%lu\n", i);
+
+            // printf("F5\n");
+
+            char* name = malloc(16);
+            snprintf(name, 16, "sv_load_%lu", i);
+            Z3_symbol symbol = Z3_mk_string_symbol(smt_solver.ctx, name);
+            dict_set__uint64_t(&conc_model_other, hash_str(name, strlen(name)),
+                               value);
+            if (!from_cache) {
+                size_t index = hash_str(name, strlen(name));
+                dict_set__uint64_t(blacklist_inputs, MAX_INPUT_SIZE + index, 0);
+            }
+            free(name);
+
+            sort = Z3_get_sort(smt_solver.ctx, s);
+            Z3_func_decl decl =
+                Z3_mk_func_decl(smt_solver.ctx, symbol, 0, NULL, sort);
+            Z3_ast v = Z3_mk_unsigned_int64(smt_solver.ctx, value, sort);
+            Z3_add_const_interp(smt_solver.ctx, z3_m, decl, v);
+
+            // printf("F6\n");
+
+            // print_z3_ast(s_value);
+
+            r2 = conc_eval_uint64(conc_model, size, &conc_model_other, s_value,
+                                  &value2, &from_cache);
+            r  = get_eval_uint64(z3_m, s_value, &value);
+
+            if (r != r2) {
+                printf("[C] r=%d r2=%d value=%lu value2=%lu\n", r, r2, value,
+                       value2);
+                ABORT();
+            }
+
+            if (!r) {
+                return NULL;
+            }
+
+            if (value != value2) {
+                printf("[D] r=%d r2=%d value=%lu value2=%lu\n", r, r2, value,
+                       value2);
+                ABORT();
+            }
+
+            // printf("F7\n");
+
+            sort = Z3_get_sort(smt_solver.ctx, s_value);
+            e    = Z3_mk_unsigned_int64(smt_solver.ctx, value, sort);
+            // print_z3_ast(e);
+        }
+
+        // printf("F8\n");
+
+        char* name = malloc(16);
+        snprintf(name, 16, "s_load_%lu", i);
+        Z3_symbol s = Z3_mk_string_symbol(smt_solver.ctx, name);
+        dict_set__uint64_t(&conc_model_other, hash_str(name, strlen(name)),
+                           value);
+        if (!from_cache) {
+            size_t index = hash_str(name, strlen(name));
+            dict_set__uint64_t(blacklist_inputs, MAX_INPUT_SIZE + index, 0);
+        }
+        free(name);
+        Z3_func_decl decl = Z3_mk_func_decl(smt_solver.ctx, s, 0, NULL, sort);
+        Z3_add_const_interp(smt_solver.ctx, z3_m, decl, e);
+    }
+
+    // printf("F9: %lu\n", count++);
+
+    // printf("Checking sloads: DONE\n");
+    // print_z3_ast(query);
+
+    struct timespec start, end;
+
+    get_time(&start);
+    int r2 = conc_eval_uint64(conc_model, size, &conc_model_other, query,
+                              &value2, &from_cache);
+    get_time(&end);
+    uint64_t elapsed_microsecs = get_diff_time_microsec(&start, &end);
+    fuzzy_time += elapsed_microsecs;
+
+    get_time(&start);
+    int r = get_eval_uint64(z3_m, query, &value);
+    get_time(&end);
+    elapsed_microsecs = get_diff_time_microsec(&start, &end);
+    z3_time += elapsed_microsecs;
+    // printf("F10\n");
+
+    if (r != r2) {
+        printf("[F] r=%d r2=%d value=%lu value2=%lu\n", r, r2, value, value2);
+        print_z3_ast(query);
+        ABORT();
+    }
+
+    dict_free__uint64_t(&conc_model_other, NULL);
+    free(conc_model);
+
+    if (r) {
+        Z3_model_inc_ref(smt_solver.ctx, z3_m);
+        return z3_m;
+    } else {
+        return NULL;
+    }
 }
