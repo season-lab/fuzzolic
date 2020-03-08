@@ -356,13 +356,13 @@ Z3_ast smt_new_const(uint64_t value, size_t n_bits)
     return s;
 }
 
-static void smt_dump_solution(Z3_model m, size_t idx)
+static void smt_dump_solution(Z3_model m, size_t idx, size_t sub_idx)
 {
     size_t input_size = testcase.size;
 
     char testcase_name[128];
-    int  n = snprintf(testcase_name, sizeof(testcase_name), "test_case_%lu.dat",
-                     idx);
+    int  n = snprintf(testcase_name, sizeof(testcase_name), "test_case_%lu_%lu.dat",
+                     idx, sub_idx);
     assert(n > 0 && n < sizeof(testcase_name) && "test case name too long");
 
 #if 0
@@ -446,7 +446,7 @@ static int smt_query_check(Z3_solver solver, size_t idx)
             m = Z3_solver_get_model(smt_solver.ctx, solver);
             if (m) {
                 Z3_model_inc_ref(smt_solver.ctx, m);
-                smt_dump_solution(m, idx);
+                smt_dump_solution(m, idx, 0);
             }
             qres = 1;
             break;
@@ -480,7 +480,7 @@ static uintptr_t smt_query_eval_uint64(Z3_model m, Z3_ast e)
 }
 
 static int smt_query_check_eval_uint64(Z3_solver solver, size_t idx, Z3_ast e,
-                                       uintptr_t* value, int dump_testcase)
+                                       uintptr_t* value, uintptr_t dump_idx)
 {
     int qres = 0;
 #if 1
@@ -514,8 +514,8 @@ static int smt_query_check_eval_uint64(Z3_solver solver, size_t idx, Z3_ast e,
             m = Z3_solver_get_model(smt_solver.ctx, solver);
             if (m) {
                 Z3_model_inc_ref(smt_solver.ctx, m);
-                if (dump_testcase) {
-                    smt_dump_solution(m, idx);
+                if (dump_idx) {
+                    smt_dump_solution(m, idx, dump_idx);
                 }
                 if (value) {
                     *value = smt_query_eval_uint64(m, e);
@@ -2541,94 +2541,6 @@ static void smt_branch_query(Query* q)
     g_hash_table_destroy(inputs);
 }
 
-static void smt_expr_query(Query* q, OPKIND opkind)
-{
-    SAYF("Translating %s %lu (0x%lx) to Z3...\n", opkind_to_str(opkind),
-         GET_QUERY_IDX(q), (uintptr_t)q->query->op2);
-    GHashTable* inputs   = g_hash_table_new(NULL, NULL);
-    Z3_ast      z3_query = smt_query_to_z3(q->query->op1, 0, 0, inputs);
-    SAYF("DONE: Translating %s to Z3\n", opkind_to_str(opkind));
-
-#if 0
-    print_z3_ast(z3_query);
-#endif
-
-    if (!concretized_bytes) {
-        concretized_bytes = g_hash_table_new(NULL, NULL);
-    }
-
-    uint8_t        has_real_inputs        = 0;
-    uint8_t        inputs_are_concretized = 1;
-    GHashTableIter iter;
-    gpointer       key, value;
-    g_hash_table_iter_init(&iter, inputs);
-    while (g_hash_table_iter_next(&iter, &key, &value)) {
-
-        if ((uintptr_t)key < MAX_INPUT_SIZE) {
-            has_real_inputs = 1;
-        }
-
-        if (g_hash_table_contains(concretized_bytes, key) != TRUE) {
-
-            inputs_are_concretized = 0;
-            // printf("Byte %lu is not in concretized bytes.\n", (size_t) key);
-
-            if (opkind == SYMBOLIC_LOAD || opkind == SYMBOLIC_STORE) {
-                // printf("Adding byte %lu to concretized bytes.\n", (size_t)
-                // key);
-                gboolean res = g_hash_table_add(concretized_bytes, key);
-                assert(res == TRUE);
-            }
-        }
-    }
-
-    if (!has_real_inputs) {
-        // printf("No real inputs. Skipping it.\n");
-        g_hash_table_destroy(inputs);
-        return;
-    }
-
-    if (inputs_are_concretized) {
-        // printf("Address is likely to be already concretized. Skipping
-        // it.\n");
-        g_hash_table_destroy(inputs);
-        return;
-    }
-
-    uintptr_t solution = (uintptr_t)q->query->op2;
-    int       count    = 0;
-    Z3_solver solver   = smt_new_solver();
-    add_deps_to_solver(inputs, solver);
-    while (count < 256 && 0) {
-        assert(solution);
-        Z3_ast c = Z3_mk_eq(smt_solver.ctx, z3_query,
-                            smt_new_const(solution, sizeof(uintptr_t) * 8));
-        c        = Z3_mk_not(smt_solver.ctx, c);
-        Z3_solver_assert(smt_solver.ctx, solver, c);
-        SAYF("Running a %s query...\n", opkind_to_str(opkind));
-        int r = smt_query_check_eval_uint64(solver, GET_QUERY_IDX(q), z3_query,
-                                            &solution, 1);
-        if (!r)
-            break;
-        SAYF("New %s target is %lx\n", opkind_to_str(opkind), solution);
-        count += 1;
-    }
-    smt_del_solver(solver);
-
-    if (opkind == SYMBOLIC_LOAD || opkind == SYMBOLIC_STORE) {
-        Z3_ast c = Z3_mk_eq(
-            smt_solver.ctx, z3_query,
-            smt_new_const((uintptr_t)q->query->op2, sizeof(uintptr_t) * 8));
-#if 0
-        get_inputs_expr(c);
-#endif
-        z3_ast_exprs[GET_QUERY_IDX(q)] = c;
-        update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL);
-    }
-
-    g_hash_table_destroy(inputs);
-}
-
 static int get_eval_uint64(Z3_model m, Z3_ast e, uintptr_t* value)
 {
     Z3_ast solution;
@@ -2760,7 +2672,7 @@ static Z3_model conc_query_eval_value(Z3_ast query, uintptr_t input_val,
 }
 
 static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
-                           GHashTable* solutions)
+                           GHashTable* solutions, uintptr_t dump_idx)
 {
     GHashTableIter iter;
     gpointer       key, value;
@@ -2801,6 +2713,11 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
                     g_hash_table_add(solutions, (gpointer)solution);
                     // printf("Solution: %lx\n", solution);
                 }
+
+                if (dump_idx) {
+                    smt_dump_solution(m, dump_idx, g_hash_table_size(solutions));
+                }
+
                 Z3_model_dec_ref(smt_solver.ctx, m);
             }
         }
@@ -2884,7 +2801,7 @@ static void smt_slice_query(Query* q)
 #endif
     GHashTable* conc_addrs = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs, (gpointer)addr_conc);
-    int r = fuzz_query_eval(inputs, z3_addr, conc_addrs);
+    int r = fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
 
     if (!r) {
         printf("Slice access has a single value. Concretizing it.\n");
@@ -2970,6 +2887,104 @@ static void smt_slice_query(Query* q)
     update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL);
 
     g_hash_table_destroy(conc_addrs);
+    g_hash_table_destroy(inputs);
+}
+
+static void smt_expr_query(Query* q, OPKIND opkind)
+{
+    SAYF("Translating %s %lu (0x%lx) to Z3...\n", opkind_to_str(opkind),
+         GET_QUERY_IDX(q), (uintptr_t)q->query->op2);
+    GHashTable* inputs   = g_hash_table_new(NULL, NULL);
+    Z3_ast      z3_query = smt_query_to_z3(q->query->op1, 0, 0, inputs);
+    SAYF("DONE: Translating %s to Z3\n", opkind_to_str(opkind));
+
+#if 0
+    print_z3_ast(z3_query);
+#endif
+
+    if (!concretized_bytes) {
+        concretized_bytes = g_hash_table_new(NULL, NULL);
+    }
+
+    uint8_t        has_real_inputs        = 0;
+    uint8_t        inputs_are_concretized = 1;
+    GHashTableIter iter;
+    gpointer       key, value;
+    g_hash_table_iter_init(&iter, inputs);
+    while (g_hash_table_iter_next(&iter, &key, &value)) {
+
+        if ((uintptr_t)key < MAX_INPUT_SIZE) {
+            has_real_inputs = 1;
+        } else if (!concretized_sloads[(uintptr_t)key]) {
+            has_real_inputs = 1;
+        }
+
+        if (g_hash_table_contains(concretized_bytes, key) != TRUE) {
+
+            inputs_are_concretized = 0;
+            // printf("Byte %lu is not in concretized bytes.\n", (size_t) key);
+
+            if (opkind == SYMBOLIC_LOAD || opkind == SYMBOLIC_STORE) {
+                // printf("Adding byte %lu to concretized bytes.\n", (size_t)
+                // key);
+                gboolean res = g_hash_table_add(concretized_bytes, key);
+                assert(res == TRUE);
+            }
+        }
+    }
+
+    if (!has_real_inputs) {
+        printf("No real inputs. Skipping it.\n");
+        g_hash_table_destroy(inputs);
+        return;
+    }
+
+    if (inputs_are_concretized) {
+        printf("Address is likely to be already concretized. Skipping it.\n");
+        g_hash_table_destroy(inputs);
+        return;
+    }
+
+    uintptr_t solution = (uintptr_t)q->query->op2;
+#if 0 // Using SMT Solver:
+    int       count    = 0;
+    Z3_solver solver   = smt_new_solver();
+    add_deps_to_solver(inputs, solver);
+    while (count < 256) {
+        assert(solution);
+        Z3_ast c = Z3_mk_eq(smt_solver.ctx, z3_query,
+                            smt_new_const(solution, sizeof(uintptr_t) * 8));
+        c        = Z3_mk_not(smt_solver.ctx, c);
+        Z3_solver_assert(smt_solver.ctx, solver, c);
+        SAYF("Running a %s query...\n", opkind_to_str(opkind));
+        int r = smt_query_check_eval_uint64(solver, GET_QUERY_IDX(q), z3_query,
+                                            &solution, count + 1);
+        if (!r)
+            break;
+        SAYF("New %s target is %lx\n", opkind_to_str(opkind), solution);
+        count += 1;
+    }
+    smt_del_solver(solver);
+#else // Fuzzing:
+    GHashTable* solutions = g_hash_table_new(NULL, NULL);
+    g_hash_table_add(solutions, (gpointer) solution);
+    int r = fuzz_query_eval(inputs, z3_query, solutions, GET_QUERY_IDX(q));
+    int n_solutions = g_hash_table_size(solutions);
+    printf("Found %d solution for %s expr.\n", n_solutions - 1, opkind_to_str(opkind));
+    g_hash_table_destroy(solutions);
+#endif
+
+    if (opkind == SYMBOLIC_LOAD || opkind == SYMBOLIC_STORE) {
+        Z3_ast c = Z3_mk_eq(
+            smt_solver.ctx, z3_query,
+            smt_new_const((uintptr_t)q->query->op2, sizeof(uintptr_t) * 8));
+#if 0
+        get_inputs_expr(c);
+#endif
+        z3_ast_exprs[GET_QUERY_IDX(q)] = c;
+        update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL);
+    }
+
     g_hash_table_destroy(inputs);
 }
 
