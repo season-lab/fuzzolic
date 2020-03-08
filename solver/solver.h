@@ -7,7 +7,7 @@
 #include <gmodule.h>
 
 #include <z3.h>
-#define Z3_VERSION 451
+#define Z3_VERSION 487
 
 #define USE_COLOR
 #include "debug.h"
