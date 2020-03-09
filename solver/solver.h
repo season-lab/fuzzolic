@@ -52,6 +52,7 @@ typedef struct Config {
     //
     const char* branch_bitmap_path;
     const char* context_bitmap_path;
+    const char* memory_bitmap_path;
 } Config;
 
 // opts.c

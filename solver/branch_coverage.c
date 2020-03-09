@@ -9,6 +9,7 @@ extern Config config;
 static uint8_t branch_bitmap[BRANCH_BITMAP_SIZE]     = {0};
 static uint8_t branch_neg_bitmap[BRANCH_BITMAP_SIZE] = {0};
 static uint8_t context_bitmap[BRANCH_BITMAP_SIZE]    = {0};
+static uint8_t memory_bitmap[BRANCH_BITMAP_SIZE]    = {0};
 
 static uintptr_t last_branch_hash = 0;
 
@@ -50,6 +51,7 @@ void load_bitmaps()
 {
     load_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
     load_bitmap(config.context_bitmap_path, context_bitmap, BRANCH_BITMAP_SIZE);
+    load_bitmap(config.memory_bitmap_path, memory_bitmap, BRANCH_BITMAP_SIZE);
 }
 
 static inline void save_bitmap(const char* path, uint8_t* data, size_t size)
@@ -66,6 +68,7 @@ static inline void save_bitmaps()
 {
     save_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
     save_bitmap(config.context_bitmap_path, context_bitmap, BRANCH_BITMAP_SIZE);
+    save_bitmap(config.memory_bitmap_path, memory_bitmap, BRANCH_BITMAP_SIZE);
 }
 
 // same as QSYM
