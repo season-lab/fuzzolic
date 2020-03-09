@@ -2510,6 +2510,9 @@ static void smt_branch_query(Query* q)
         if ((uintptr_t)key < MAX_INPUT_SIZE) {
             has_real_inputs = 1;
             break;
+        } else if (!concretized_sloads[(uintptr_t)key]) {
+            has_real_inputs = 1;
+            break;
         }
     }
 
@@ -2517,7 +2520,7 @@ static void smt_branch_query(Query* q)
         Z3_solver solver = smt_new_solver();
         update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver);
         if (is_interesting_branch(q->address, q->arg0)) {
-#if 0
+#if 1
             Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
             SAYF("Running a query...\n");
             smt_query_check(solver, GET_QUERY_IDX(q));
