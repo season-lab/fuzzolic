@@ -2977,6 +2977,8 @@ static void smt_expr_query(Query* q, OPKIND opkind)
         printf("Found %d solution for %s expr.\n", n_solutions - 1, opkind_to_str(opkind));
         g_hash_table_destroy(solutions);
 #endif
+    } else {
+        printf("Adress is not interesting. Skipping it.\n");
     }
 
     if (opkind == SYMBOLIC_LOAD || opkind == SYMBOLIC_STORE) {
