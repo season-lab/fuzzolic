@@ -2715,12 +2715,10 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
                     // printf("Found a valid solution: %lx\n", solution);
                     g_hash_table_add(solutions, (gpointer)solution);
                     // printf("Solution: %lx\n", solution);
+                    if (dump_idx) {
+                        smt_dump_solution(m, dump_idx, g_hash_table_size(solutions));
+                    }
                 }
-
-                if (dump_idx) {
-                    smt_dump_solution(m, dump_idx, g_hash_table_size(solutions));
-                }
-
                 Z3_model_dec_ref(smt_solver.ctx, m);
             }
         }
@@ -2804,7 +2802,7 @@ static void smt_slice_query(Query* q)
 #endif
     GHashTable* conc_addrs = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs, (gpointer)addr_conc);
-    int r = fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
+    int r = 0; // fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
 
     if (!r) {
         printf("Slice access has a single value. Concretizing it.\n");

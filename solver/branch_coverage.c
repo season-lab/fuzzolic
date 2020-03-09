@@ -10,6 +10,7 @@ static uint8_t branch_bitmap[BRANCH_BITMAP_SIZE]     = {0};
 static uint8_t branch_neg_bitmap[BRANCH_BITMAP_SIZE] = {0};
 static uint8_t context_bitmap[BRANCH_BITMAP_SIZE]    = {0};
 static uint8_t memory_bitmap[BRANCH_BITMAP_SIZE]    = {0};
+static uint8_t afl_bitmap[BRANCH_BITMAP_SIZE]    = {0};
 
 static uintptr_t last_branch_hash = 0;
 
@@ -122,6 +123,11 @@ static inline int is_interesting_context(uintptr_t h, uint8_t bits)
     return interesting;
 }
 #endif
+
+static int is_interesting_branch_afl(uintptr_t pc, uint8_t taken)
+{
+    
+}
 
 // same as QSYM
 int is_interesting_branch(uintptr_t pc, uint8_t taken)
