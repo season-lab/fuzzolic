@@ -146,6 +146,7 @@ class Executor(object):
             p_solver_args += ['-o', run_dir]
             p_solver_args += ['-b', self.__get_root_dir() + '/branch_bitmap']
             p_solver_args += ['-c', self.__get_root_dir() + '/context_bitmap']
+            p_solver_args += ['-m', self.__get_root_dir() + '/memory_bitmap']
             p_solver = subprocess.Popen(p_solver_args,
                                         stdout=p_solver_log if not self.debug else None,
                                         stderr=subprocess.STDOUT if not self.debug else None,
