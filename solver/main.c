@@ -2949,38 +2949,40 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     }
 
     uintptr_t solution = (uintptr_t)q->query->op2;
+    if (is_interesting_memory(solution)) {
 #if 0 // Using SMT Solver:
-    int       count    = 0;
-    Z3_solver solver   = smt_new_solver();
-    add_deps_to_solver(inputs, solver);
-    while (count < 256) {
-        assert(solution);
-        Z3_ast c = Z3_mk_eq(smt_solver.ctx, z3_query,
-                            smt_new_const(solution, sizeof(uintptr_t) * 8));
-        c        = Z3_mk_not(smt_solver.ctx, c);
-        Z3_solver_assert(smt_solver.ctx, solver, c);
-        SAYF("Running a %s query...\n", opkind_to_str(opkind));
-        int r = smt_query_check_eval_uint64(solver, GET_QUERY_IDX(q), z3_query,
-                                            &solution, count + 1);
-        if (!r)
-            break;
-        SAYF("New %s target is %lx\n", opkind_to_str(opkind), solution);
-        count += 1;
-    }
-    smt_del_solver(solver);
+        int       count    = 0;
+        Z3_solver solver   = smt_new_solver();
+        add_deps_to_solver(inputs, solver);
+        while (count < 256) {
+            assert(solution);
+            Z3_ast c = Z3_mk_eq(smt_solver.ctx, z3_query,
+                                smt_new_const(solution, sizeof(uintptr_t) * 8));
+            c        = Z3_mk_not(smt_solver.ctx, c);
+            Z3_solver_assert(smt_solver.ctx, solver, c);
+            SAYF("Running a %s query...\n", opkind_to_str(opkind));
+            int r = smt_query_check_eval_uint64(solver, GET_QUERY_IDX(q), z3_query,
+                                                &solution, count + 1);
+            if (!r)
+                break;
+            SAYF("New %s target is %lx\n", opkind_to_str(opkind), solution);
+            count += 1;
+        }
+        smt_del_solver(solver);
 #else // Fuzzing:
-    GHashTable* solutions = g_hash_table_new(NULL, NULL);
-    g_hash_table_add(solutions, (gpointer) solution);
-    int r = fuzz_query_eval(inputs, z3_query, solutions, GET_QUERY_IDX(q));
-    int n_solutions = g_hash_table_size(solutions);
-    printf("Found %d solution for %s expr.\n", n_solutions - 1, opkind_to_str(opkind));
-    g_hash_table_destroy(solutions);
+        GHashTable* solutions = g_hash_table_new(NULL, NULL);
+        g_hash_table_add(solutions, (gpointer) solution);
+        int r = fuzz_query_eval(inputs, z3_query, solutions, GET_QUERY_IDX(q));
+        int n_solutions = g_hash_table_size(solutions);
+        printf("Found %d solution for %s expr.\n", n_solutions - 1, opkind_to_str(opkind));
+        g_hash_table_destroy(solutions);
 #endif
+    }
 
     if (opkind == SYMBOLIC_LOAD || opkind == SYMBOLIC_STORE) {
         Z3_ast c = Z3_mk_eq(
             smt_solver.ctx, z3_query,
-            smt_new_const((uintptr_t)q->query->op2, sizeof(uintptr_t) * 8));
+            smt_new_const(solution, sizeof(uintptr_t) * 8));
 #if 0
         get_inputs_expr(c);
 #endif

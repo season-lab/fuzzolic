@@ -164,3 +164,18 @@ int is_interesting_branch(uintptr_t pc, uint8_t taken)
     last_branch_hash = h;
     return ret;
 }
+
+int is_interesting_memory(uintptr_t addr)
+{
+    uintptr_t h   = hash_pc(addr, 0);
+    uintptr_t idx = get_index(h);
+    uint8_t   ret = 0;
+
+    if (memory_bitmap[idx] == 0) {
+        memory_bitmap[idx] = 1;
+        ret = 1;
+    }
+
+    return ret;
+}
+
