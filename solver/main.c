@@ -2949,7 +2949,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     }
 
     uintptr_t solution = (uintptr_t)q->query->op2;
-    if (is_interesting_memory(solution)) {
+    if (is_interesting_memory(solution) && 0) {
 #if 0 // Using SMT Solver:
         int       count    = 0;
         Z3_solver solver   = smt_new_solver();
