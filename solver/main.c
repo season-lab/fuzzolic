@@ -2517,18 +2517,20 @@ static void smt_branch_query(Query* q)
     }
 
     if (has_real_inputs) {
-        Z3_solver solver = smt_new_solver();
-        update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver);
         if (is_interesting_branch(q->address, q->arg0)) {
 #if 1
+            Z3_solver solver = smt_new_solver();
+            update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver);
             Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
             SAYF("Running a query...\n");
             smt_query_check(solver, GET_QUERY_IDX(q));
+            smt_del_solver(solver);
 #endif
+        } else {
+            printf("Branch is not interesting. Skipping it.\n");
         }
-        smt_del_solver(solver);
     } else {
-        printf("Branch is not interesting. Skipping it.\n");
+        printf("No real inputs in branch condition. Skipping it.\n");
     }
 
 #if 0
