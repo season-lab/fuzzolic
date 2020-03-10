@@ -55,6 +55,7 @@ class Executor(object):
         self.afl_processed_testcases = set()
 
         self.debug = debug
+        self.tick_count = 0
 
         self.__load_config()
         self.__warning_log = set()
@@ -295,10 +296,15 @@ class Executor(object):
 
         return not discard
 
+    def tick(self):
+        self.tick_count += 1
+        return self.tick_count - 1
+
     def __check_testcase_afl(self, t, run_id, k, target):
         if self.minimizer.check_testcase(t):
             print("Importing %s" % t)
-            name = "id:0%s0%s,src:%s" % (run_id, k, target)
+            target = target = os.path.basename(fp)[:len("id:......")]
+            name = "id:%06d,src:%s" % (sefl.tick(), k, target)
             self.__import_test_case(t, name)
             return True
         else:
