@@ -40,7 +40,7 @@ ExprAnnotation* get_expr_annotation(Expr* e);
 
 // branch_coverage.c
 #define CONTEXT_SENSITIVITY 1
-int is_interesting_branch(uintptr_t pc, uint8_t taken);
+int is_interesting_branch(uintptr_t pc, uintptr_t taken);
 int is_interesting_memory(uintptr_t addr);
 void load_bitmaps();
 

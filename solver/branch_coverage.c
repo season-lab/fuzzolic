@@ -8,9 +8,10 @@ extern Config config;
 #define BRANCH_BITMAP_SIZE (1 << 16)
 static uint8_t branch_bitmap[BRANCH_BITMAP_SIZE]     = {0};
 static uint8_t branch_neg_bitmap[BRANCH_BITMAP_SIZE] = {0};
-static uint8_t context_bitmap[BRANCH_BITMAP_SIZE]    = {0};
-static uint8_t memory_bitmap[BRANCH_BITMAP_SIZE]    = {0};
-static uint8_t afl_bitmap[BRANCH_BITMAP_SIZE]    = {0};
+#if BRANCH_COVERAGE == QSYM
+static uint8_t context_bitmap[BRANCH_BITMAP_SIZE] = {0};
+#endif
+static uint8_t memory_bitmap[BRANCH_BITMAP_SIZE] = {0};
 
 static uintptr_t last_branch_hash = 0;
 
@@ -50,8 +51,12 @@ static inline void load_bitmap(const char* path, uint8_t* data, size_t size)
 
 void load_bitmaps()
 {
+#if BRANCH_COVERAGE == QSYM
     load_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
     load_bitmap(config.context_bitmap_path, context_bitmap, BRANCH_BITMAP_SIZE);
+#elif BRANCH_COVERAGE == AFL
+    load_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
+#endif
     load_bitmap(config.memory_bitmap_path, memory_bitmap, BRANCH_BITMAP_SIZE);
 }
 
@@ -67,8 +72,10 @@ static inline void save_bitmap(const char* path, uint8_t* data, size_t size)
 
 static inline void save_bitmaps()
 {
+#if BRANCH_COVERAGE == QSYM
     save_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
     save_bitmap(config.context_bitmap_path, context_bitmap, BRANCH_BITMAP_SIZE);
+#endif
     save_bitmap(config.memory_bitmap_path, memory_bitmap, BRANCH_BITMAP_SIZE);
 }
 
@@ -77,6 +84,8 @@ static inline uintptr_t get_index(uintptr_t h)
 {
     return ((last_branch_hash >> 1) ^ h) % BRANCH_BITMAP_SIZE;
 }
+
+#if BRANCH_COVERAGE == QSYM
 
 #if CONTEXT_SENSITIVITY
 // same as QSYM
@@ -124,13 +133,8 @@ static inline int is_interesting_context(uintptr_t h, uint8_t bits)
 }
 #endif
 
-static int is_interesting_branch_afl(uintptr_t pc, uint8_t taken)
-{
-    
-}
-
 // same as QSYM
-int is_interesting_branch(uintptr_t pc, uint8_t taken)
+int is_interesting_branch(uintptr_t pc, uintptr_t taken)
 {
     uintptr_t h   = hash_pc(pc, taken);
     uintptr_t idx = get_index(h);
@@ -171,6 +175,27 @@ int is_interesting_branch(uintptr_t pc, uint8_t taken)
     return ret;
 }
 
+#elif BRANCH_COVERAGE == AFL
+int is_interesting_branch(uintptr_t prev_loc, uintptr_t cur_loc)
+{
+    printf("Prev: %lx - Curr: %lx\n", prev_loc, cur_loc);
+
+    prev_loc = (prev_loc >> 4) ^ (prev_loc << 8);
+    prev_loc &= BRANCH_BITMAP_SIZE - 1;
+
+    cur_loc = (cur_loc >> 4) ^ (cur_loc << 8);
+    cur_loc &= BRANCH_BITMAP_SIZE - 1;
+
+    uintptr_t idx = cur_loc ^ prev_loc;
+    if (branch_bitmap[idx] == 0) {
+        branch_bitmap[idx]++;
+        return 1;
+    }
+
+    return 0;
+}
+#endif
+
 int is_interesting_memory(uintptr_t addr)
 {
     uintptr_t h   = hash_pc(addr, 0);
@@ -179,9 +204,8 @@ int is_interesting_memory(uintptr_t addr)
 
     if (memory_bitmap[idx] == 0) {
         memory_bitmap[idx] = 1;
-        ret = 1;
+        ret                = 1;
     }
 
     return ret;
 }
-

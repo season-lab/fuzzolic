@@ -2517,7 +2517,11 @@ static void smt_branch_query(Query* q)
     }
 
     if (has_real_inputs) {
-        if (is_interesting_branch(q->address, q->arg0)) {
+#if BRANCH_COVERAGE == QSYM
+        if (is_interesting_branch(q->address, q->args8.arg0)) {
+#elif BRANCH_COVERAGE == AFL
+        if (is_interesting_branch(q->address, q->args64)) {
+#endif
 #if 1
             Z3_solver solver = smt_new_solver();
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver);
