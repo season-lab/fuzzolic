@@ -303,7 +303,7 @@ class Executor(object):
     def __check_testcase_afl(self, t, run_id, k, target):
         if self.minimizer.check_testcase(t):
             print("Importing %s" % t)
-            target = target = os.path.basename(fp)[:len("id:......")]
+            target = os.path.basename(target)[:len("id:......")]
             name = "id:%06d,src:%s" % (sefl.tick(), k, target)
             self.__import_test_case(t, name)
             return True
