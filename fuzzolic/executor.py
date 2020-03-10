@@ -144,7 +144,10 @@ class Executor(object):
             p_solver_args += ['-i', testcase]
             p_solver_args += ['-t', self.__get_testcases_dir()]
             p_solver_args += ['-o', run_dir]
-            p_solver_args += ['-b', self.__get_root_dir() + '/branch_bitmap']
+
+            # p_solver_args += ['-b', self.__get_root_dir() + '/branch_bitmap']
+            p_solver_args += ['-b', os.path.join(self.output_dir, '/afl-bitmap')]
+
             p_solver_args += ['-c', self.__get_root_dir() + '/context_bitmap']
             p_solver_args += ['-m', self.__get_root_dir() + '/memory_bitmap']
             p_solver = subprocess.Popen(p_solver_args,
