@@ -304,7 +304,7 @@ class Executor(object):
         if self.minimizer.check_testcase(t):
             print("Importing %s" % t)
             target = os.path.basename(target)[:len("id:......")]
-            name = "id:%06d,src:%s" % (self.tick(), k, target)
+            name = "id:%06d,src:%s" % (self.tick(), target)
             self.__import_test_case(t, name)
             return True
         else:
