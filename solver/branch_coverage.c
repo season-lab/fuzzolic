@@ -178,7 +178,10 @@ int is_interesting_branch(uintptr_t pc, uintptr_t taken)
 #elif BRANCH_COVERAGE == AFL
 int is_interesting_branch(uintptr_t prev_loc, uintptr_t cur_loc)
 {
-    printf("Prev: %lx - Curr: %lx\n", prev_loc, cur_loc);
+    // printf("Prev: %lx - Curr: %lx\n", prev_loc, cur_loc);
+    if (prev_loc > 0x600000 || cur_loc > 0x600000) {
+        return 0;
+    }
 
     prev_loc = (prev_loc >> 4) ^ (prev_loc << 8);
     prev_loc &= BRANCH_BITMAP_SIZE - 1;
