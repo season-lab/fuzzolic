@@ -333,18 +333,38 @@ static Z3_ast z3_new_symbol(const char* name, size_t n_bits)
     return s;
 }
 
+static Z3_ast z3_new_symbol_int(int id, size_t n_bits)
+{
+    Z3_sort   bv_sort = Z3_mk_bv_sort(smt_solver.ctx, n_bits);
+    Z3_symbol s       = Z3_mk_int_symbol(smt_solver.ctx, id);
+    Z3_ast    e       = Z3_mk_const(smt_solver.ctx, s, bv_sort);
+    return e;
+}
+
 Z3_ast smt_new_symbol(uintptr_t id, const char* name, size_t n_bits, Expr* e)
 {
     assert(id < MAX_INPUTS_EXPRS);
-    if (id < MAX_INPUT_SIZE) {
+    if (id < testcase.size) {
         assert(n_bits == 8 && "Multi-byte input not yet supported.");
     }
     Z3_ast s = input_exprs[id];
     if (s == NULL) {
         s               = z3_new_symbol(name, n_bits);
         input_exprs[id] = s;
-        // printf("Generating symbolic for input at offset %lu (%p)\n", id,
-        //       input_exprs[id]);
+    }
+    return s;
+}
+
+Z3_ast smt_new_symbol_int(uintptr_t id, size_t n_bits, Expr* e)
+{
+    assert(id < MAX_INPUTS_EXPRS);
+    if (id < testcase.size) {
+        assert(n_bits == 8 && "Multi-byte input not yet supported.");
+    }
+    Z3_ast s = input_exprs[id];
+    if (s == NULL) {
+        s               = z3_new_symbol_int(id, n_bits);
+        input_exprs[id] = s;
     }
     return s;
 }
@@ -399,6 +419,27 @@ static void smt_dump_solution(Z3_model m, size_t idx, size_t sub_idx)
     fclose(fp);
 }
 
+static void smt_dump_testcase(uint64_t* data, size_t size, size_t idx, size_t sub_idx)
+{
+
+    char testcase_name[128];
+    int  n = snprintf(testcase_name, sizeof(testcase_name), "test_case_%lu_%lu.dat",
+                     idx, sub_idx);
+    assert(n > 0 && n < sizeof(testcase_name) && "test case name too long");
+
+#if 0
+    SAYF("Dumping solution into %s\n", testcase_name);
+#endif
+
+    FILE* fp = fopen(testcase_name, "w");
+    for (size_t i = 0; i < size; i++) {
+        uint8_t byte = (uint8_t) data[i];
+        fwrite(&byte, sizeof(char), 1, fp);
+    }
+    fclose(fp);
+}
+
+
 static void inline smt_dump_solver(Z3_solver solver, size_t idx)
 {
     Z3_string s_query = Z3_solver_to_string(smt_solver.ctx, solver);
@@ -415,7 +456,6 @@ static void inline smt_dump_solver(Z3_solver solver, size_t idx)
 static int smt_query_check(Z3_solver solver, size_t idx)
 {
     int qres = 0;
-#if 1
     struct timespec start;
     get_time(&start);
 
@@ -453,7 +493,6 @@ static int smt_query_check(Z3_solver solver, size_t idx)
     }
     if (m)
         Z3_model_dec_ref(smt_solver.ctx, m);
-#endif
     return qres;
 }
 
@@ -1783,6 +1822,20 @@ Z3_ast optimize_z3_query(Z3_ast e)
     return e;
 }
 
+static inline size_t scale_sload_index(size_t index) {
+    index = index - MAX_INPUT_SIZE;
+    assert(index < MAX_INPUTS_EXPRS);
+    index = testcase.size + (index * 2);
+    return index;
+}
+
+static inline size_t reverse_scale_sload_index(size_t index) {
+    index = index - testcase.size;
+    index = index >> 1;
+    index = index + MAX_INPUT_SIZE;
+    return index;
+}
+
 #define VERBOSE 0
 Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                        GHashTable* inputs)
@@ -1808,27 +1861,22 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
         case RESERVED:
             ABORT("Invalid opkind (RESERVER). There is a bug somewhere :(");
         case IS_SYMBOLIC:;
-
-            if (concretized_sloads[CONST(query->op1)]) {
-                r = smt_new_const(CONST(query->op3), 64);
+            uintptr_t id = CONST(query->op1);
+            if (id >= testcase.size) {
+                id = scale_sload_index(id);
+            }
+            uintptr_t n_bytes = CONST(query->op2);
+            if (concretized_sloads[id]) {
+                r = smt_new_const(CONST(query->op3), 8 * n_bytes);
             } else {
-                char* input_name = malloc(16);
-                if (CONST(query->op1) < MAX_INPUT_SIZE) {
-                    snprintf(input_name, 16, "input_%lu",
-                             (uintptr_t)query->op1);
-                } else {
-                    snprintf(input_name, 16, "s_load_%lu",
-                             (uintptr_t)query->op1);
-                }
-                r = smt_new_symbol((uintptr_t)query->op1, input_name,
-                                   8 * (uintptr_t)query->op2, query);
+                r = smt_new_symbol_int(id, 8 * n_bytes, query);
                 if (inputs) {
-                    g_hash_table_add(inputs, (void*)query->op1);
+                    g_hash_table_add(inputs, (gpointer) id);
                 }
             }
             break;
         case IS_CONST:
-            r = smt_new_const((uintptr_t)query->op1, 64);
+            r = smt_new_const(CONST(query->op1), 64);
             break;
         //
         case NOT:
@@ -2522,14 +2570,14 @@ static void smt_branch_query(Query* q)
 #elif BRANCH_COVERAGE == AFL
         if (is_interesting_branch(q->address, q->args64)) {
 #endif
-#if 1
             Z3_solver solver = smt_new_solver();
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver);
+#if 1
             Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
             SAYF("Running a query...\n");
             smt_query_check(solver, GET_QUERY_IDX(q));
-            smt_del_solver(solver);
 #endif
+            smt_del_solver(solver);
         } else {
             printf("Branch is not interesting. Skipping it.\n");
         }
@@ -2576,7 +2624,84 @@ static int get_eval_uint64(Z3_model m, Z3_ast e, uintptr_t* value)
     }
 }
 
-static Z3_model conc_query_eval_value(Z3_ast query, uintptr_t input_val,
+static uint64_t eval_data[MAX_INPUTS_EXPRS];
+
+static int conc_query_eval_value(Z3_ast query, uint64_t* data,
+                                        size_t size,
+                                        size_t testcase_size)
+{
+    if (!query) {
+        return 1;
+    }
+
+    uintptr_t value;
+    GSList* el = sloads_exprs;
+    size_t n_data_bytes = testcase.size;
+    while (el) {
+
+        SLoad* sl = (SLoad*)el->data;
+        el        = el->next;
+
+        size_t i = sl->index;
+        n_data_bytes = i + 1;
+
+        Z3_ast e = sl->expr;
+
+        assert(i < MAX_INPUTS_EXPRS);
+
+        // printf("Analyzing sloads_%lu (%lu)\n", reverse_scale_sload_index(i), i);
+        // print_z3_ast(e);
+
+        if (concretized_sloads[i]) {
+            data[i] = CONST(e);
+            // printf("s_load_%lu: %lx\n", i, CONST(e));
+        } else {
+
+            assert(e && OP(e) == Z3_OP_AND);
+            // printf("Getting concrete value of s_load_%lu\n", i);
+
+            Z3_ast s    = ARG1(ARG2(e));
+            Z3_ast addr = ARG2(ARG2(e));
+
+            Z3_ast s_expr  = ARG1(ARG1(e));
+            Z3_ast s_value = ARG2(ARG1(e));
+
+            Z3_ast or_addr = ARG3(e);
+
+            // First we need to get solution for addr:
+            // this will get us an intepretation for s
+            // Then we get solution for s_expr, giving
+            // us an interpretation for s_value
+
+            value = Z3_custom_eval(smt_solver.ctx, addr, data, n_data_bytes);
+            data[i + 1] = value;
+
+            value = Z3_custom_eval(smt_solver.ctx, s_value, data, n_data_bytes);
+            data[i] = value;
+
+            // printf("s_load_%lu: %lx\n", i, value);
+        }
+    }
+
+#if 0
+    smt_dump_testcase(data, size, 0, 0);
+
+    Z3_solver solver = smt_new_solver();
+    Z3_solver_assert(smt_solver.ctx, solver, query);
+    smt_dump_solver(solver, 0);
+    smt_del_solver(solver);
+#endif
+    uint64_t r = Z3_custom_eval(smt_solver.ctx, query, data, n_data_bytes);
+    //printf("conc eval new: %lu\n", r);
+    if (r) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+#if 0
+static Z3_model conc_query_eval_value_old(Z3_ast query, uintptr_t input_val,
                                       size_t input_index, uint8_t* data,
                                       size_t size)
 {
@@ -2591,10 +2716,7 @@ static Z3_model conc_query_eval_value(Z3_ast query, uintptr_t input_val,
         Z3_sort sort = Z3_mk_bv_sort(smt_solver.ctx, 8);
         Z3_ast  e    = Z3_mk_unsigned_int64(
             smt_solver.ctx, input_index == i ? input_val : data[i], sort);
-        char* name = malloc(16);
-        snprintf(name, 16, "input_%lu", i);
-        Z3_symbol s = Z3_mk_string_symbol(smt_solver.ctx, name);
-        free(name);
+        Z3_symbol s = Z3_mk_int_symbol(smt_solver.ctx, i);
         Z3_func_decl decl = Z3_mk_func_decl(smt_solver.ctx, s, 0, NULL, sort);
         Z3_add_const_interp(smt_solver.ctx, z3_m, decl, e);
     }
@@ -2613,14 +2735,15 @@ static Z3_model conc_query_eval_value(Z3_ast query, uintptr_t input_val,
         size_t i = sl->index;
         Z3_ast e = sl->expr;
 
-        // printf("Analyzing sloads_%lu\n", i);
+        // printf("Analyzing sloads_%lu (%lu)\n", reverse_scale_sload_index(i), i);
         // print_z3_ast(e);
 
         Z3_sort sort;
         if (concretized_sloads[i]) {
-            sort = Z3_get_sort(smt_solver.ctx, e);
-            // assert(is_const(e, &value));
+            sort = Z3_mk_bv_sort(smt_solver.ctx, 64);
+            e = Z3_mk_unsigned_int64(smt_solver.ctx, CONST(e), sort);
             // printf("s_load_%lu value is %lu\n", i, value);
+            // printf("s_load_%lu: %lx\n", i, CONST(e));
         } else {
 
             assert(e && OP(e) == Z3_OP_AND);
@@ -2644,10 +2767,7 @@ static Z3_model conc_query_eval_value(Z3_ast query, uintptr_t input_val,
                 return NULL;
             }
 
-            char* name = malloc(16);
-            snprintf(name, 16, "sv_load_%lu", i);
-            Z3_symbol symbol = Z3_mk_string_symbol(smt_solver.ctx, name);
-            free(name);
+            Z3_symbol symbol = Z3_mk_int_symbol(smt_solver.ctx, i + 1);
             sort = Z3_get_sort(smt_solver.ctx, s);
             Z3_func_decl decl =
                 Z3_mk_func_decl(smt_solver.ctx, symbol, 0, NULL, sort);
@@ -2659,19 +2779,19 @@ static Z3_model conc_query_eval_value(Z3_ast query, uintptr_t input_val,
                 return NULL;
             }
 
+            //printf("s_load_%lu: %lx\n", i, value);
+
             sort = Z3_get_sort(smt_solver.ctx, s_value);
             e    = Z3_mk_unsigned_int64(smt_solver.ctx, value, sort);
         }
 
-        char* name = malloc(16);
-        snprintf(name, 16, "s_load_%lu", i);
-        Z3_symbol s = Z3_mk_string_symbol(smt_solver.ctx, name);
-        free(name);
+        Z3_symbol s = Z3_mk_int_symbol(smt_solver.ctx, i);
         Z3_func_decl decl = Z3_mk_func_decl(smt_solver.ctx, s, 0, NULL, sort);
         Z3_add_const_interp(smt_solver.ctx, z3_m, decl, e);
     }
 
     int r = get_eval_uint64(z3_m, query, &value);
+    //printf("conc eval old: %d\n", r);
     if (r) {
         Z3_model_inc_ref(smt_solver.ctx, z3_m);
         return z3_m;
@@ -2680,7 +2800,7 @@ static Z3_model conc_query_eval_value(Z3_ast query, uintptr_t input_val,
     }
 }
 
-static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
+static int fuzz_query_eval_old(GHashTable* inputs, Z3_ast expr,
                            GHashTable* solutions, uintptr_t dump_idx)
 {
     GHashTableIter iter;
@@ -2711,22 +2831,80 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
         uint8_t fuzz_values[] = {
             0, 1, 127, 255, testcase.data[index] - 1, testcase.data[index] + 1};
         for (ssize_t i = 0; i < sizeof(fuzz_values) / sizeof(uint8_t); i++) {
-            Z3_model m = conc_query_eval_value(query, fuzz_values[i], index,
+            Z3_model m = conc_query_eval_value_old(query, fuzz_values[i], index,
                                                testcase.data, testcase.size);
+            //printf("Done eval old\n");
             if (m) {
                 uintptr_t solution = smt_query_eval_uint64(m, expr);
 
                 if (g_hash_table_contains(solutions, (gpointer)solution) !=
                     TRUE) {
-                    // printf("Found a valid solution: %lx\n", solution);
+                    printf("Found a valid solution: %lx\n", solution);
                     g_hash_table_add(solutions, (gpointer)solution);
-                    // printf("Solution: %lx\n", solution);
-                    if (dump_idx) {
-                        smt_dump_solution(m, dump_idx, g_hash_table_size(solutions));
-                    }
                 }
                 Z3_model_dec_ref(smt_solver.ctx, m);
             }
+        }
+    }
+
+    g_hash_table_destroy(inputs_copy);
+    return g_hash_table_size(solutions) > 1;
+}
+#endif
+
+static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
+                           GHashTable* solutions, uintptr_t dump_idx)
+{
+    GHashTableIter iter;
+    gpointer       key, value;
+
+    // copy inputs since get_deps will add other inputs
+    // that we do not want to fuzz
+    GHashTable* inputs_copy = g_hash_table_new(NULL, NULL);
+    g_hash_table_iter_init(&iter, inputs);
+    while (g_hash_table_iter_next(&iter, &key, &value)) {
+        g_hash_table_add(inputs_copy, key);
+    }
+
+    Z3_ast query = get_deps(inputs);
+
+    for (size_t i = 0; i < testcase.size; i++) {
+        eval_data[i] = testcase.data[i];
+    }
+
+    g_hash_table_iter_init(&iter, inputs_copy);
+    while (g_hash_table_iter_next(&iter, &key, &value)) {
+        size_t index = CONST(key);
+
+        if (index >= testcase.size) {
+            // printf("Not fuzzing input byte: %lu\n", index);
+            continue;
+        }
+
+        // printf("Fuzzing input byte: %lu\n", index);
+
+        uint8_t fuzz_values[] = {
+            0, 1, 127, 255, testcase.data[index] - 1, testcase.data[index] + 1};
+        for (ssize_t i = 0; i < sizeof(fuzz_values) / sizeof(uint8_t); i++) {
+
+            uint8_t original_value = eval_data[index];
+            eval_data[index] = fuzz_values[i];
+
+            int r = conc_query_eval_value(query, eval_data, MAX_INPUTS_EXPRS, testcase.size);
+            if (r) {
+                uintptr_t solution = Z3_custom_eval(smt_solver.ctx, expr, eval_data, MAX_INPUTS_EXPRS);
+                if (g_hash_table_contains(solutions, (gpointer)solution) !=
+                    TRUE) {
+                    printf("Found a valid solution: %lx\n", solution);
+                    g_hash_table_add(solutions, (gpointer)solution);
+                    // printf("Solution: %lx\n", solution);
+                    if (dump_idx) {
+                        smt_dump_testcase(eval_data, testcase.size, dump_idx, g_hash_table_size(solutions));
+                    }
+                }
+            }
+
+            eval_data[index] = original_value;
         }
     }
 
@@ -2806,23 +2984,43 @@ static void smt_slice_query(Query* q)
 #if 0
     get_inputs_expr(z3_addr);
 #endif
+
+#if 0
+    GHashTableIter iter;
+    gpointer       key, value;
+    GHashTable* inputs_copy = g_hash_table_new(NULL, NULL);
+    g_hash_table_iter_init(&iter, inputs);
+    while (g_hash_table_iter_next(&iter, &key, &value)) {
+        g_hash_table_add(inputs_copy, key);
+    }
+#endif
+
     GHashTable* conc_addrs = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs, (gpointer)addr_conc);
-    int r = 0; // fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
+    int r = fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
+#if 0
+    GHashTable* conc_addrs2 = g_hash_table_new(NULL, NULL);
+    g_hash_table_add(conc_addrs2, (gpointer)addr_conc);
+    int r2 = fuzz_query_eval_old(inputs_copy, z3_addr, conc_addrs2, 0);
+
+    assert(r == r2);
+#endif
 
     if (!r) {
         printf("Slice access has a single value. Concretizing it.\n");
-        concretized_sloads[s_load_id] = 1;
+        concretized_sloads[scale_sload_index(s_load_id)] = 1;
         // printf("Setting sloads_exprs for %lu\n", s_load_id);
         SLoad* s_load_obj = malloc(sizeof(SLoad));
-        s_load_obj->index = s_load_id;
-        s_load_obj->expr  = smt_new_const(s_load_value, s_load_size * 8);
+        s_load_obj->index = scale_sload_index(s_load_id);
+        s_load_obj->expr  = (Z3_ast) s_load_value; // smt_new_const(s_load_value, s_load_size * 8);
         sloads_exprs      = g_slist_append(sloads_exprs, (gpointer)s_load_obj);
         g_hash_table_destroy(conc_addrs);
         g_hash_table_destroy(inputs);
         return;
     }
-
+#if 0
+    assert(g_hash_table_size(conc_addrs) == g_hash_table_size(conc_addrs2));
+#endif
     printf("Slice access has multiple values: %d\n",
            g_hash_table_size(conc_addrs));
 
@@ -2842,19 +3040,17 @@ static void smt_slice_query(Query* q)
 
     // printf("S1\n");
 
-    char* name = malloc(16);
-    snprintf(name, 16, "sv_load_%lu", s_load_id);
-    Z3_ast s = z3_new_symbol(name, sizeof(uintptr_t) * 8);
-    free(name);
+    Z3_ast s = z3_new_symbol_int(scale_sload_index(s_load_id) + 1, sizeof(uintptr_t) * 8);
 
     Z3_ast v = smt_new_const(s_load_value, s_load_size * 8);
 
     Z3_ast* or_args = malloc(sizeof(Z3_ast) * g_hash_table_size(conc_addrs));
     size_t k = 0;
     or_args[k++] = Z3_mk_eq(smt_solver.ctx, s, smt_new_const(addr_conc, sizeof(uintptr_t) * 8));
-
+#if 1
     GHashTableIter iter;
     gpointer       key, value;
+#endif
     g_hash_table_iter_init(&iter, conc_addrs);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
 
@@ -2885,7 +3081,7 @@ static void smt_slice_query(Query* q)
     // printf("Setting sloads_exprs for %lu\n", s_load_id);
 
     SLoad* s_load_obj = malloc(sizeof(SLoad));
-    s_load_obj->index = s_load_id;
+    s_load_obj->index = scale_sload_index(s_load_id);
     s_load_obj->expr  = e;
     sloads_exprs      = g_slist_append(sloads_exprs, (gpointer)s_load_obj);
 
@@ -2920,9 +3116,9 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     g_hash_table_iter_init(&iter, inputs);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
 
-        if ((uintptr_t)key < MAX_INPUT_SIZE) {
+        if (CONST(key) < testcase.size) {
             has_real_inputs = 1;
-        } else if (!concretized_sloads[(uintptr_t)key]) {
+        } else if (!concretized_sloads[CONST(key)]) {
             has_real_inputs = 1;
         }
 
@@ -2953,7 +3149,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     }
 
     uintptr_t solution = (uintptr_t)q->query->op2;
-    if (is_interesting_memory(solution) && 0) {
+    if (is_interesting_memory(solution)) {
 #if 0 // Using SMT Solver:
         int       count    = 0;
         Z3_solver solver   = smt_new_solver();
@@ -2982,7 +3178,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
         g_hash_table_destroy(solutions);
 #endif
     } else {
-        printf("Adress is not interesting. Skipping it.\n");
+        printf("Address is not interesting. Skipping it.\n");
     }
 
     if (opkind == SYMBOLIC_LOAD || opkind == SYMBOLIC_STORE) {

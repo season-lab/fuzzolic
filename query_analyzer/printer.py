@@ -720,6 +720,9 @@ def parse_condition(e):
         return Condition(bits, 'const', [val])
     elif opkind.startswith('input_'):
         return Condition(e.size(), 'input', [str(e)])
+    elif opkind.startswith('k!'):
+        n = opkind[2:]
+        return Condition(e.size(), 'input', ['input_' + n])
     elif opkind.startswith('s_load_'):
         return Condition(e.size(), 'input', [str(e)])
 
@@ -1194,9 +1197,11 @@ if len(sys.argv) != 2:
 query_file = sys.argv[1]
 query = z3.parse_smt2_file(query_file)
 
-if False:
-    query = z3.simplify(query)
+if True:
     print(query)
+    print("\n##########\n")
+
+    print(z3.simplify(query))
     print("\n##########\n")
 
 if str(query) in ['True', 'False']:

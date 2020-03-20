@@ -344,7 +344,7 @@ class Executor(object):
 
             if len(queued_inputs) == 0:
                 if not initial_run:
-                    return None
+                    return None, None
 
                 # copy the initial seed(s) in the queue
                 if not os.path.isdir(self.input):
