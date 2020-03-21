@@ -10,10 +10,12 @@
 
 #include "solver.h"
 #include "i386.h"
+#include "fuzzy-sat/z3-fuzzy.h"
 
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
+#define USE_FUZZY_SOLVER             1
 
 static int expr_pool_shm_id = -1;
 Expr*      pool;
@@ -30,6 +32,9 @@ typedef struct SMTSolver {
     uint64_t   unsat_time;
     uint64_t   unknown_count;
     uint64_t   unknown_time;
+#if USE_FUZZY_SOLVER
+    fuzzy_ctx_t fuzzy_ctx;
+#endif
 } SMTSolver;
 
 static SMTSolver smt_solver;
@@ -62,6 +67,9 @@ typedef struct {
 static Testcase testcase;
 
 Config config = {0};
+
+uint64_t conc_query_eval_value(Z3_context ctx, Z3_ast query, uint64_t* data,
+                               uint8_t* symbols_sizes, size_t size);
 
 static void exitf(const char* message)
 {
@@ -128,6 +136,12 @@ static void smt_init(void)
     smt_solver.ctx = Z3_mk_context(cfg);
     Z3_set_error_handler(smt_solver.ctx, smt_error_handler);
     Z3_del_config(cfg);
+
+    printf("%s\n", config.testcase_path);
+#if USE_FUZZY_SOLVER
+    z3fuzz_init(&smt_solver.fuzzy_ctx, smt_solver.ctx,
+                (char*)config.testcase_path, NULL, &conc_query_eval_value);
+#endif
 }
 
 static inline Z3_solver smt_new_solver()
@@ -153,11 +167,14 @@ static inline void smt_destroy(void)
     if (smt_solver.ctx) {
         Z3_del_context(smt_solver.ctx);
     }
+#if USE_FUZZY_SOLVER
+    z3fuzz_free(&smt_solver.fuzzy_ctx);
+#endif
 }
 
 static inline void update_and_add_deps_to_solver(GHashTable* inputs,
                                                  size_t      query_idx,
-                                                 Z3_solver   solver)
+                                                 Z3_solver solver, Z3_ast* deps)
 {
     GHashTableIter iter, iter2;
     gpointer       key, value;
@@ -200,7 +217,7 @@ static inline void update_and_add_deps_to_solver(GHashTable* inputs,
             while (g_hash_table_iter_next(&iter2, &key, &value)) {
                 g_hash_table_add(current->exprs, key);
             }
-            // dealocate later
+            // deallocate later
             g_hash_table_add(to_be_deallocated, dep);
         }
     }
@@ -214,6 +231,26 @@ static inline void update_and_add_deps_to_solver(GHashTable* inputs,
             Z3_solver_assert(smt_solver.ctx, solver,
                              z3_ast_exprs[query_dep_idx]);
             // printf("Adding expr %lu for %lu\n", query_dep_idx, query_idx);
+        }
+    }
+
+    if (deps) {
+        if (g_hash_table_size(current->exprs) > 0) {
+            Z3_ast* and_args =
+                malloc(sizeof(Z3_ast) * g_hash_table_size(current->exprs));
+            size_t k = 0;
+            g_hash_table_iter_init(&iter, current->exprs);
+            while (g_hash_table_iter_next(&iter, &key, &value)) {
+                size_t query_dep_idx = (size_t)key;
+                assert(z3_ast_exprs[query_dep_idx]);
+                and_args[k++] = z3_ast_exprs[query_dep_idx];
+                // printf("Adding expr %lu for %lu\n", query_dep_idx, query_idx);
+            }
+            *deps = Z3_mk_and(smt_solver.ctx, g_hash_table_size(current->exprs),
+                            and_args);
+            free(and_args);
+        } else {
+            *deps = Z3_mk_true(smt_solver.ctx);
         }
     }
 
@@ -315,6 +352,10 @@ static inline Z3_ast get_deps(GHashTable* inputs)
         }
     }
 
+    if (r == NULL) {
+        r = Z3_mk_true(smt_solver.ctx);
+    }
+
     g_hash_table_iter_init(&iter2, added_inputs);
     while (g_hash_table_iter_next(&iter2, &key, &value)) {
         g_hash_table_add(inputs, key);
@@ -381,8 +422,8 @@ static void smt_dump_solution(Z3_model m, size_t idx, size_t sub_idx)
     size_t input_size = testcase.size;
 
     char testcase_name[128];
-    int  n = snprintf(testcase_name, sizeof(testcase_name), "test_case_%lu_%lu.dat",
-                     idx, sub_idx);
+    int  n = snprintf(testcase_name, sizeof(testcase_name),
+                     "test_case_%lu_%lu.dat", idx, sub_idx);
     assert(n > 0 && n < sizeof(testcase_name) && "test case name too long");
 
 #if 0
@@ -419,12 +460,13 @@ static void smt_dump_solution(Z3_model m, size_t idx, size_t sub_idx)
     fclose(fp);
 }
 
-static void smt_dump_testcase(uint64_t* data, size_t size, size_t idx, size_t sub_idx)
+static void smt_dump_testcase(const uint8_t* data, size_t size, size_t stride,
+                              size_t idx, size_t sub_idx)
 {
 
     char testcase_name[128];
-    int  n = snprintf(testcase_name, sizeof(testcase_name), "test_case_%lu_%lu.dat",
-                     idx, sub_idx);
+    int  n = snprintf(testcase_name, sizeof(testcase_name),
+                     "test_case_%lu_%lu.dat", idx, sub_idx);
     assert(n > 0 && n < sizeof(testcase_name) && "test case name too long");
 
 #if 0
@@ -432,13 +474,15 @@ static void smt_dump_testcase(uint64_t* data, size_t size, size_t idx, size_t su
 #endif
 
     FILE* fp = fopen(testcase_name, "w");
-    for (size_t i = 0; i < size; i++) {
-        uint8_t byte = (uint8_t) data[i];
+    for (size_t i = 0; i < size; i += stride) {
+        uint8_t byte = data[i];
+        if (byte != testcase.data[i]) {
+            printf("Solution[%ld]: 0x%x\n", i, byte);
+        }
         fwrite(&byte, sizeof(char), 1, fp);
     }
     fclose(fp);
 }
-
 
 static void inline smt_dump_solver(Z3_solver solver, size_t idx)
 {
@@ -455,7 +499,7 @@ static void inline smt_dump_solver(Z3_solver solver, size_t idx)
 
 static int smt_query_check(Z3_solver solver, size_t idx)
 {
-    int qres = 0;
+    int             qres = 0;
     struct timespec start;
     get_time(&start);
 
@@ -616,8 +660,8 @@ static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op,
 
                 case Z3_OP_UNINTERPRETED: {
                     Z3_symbol   symbol = Z3_get_decl_name(ctx, decl);
-                    const char* s      = Z3_get_symbol_string(ctx, symbol);
-                    printf("%s", s);
+                    int         s      = Z3_get_symbol_int(ctx, symbol);
+                    printf("input_%d", s);
                     return;
                 }
 
@@ -692,6 +736,11 @@ static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op,
                     break;
                 }
 
+                case Z3_OP_OR: {
+                    s_op = "||";
+                    break;
+                }
+
                 case Z3_OP_BNOT: {
                     s_op = "~";
                     break;
@@ -762,7 +811,7 @@ static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op,
                 }
 
                 default: {
-                    // printf("OTHER");
+                    // printf("Unknown operator");
                     // return;
                 }
             }
@@ -851,9 +900,21 @@ static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op,
         printf(")");
 
     } else {
-        printf("\nNumber of operands: %u\n", num_operands);
-        print_z3_original(e);
-        ABORT();
+
+        if (decl_kind == Z3_OP_AND || decl_kind == Z3_OP_OR) {
+            printf("(");
+            for (size_t i = 0; i < num_operands; i++) {
+                print_z3_ast_internal(Z3_get_app_arg(ctx, app, i), 0, 0);
+                if (i != num_operands - 1) {
+                    printf(" %s ", s_op);
+                }
+            }
+            printf(")");
+        } else {
+            printf("\nNumber of operands: %u - decl_kind: %x\n", num_operands, decl_kind);
+            print_z3_original(e);
+            ABORT();
+        }
     }
 }
 
@@ -1822,14 +1883,16 @@ Z3_ast optimize_z3_query(Z3_ast e)
     return e;
 }
 
-static inline size_t scale_sload_index(size_t index) {
+static inline size_t scale_sload_index(size_t index)
+{
     index = index - MAX_INPUT_SIZE;
     assert(index < MAX_INPUTS_EXPRS);
     index = testcase.size + (index * 2);
     return index;
 }
 
-static inline size_t reverse_scale_sload_index(size_t index) {
+static inline size_t reverse_scale_sload_index(size_t index)
+{
     index = index - testcase.size;
     index = index >> 1;
     index = index + MAX_INPUT_SIZE;
@@ -1871,7 +1934,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             } else {
                 r = smt_new_symbol_int(id, 8 * n_bytes, query);
                 if (inputs) {
-                    g_hash_table_add(inputs, (gpointer) id);
+                    g_hash_table_add(inputs, (gpointer)id);
                 }
             }
             break;
@@ -2570,14 +2633,40 @@ static void smt_branch_query(Query* q)
 #elif BRANCH_COVERAGE == AFL
         if (is_interesting_branch(q->address, q->args64)) {
 #endif
+
+#if USE_FUZZY_SOLVER
+            Z3_ast deps;
+            update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL,
+                                          &deps);
+            // print_z3_ast(deps);
+            Z3_ast         args[]      = {z3_neg_query, deps};
+            Z3_ast         fuzzy_query = Z3_mk_and(smt_solver.ctx, 2, args);
+            const uint8_t* proof;
+            size_t         proof_size;
+            print_z3_ast(fuzzy_query);
+            // print_z3_ast(z3_neg_query);
+            SAYF("Running a query...\n");
+            struct timespec start, end;
+            get_time(&start);
+            int r = z3fuzz_query_check_light(&smt_solver.fuzzy_ctx, fuzzy_query,
+                                             z3_neg_query, &proof, &proof_size);
+            get_time(&end);
+            printf("Elapsed: %lu us\n", get_diff_time_microsec(&start, &end));
+            if (r) {
+                printf("Query is SAT\n");
+                smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 0);
+            } else {
+                printf("Query is non-SAT\n");
+            }
+#else
             Z3_solver solver = smt_new_solver();
-            update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver);
-#if 1
+            update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver,
+                                          NULL);
             Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
             SAYF("Running a query...\n");
             smt_query_check(solver, GET_QUERY_IDX(q));
-#endif
             smt_del_solver(solver);
+#endif
         } else {
             printf("Branch is not interesting. Skipping it.\n");
         }
@@ -2625,40 +2714,42 @@ static int get_eval_uint64(Z3_model m, Z3_ast e, uintptr_t* value)
 }
 
 static uint64_t eval_data[MAX_INPUTS_EXPRS];
+static uint8_t  symbols_sizes[MAX_INPUTS_EXPRS];
+static uint64_t symbols_count = 0;
 
-static int conc_query_eval_value(Z3_ast query, uint64_t* data,
-                                        size_t size,
-                                        size_t testcase_size)
+uint64_t conc_query_eval_value(Z3_context ctx, Z3_ast query, uint64_t* data,
+                               uint8_t* symbols_sizes, size_t size)
 {
     if (!query) {
         return 1;
     }
 
     uintptr_t value;
-    GSList* el = sloads_exprs;
-    size_t n_data_bytes = testcase.size;
+    GSList*   el           = sloads_exprs;
+    size_t    n_data_bytes = testcase.size;
     while (el) {
 
         SLoad* sl = (SLoad*)el->data;
         el        = el->next;
 
-        size_t i = sl->index;
-        n_data_bytes = i + 1;
+        size_t i     = sl->index;
+        n_data_bytes = i + 2;
+        assert(n_data_bytes <= size);
 
         Z3_ast e = sl->expr;
 
         assert(i < MAX_INPUTS_EXPRS);
 
-        // printf("Analyzing sloads_%lu (%lu)\n", reverse_scale_sload_index(i), i);
-        // print_z3_ast(e);
+        // printf("Analyzing sloads_%lu (%lu)\n", reverse_scale_sload_index(i), i); 
 
         if (concretized_sloads[i]) {
             data[i] = CONST(e);
-            // printf("s_load_%lu: %lx\n", i, CONST(e));
+            assert(i < size);
+            //printf("s_load_%lu: %lx\n", i, CONST(e));
         } else {
 
             assert(e && OP(e) == Z3_OP_AND);
-            // printf("Getting concrete value of s_load_%lu\n", i);
+            //printf("Getting concrete value of s_load_%lu\n", i);
 
             Z3_ast s    = ARG1(ARG2(e));
             Z3_ast addr = ARG2(ARG2(e));
@@ -2673,31 +2764,31 @@ static int conc_query_eval_value(Z3_ast query, uint64_t* data,
             // Then we get solution for s_expr, giving
             // us an interpretation for s_value
 
-            value = Z3_custom_eval(smt_solver.ctx, addr, data, n_data_bytes);
+            value = Z3_custom_eval(smt_solver.ctx, addr, data, symbols_sizes,
+                                   n_data_bytes);
             data[i + 1] = value;
 
-            value = Z3_custom_eval(smt_solver.ctx, s_value, data, n_data_bytes);
+            value = Z3_custom_eval(smt_solver.ctx, s_value, data, symbols_sizes,
+                                   n_data_bytes);
             data[i] = value;
+            assert(i < size);
 
-            // printf("s_load_%lu: %lx\n", i, value);
+            //printf("s_load_%lu: %lx\n", i, value);
         }
     }
 
 #if 0
-    smt_dump_testcase(data, size, 0, 0);
+    smt_dump_testcase(data, size, 8, 0, 0);
 
     Z3_solver solver = smt_new_solver();
     Z3_solver_assert(smt_solver.ctx, solver, query);
     smt_dump_solver(solver, 0);
     smt_del_solver(solver);
 #endif
-    uint64_t r = Z3_custom_eval(smt_solver.ctx, query, data, n_data_bytes);
-    //printf("conc eval new: %lu\n", r);
-    if (r) {
-        return 1;
-    } else {
-        return 0;
-    }
+    uint64_t r = Z3_custom_eval(smt_solver.ctx, query, data, symbols_sizes,
+                                n_data_bytes);
+    // printf("conc eval new: %lu\n", r);
+    return r;
 }
 
 #if 0
@@ -2888,18 +2979,23 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
         for (ssize_t i = 0; i < sizeof(fuzz_values) / sizeof(uint8_t); i++) {
 
             uint8_t original_value = eval_data[index];
-            eval_data[index] = fuzz_values[i];
+            eval_data[index]       = fuzz_values[i];
 
-            int r = conc_query_eval_value(query, eval_data, MAX_INPUTS_EXPRS, testcase.size);
+            int r = conc_query_eval_value(smt_solver.ctx, query, eval_data,
+                                          symbols_sizes, symbols_count);
             if (r) {
-                uintptr_t solution = Z3_custom_eval(smt_solver.ctx, expr, eval_data, MAX_INPUTS_EXPRS);
+                uintptr_t solution =
+                    Z3_custom_eval(smt_solver.ctx, expr, eval_data,
+                                   symbols_sizes, symbols_count);
                 if (g_hash_table_contains(solutions, (gpointer)solution) !=
                     TRUE) {
                     printf("Found a valid solution: %lx\n", solution);
                     g_hash_table_add(solutions, (gpointer)solution);
                     // printf("Solution: %lx\n", solution);
                     if (dump_idx) {
-                        smt_dump_testcase(eval_data, testcase.size, dump_idx, g_hash_table_size(solutions));
+                        smt_dump_testcase((uint8_t*)eval_data, testcase.size, 8,
+                                          dump_idx,
+                                          g_hash_table_size(solutions));
                     }
                 }
             }
@@ -3010,10 +3106,27 @@ static void smt_slice_query(Query* q)
         printf("Slice access has a single value. Concretizing it.\n");
         concretized_sloads[scale_sload_index(s_load_id)] = 1;
         // printf("Setting sloads_exprs for %lu\n", s_load_id);
+
+#if USE_FUZZY_SOLVER
+        // printf("Assignment: %lu\n", scale_sload_index(s_load_id));
+        z3fuzz_add_assignment(&smt_solver.fuzzy_ctx,
+                              scale_sload_index(s_load_id),
+                              smt_new_const(s_load_value, s_load_size * 8));
+        z3fuzz_add_assignment(&smt_solver.fuzzy_ctx,
+                              scale_sload_index(s_load_id) + 1,
+                              smt_new_const(0, sizeof(uintptr_t) * 8));
+#endif
+
         SLoad* s_load_obj = malloc(sizeof(SLoad));
         s_load_obj->index = scale_sload_index(s_load_id);
-        s_load_obj->expr  = (Z3_ast) s_load_value; // smt_new_const(s_load_value, s_load_size * 8);
-        sloads_exprs      = g_slist_append(sloads_exprs, (gpointer)s_load_obj);
+        s_load_obj->expr  = (Z3_ast)
+            s_load_value; // smt_new_const(s_load_value, s_load_size * 8);
+        sloads_exprs = g_slist_append(sloads_exprs, (gpointer)s_load_obj);
+
+        symbols_sizes[scale_sload_index(s_load_id)]     = s_load_size * 8;
+        symbols_sizes[scale_sload_index(s_load_id) + 1] = sizeof(uintptr_t) * 8;
+        symbols_count += 2;
+
         g_hash_table_destroy(conc_addrs);
         g_hash_table_destroy(inputs);
         return;
@@ -3040,13 +3153,15 @@ static void smt_slice_query(Query* q)
 
     // printf("S1\n");
 
-    Z3_ast s = z3_new_symbol_int(scale_sload_index(s_load_id) + 1, sizeof(uintptr_t) * 8);
+    Z3_ast s = z3_new_symbol_int(scale_sload_index(s_load_id) + 1,
+                                 sizeof(uintptr_t) * 8);
 
     Z3_ast v = smt_new_const(s_load_value, s_load_size * 8);
 
     Z3_ast* or_args = malloc(sizeof(Z3_ast) * g_hash_table_size(conc_addrs));
-    size_t k = 0;
-    or_args[k++] = Z3_mk_eq(smt_solver.ctx, s, smt_new_const(addr_conc, sizeof(uintptr_t) * 8));
+    size_t  k       = 0;
+    or_args[k++]    = Z3_mk_eq(smt_solver.ctx, s,
+                            smt_new_const(addr_conc, sizeof(uintptr_t) * 8));
 #if 1
     GHashTableIter iter;
     gpointer       key, value;
@@ -3066,28 +3181,42 @@ static void smt_slice_query(Query* q)
                             smt_new_const(addr, sizeof(uintptr_t) * 8));
         v         = Z3_mk_ite(smt_solver.ctx, c, v1, v);
 
-        or_args[k++] = Z3_mk_eq(smt_solver.ctx, s, smt_new_const(addr, sizeof(uintptr_t) * 8));
+        or_args[k++] = Z3_mk_eq(smt_solver.ctx, s,
+                                smt_new_const(addr, sizeof(uintptr_t) * 8));
     }
 
-    Z3_ast e = Z3_mk_eq(smt_solver.ctx, s_expr, v);
+    Z3_ast addr_or =
+        Z3_mk_or(smt_solver.ctx, g_hash_table_size(conc_addrs), or_args);
 
-    Z3_ast addr_or = Z3_mk_or(smt_solver.ctx, g_hash_table_size(conc_addrs), or_args);
-
+    Z3_ast e      = Z3_mk_eq(smt_solver.ctx, s_expr, v);
     Z3_ast args[] = {e, Z3_mk_eq(smt_solver.ctx, s, z3_addr), addr_or};
-    e              = Z3_mk_and(smt_solver.ctx, 3, args);
+    e             = Z3_mk_and(smt_solver.ctx, 3, args);
 
     free(or_args);
 
     // printf("Setting sloads_exprs for %lu\n", s_load_id);
+
+#if USE_FUZZY_SOLVER
+    // printf("Assignment: %lu\n", scale_sload_index(s_load_id));
+    z3fuzz_add_assignment(&smt_solver.fuzzy_ctx, scale_sload_index(s_load_id),
+                          v);
+    // printf("Assignment: %lu\n", scale_sload_index(s_load_id) + 1);
+    z3fuzz_add_assignment(&smt_solver.fuzzy_ctx,
+                          scale_sload_index(s_load_id) + 1, z3_addr);
+#endif
 
     SLoad* s_load_obj = malloc(sizeof(SLoad));
     s_load_obj->index = scale_sload_index(s_load_id);
     s_load_obj->expr  = e;
     sloads_exprs      = g_slist_append(sloads_exprs, (gpointer)s_load_obj);
 
+    symbols_sizes[scale_sload_index(s_load_id)]     = s_load_size * 8;
+    symbols_sizes[scale_sload_index(s_load_id) + 1] = sizeof(uintptr_t) * 8;
+    symbols_count += 2;
+
     g_hash_table_add(inputs, (gpointer)s_load_id);
     z3_ast_exprs[GET_QUERY_IDX(q)] = e;
-    update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL);
+    update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
 
     g_hash_table_destroy(conc_addrs);
     g_hash_table_destroy(inputs);
@@ -3170,26 +3299,45 @@ static void smt_expr_query(Query* q, OPKIND opkind)
         }
         smt_del_solver(solver);
 #else // Fuzzing:
+
+#if USE_FUZZY_SOLVER && 0
+        Z3_ast deps = get_deps(inputs);
+        const uint8_t* proof;
+        size_t proof_size;
+        uint64_t min = z3fuzz_minimize(&smt_solver.fuzzy_ctx, deps, z3_query, &proof, &proof_size);
+        if (min != solution) {
+            smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 1);
+        }
+        uint64_t max = z3fuzz_maximize(&smt_solver.fuzzy_ctx, deps, z3_query, &proof, &proof_size);
+        if (max != solution && max != min) {
+            smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 1);
+        }
+#else
         GHashTable* solutions = g_hash_table_new(NULL, NULL);
-        g_hash_table_add(solutions, (gpointer) solution);
+        g_hash_table_add(solutions, (gpointer)solution);
         int r = fuzz_query_eval(inputs, z3_query, solutions, GET_QUERY_IDX(q));
         int n_solutions = g_hash_table_size(solutions);
-        printf("Found %d solution for %s expr.\n", n_solutions - 1, opkind_to_str(opkind));
+        printf("Found %d solution for %s expr.\n", n_solutions - 1,
+               opkind_to_str(opkind));
         g_hash_table_destroy(solutions);
+#endif
+
 #endif
     } else {
         printf("Address is not interesting. Skipping it.\n");
     }
 
     if (opkind == SYMBOLIC_LOAD || opkind == SYMBOLIC_STORE) {
-        Z3_ast c = Z3_mk_eq(
-            smt_solver.ctx, z3_query,
-            smt_new_const(solution, sizeof(uintptr_t) * 8));
+        Z3_ast c = Z3_mk_eq(smt_solver.ctx, z3_query,
+                            smt_new_const(solution, sizeof(uintptr_t) * 8));
 #if 0
         get_inputs_expr(c);
 #endif
         z3_ast_exprs[GET_QUERY_IDX(q)] = c;
-        update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL);
+        update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
+#if USE_FUZZY_SOLVER
+        z3fuzz_notify_constraint(&smt_solver.fuzzy_ctx, c);
+#endif
     }
 
     g_hash_table_destroy(inputs);
@@ -3255,7 +3403,7 @@ void sig_handler(int signo)
     exit(0);
 }
 
-static inline void load_testcase()
+static inline void load_initial_testcase()
 {
     printf("Loading testcase: %s\n", config.testcase_path);
     char  data[1024 * 100] = {0};
@@ -3270,13 +3418,18 @@ static inline void load_testcase()
     testcase.data = malloc(r);
     testcase.size = r;
     memmove(testcase.data, &data, r);
+
+    for (size_t i = 0; i < testcase.size; i++) {
+        symbols_sizes[i] = 8;
+    }
+    symbols_count = testcase.size;
 }
 
 int main(int argc, char* argv[])
 {
     parse_opts(argc, argv, &config);
 
-    load_testcase();
+    load_initial_testcase();
     load_bitmaps();
 
     signal(SIGINT, sig_handler);

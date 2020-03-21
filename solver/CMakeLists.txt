@@ -7,6 +7,9 @@ add_executable(solver main.c i386.c branch_coverage.c opts.c xxHash/xxhash.c)
 # z3
 target_link_libraries(solver z3)
 
+# fuzzy
+target_link_libraries(solver ${CMAKE_SOURCE_DIR}/fuzzy-sat/libZ3Fuzzy.a)
+
 # glib
 find_package(PkgConfig REQUIRED)
 pkg_search_module(GLIB REQUIRED glib-2.0)
