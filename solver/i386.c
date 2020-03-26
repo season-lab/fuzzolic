@@ -722,15 +722,22 @@ static inline Z3_ast eflags_all_adcxo(Z3_context ctx, Expr* query, size_t width,
 }
 #undef VERBOSE
 
+extern GHashTable* z3_expr_cache;
+
 #define VERBOSE 0
 Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
                             size_t width, GHashTable* inputs)
 {
+    Z3_ast r = g_hash_table_lookup(z3_expr_cache, (gpointer)query);
+    if (r) {
+        get_inputs_from_expr(r, inputs);
+        return r;
+    }
+
     assert(!is_const && "is_const is true in a i386 query");
 
     Z3_ast op1 = NULL;
     Z3_ast op2 = NULL;
-    Z3_ast r   = NULL;
     switch (query->opkind) {
 
             // case RCL:
@@ -760,7 +767,7 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             for (size_t i = 0; i < XMM_BITES; i++) {
                 unsigned msb = (8 * (i + 1)) - 1;
                 Z3_ast   bit = Z3_mk_extract(ctx, msb, msb, op1);
-                bit = optimize_z3_query(bit);
+                bit          = optimize_z3_query(bit);
                 if (i == 0) {
                     r = bit;
                 } else {
@@ -839,6 +846,7 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             ABORT("Unknown expr i386 opkind: %u", query->opkind);
     }
 
+    g_hash_table_insert(z3_expr_cache, (gpointer)query, (gpointer)r);
     return r;
 }
 #undef VERBOSE

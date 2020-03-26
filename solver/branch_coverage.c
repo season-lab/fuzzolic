@@ -14,6 +14,7 @@ static uint8_t context_bitmap[BRANCH_BITMAP_SIZE] = {0};
 static uint8_t memory_bitmap[BRANCH_BITMAP_SIZE] = {0};
 
 static uintptr_t last_branch_hash = 0;
+static int last_branch_is_interesting = 0;
 
 #define IS_POWER_OF_TWO(x) ((x & (x - 1)) == 0)
 
@@ -70,7 +71,7 @@ static inline void save_bitmap(const char* path, uint8_t* data, size_t size)
     fclose(fp);
 }
 
-static inline void save_bitmaps()
+void save_bitmaps()
 {
 #if BRANCH_COVERAGE == QSYM
     save_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
@@ -158,20 +159,21 @@ int is_interesting_branch(uintptr_t pc, uintptr_t taken)
         branch_neg_bitmap[inv_idx]++;
 
         branch_bitmap[inv_idx] |= branch_neg_bitmap[inv_idx];
-        save_bitmaps();
+        // save_bitmaps();
 
         branch_neg_bitmap[inv_idx]--;
         ret = 1;
 #if CONTEXT_SENSITIVITY
     } else if (new_context) {
         ret = 1;
-        save_bitmaps();
+        // save_bitmaps();
 #endif
     } else {
         ret = 0;
     }
 
     last_branch_hash = h;
+    last_branch_is_interesting = ret;
     return ret;
 }
 
@@ -192,15 +194,19 @@ int is_interesting_branch(uintptr_t prev_loc, uintptr_t cur_loc)
     uintptr_t idx = cur_loc ^ prev_loc;
     if (branch_bitmap[idx] == 0) {
         branch_bitmap[idx]++;
+        last_branch_is_interesting = 1;
         return 1;
     }
 
+    last_branch_is_interesting = 0;
     return 0;
 }
 #endif
 
 int is_interesting_memory(uintptr_t addr)
 {
+    return last_branch_is_interesting;
+#if 0
     uintptr_t h   = hash_pc(addr, 0);
     uintptr_t idx = get_index(h);
     uint8_t   ret = 0;
@@ -211,4 +217,5 @@ int is_interesting_memory(uintptr_t addr)
     }
 
     return ret;
+#endif
 }

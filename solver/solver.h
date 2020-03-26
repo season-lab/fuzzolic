@@ -24,6 +24,11 @@ typedef struct ExprAnnotation {
     void*              result;
 } ExprAnnotation;
 
+typedef struct CachedExpr {
+    Z3_ast      expr;
+    GHashTable* inputs;
+} CachedExpr;
+
 Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const, size_t width,
                        GHashTable* inputs);
 void   smt_print_ast_sort(Z3_ast e);
@@ -34,15 +39,17 @@ Z3_ast smt_to_bv(Z3_ast e);
 Z3_ast smt_to_bv_n(Z3_ast e, size_t width);
 void   smt_bv_resize(Z3_ast* a, Z3_ast* b, ssize_t size);
 Z3_ast optimize_z3_query(Z3_ast e);
+void get_inputs_from_expr(Z3_ast e, GHashTable* inputs);
 
 void            add_expr_annotation(Expr* e, ExprAnnotation* ea);
 ExprAnnotation* get_expr_annotation(Expr* e);
 
 // branch_coverage.c
 #define CONTEXT_SENSITIVITY 1
-int is_interesting_branch(uintptr_t pc, uintptr_t taken);
-int is_interesting_memory(uintptr_t addr);
+int  is_interesting_branch(uintptr_t pc, uintptr_t taken);
+int  is_interesting_memory(uintptr_t addr);
 void load_bitmaps();
+void save_bitmaps();
 
 typedef struct Config {
     const char* testcase_path;
