@@ -474,10 +474,10 @@ static void smt_dump_testcase(const uint8_t* data, size_t size, size_t stride,
 #endif
 
     FILE* fp = fopen(testcase_name, "w");
-    for (size_t i = 0; i < size; i += stride) {
+    for (size_t i = 0; i < size * stride; i += stride) {
         uint8_t byte = data[i];
-        if (byte != testcase.data[i]) {
-            printf("Solution[%ld]: 0x%x\n", i, byte);
+        if (byte != testcase.data[i / stride]) {
+            printf("Solution[%ld]: 0x%x\n", i / stride, byte);
         }
         fwrite(&byte, sizeof(char), 1, fp);
     }
@@ -2584,6 +2584,13 @@ static void smt_stats(Z3_solver solver)
     }
 }
 
+static uint64_t conc_eval_time = 0;
+static uint64_t conc_eval_count = 0;
+static uint8_t  symbols_sizes[MAX_INPUTS_EXPRS];
+static uint64_t symbols_count = 0;
+static uint64_t unsat_time = 0;
+static uint64_t unsat_count = 0;
+
 static void smt_branch_query(Query* q)
 {
 #if 0
@@ -2626,7 +2633,12 @@ static void smt_branch_query(Query* q)
             break;
         }
     }
-
+#if 0
+    for (size_t i = 0; i < symbols_count; i++) {
+        assert(symbols_sizes[i]);
+        printf("Index=%lu size=%u\n", i, symbols_sizes[i]);
+    }
+#endif
     if (has_real_inputs) {
 #if BRANCH_COVERAGE == QSYM
         if (is_interesting_branch(q->address, q->args8.arg0)) {
@@ -2643,9 +2655,11 @@ static void smt_branch_query(Query* q)
             Z3_ast         fuzzy_query = Z3_mk_and(smt_solver.ctx, 2, args);
             const uint8_t* proof;
             size_t         proof_size;
-            print_z3_ast(fuzzy_query);
+            //print_z3_ast(fuzzy_query);
             // print_z3_ast(z3_neg_query);
             SAYF("Running a query...\n");
+            conc_eval_time = 0;
+            conc_eval_count = 0;
             struct timespec start, end;
             get_time(&start);
             int r = z3fuzz_query_check_light(&smt_solver.fuzzy_ctx, fuzzy_query,
@@ -2656,7 +2670,10 @@ static void smt_branch_query(Query* q)
                 printf("Query is SAT\n");
                 smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 0);
             } else {
-                printf("Query is non-SAT\n");
+                printf("Query is non-SAT: avg_conc_eval=%lu count=%lu\n", conc_eval_time / conc_eval_count, conc_eval_count);
+                unsat_time += get_diff_time_microsec(&start, &end);
+                unsat_count += 1;
+                printf("UNSAT: sum=%lu count=%lu\n", unsat_time, unsat_count);
             }
 #else
             Z3_solver solver = smt_new_solver();
@@ -2714,15 +2731,16 @@ static int get_eval_uint64(Z3_model m, Z3_ast e, uintptr_t* value)
 }
 
 static uint64_t eval_data[MAX_INPUTS_EXPRS];
-static uint8_t  symbols_sizes[MAX_INPUTS_EXPRS];
-static uint64_t symbols_count = 0;
 
 uint64_t conc_query_eval_value(Z3_context ctx, Z3_ast query, uint64_t* data,
-                               uint8_t* symbols_sizes, size_t size)
+                               uint8_t* _symbols_sizes, size_t size)
 {
     if (!query) {
         return 1;
     }
+
+    struct timespec start, end;
+    get_time(&start);
 
     uintptr_t value;
     GSList*   el           = sloads_exprs;
@@ -2734,6 +2752,8 @@ uint64_t conc_query_eval_value(Z3_context ctx, Z3_ast query, uint64_t* data,
 
         size_t i     = sl->index;
         n_data_bytes = i + 2;
+        // printf("Analyzing sloads_%lu (%lu) [%lu]\n", reverse_scale_sload_index(i), i, i - testcase.size); 
+        // printf("n_data_bytes=%lu size=%lu\n", n_data_bytes, size);
         assert(n_data_bytes <= size);
 
         Z3_ast e = sl->expr;
@@ -2746,6 +2766,7 @@ uint64_t conc_query_eval_value(Z3_context ctx, Z3_ast query, uint64_t* data,
             data[i] = CONST(e);
             assert(i < size);
             //printf("s_load_%lu: %lx\n", i, CONST(e));
+            assert(0);
         } else {
 
             assert(e && OP(e) == Z3_OP_AND);
@@ -2788,6 +2809,11 @@ uint64_t conc_query_eval_value(Z3_context ctx, Z3_ast query, uint64_t* data,
     uint64_t r = Z3_custom_eval(smt_solver.ctx, query, data, symbols_sizes,
                                 n_data_bytes);
     // printf("conc eval new: %lu\n", r);
+
+    get_time(&end);
+    conc_eval_time += get_diff_time_microsec(&start, &end);
+    conc_eval_count += 1;
+
     return r;
 }
 
@@ -2989,13 +3015,13 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
                                    symbols_sizes, symbols_count);
                 if (g_hash_table_contains(solutions, (gpointer)solution) !=
                     TRUE) {
-                    printf("Found a valid solution: %lx\n", solution);
+                    printf("Found a valid solution %lx using fuzz value %u at index %ld\n", solution, fuzz_values[i], index);
                     g_hash_table_add(solutions, (gpointer)solution);
                     // printf("Solution: %lx\n", solution);
                     if (dump_idx) {
-                        smt_dump_testcase((uint8_t*)eval_data, testcase.size, 8,
+                        smt_dump_testcase((uint8_t*) eval_data, testcase.size, 8,
                                           dump_idx,
-                                          g_hash_table_size(solutions));
+                                          g_hash_table_size(solutions) - 1);
                     }
                 }
             }
@@ -3072,8 +3098,8 @@ static void smt_slice_query(Query* q)
 #if 0
     get_inputs_expr(s_expr);
 #endif
-    printf("Slice access: id=%lu conc_addr=0x%lx size=%lu value=0x%lx.\n",
-           s_load_id, addr_conc, s_load_size, s_load_value);
+    printf("Slice access: id=%lu (%lu) conc_addr=0x%lx size=%lu value=0x%lx.\n",
+           s_load_id, scale_sload_index(s_load_id), addr_conc, s_load_size, s_load_value);
 
     GHashTable* inputs  = g_hash_table_new(NULL, NULL);
     Z3_ast      z3_addr = smt_query_to_z3(addr_expr, 0, 0, inputs);
@@ -3093,7 +3119,7 @@ static void smt_slice_query(Query* q)
 
     GHashTable* conc_addrs = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs, (gpointer)addr_conc);
-    int r = fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
+    int r = 0; //fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
 #if 0
     GHashTable* conc_addrs2 = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs2, (gpointer)addr_conc);
@@ -3105,8 +3131,8 @@ static void smt_slice_query(Query* q)
     if (!r) {
         printf("Slice access has a single value. Concretizing it.\n");
         concretized_sloads[scale_sload_index(s_load_id)] = 1;
-        // printf("Setting sloads_exprs for %lu\n", s_load_id);
-
+        printf("Setting sloads_exprs for %lu (%lu)\n", s_load_id, scale_sload_index(s_load_id));
+#if 0
 #if USE_FUZZY_SOLVER
         // printf("Assignment: %lu\n", scale_sload_index(s_load_id));
         z3fuzz_add_assignment(&smt_solver.fuzzy_ctx,
@@ -3122,11 +3148,19 @@ static void smt_slice_query(Query* q)
         s_load_obj->expr  = (Z3_ast)
             s_load_value; // smt_new_const(s_load_value, s_load_size * 8);
         sloads_exprs = g_slist_append(sloads_exprs, (gpointer)s_load_obj);
-
+#endif
         symbols_sizes[scale_sload_index(s_load_id)]     = s_load_size * 8;
         symbols_sizes[scale_sload_index(s_load_id) + 1] = sizeof(uintptr_t) * 8;
         symbols_count += 2;
+#if 0
+        printf("symbols_sizes[%lu] = %lu %p\n", scale_sload_index(s_load_id), s_load_size * 8, symbols_sizes);
+        printf("symbols_sizes[%lu] = %lu %p\n", scale_sload_index(s_load_id) + 1, sizeof(uintptr_t) * 8, symbols_sizes);
 
+        for (size_t i = 0; i < symbols_count; i++) {
+            assert(symbols_sizes[i]);
+            printf("Index=%lu size=%u\n", i, symbols_sizes[i]);
+        }
+#endif
         g_hash_table_destroy(conc_addrs);
         g_hash_table_destroy(inputs);
         return;
@@ -3194,15 +3228,19 @@ static void smt_slice_query(Query* q)
 
     free(or_args);
 
-    // printf("Setting sloads_exprs for %lu\n", s_load_id);
+    printf("Setting sloads_exprs for %lu\n", scale_sload_index(s_load_id));
 
-#if USE_FUZZY_SOLVER
-    // printf("Assignment: %lu\n", scale_sload_index(s_load_id));
-    z3fuzz_add_assignment(&smt_solver.fuzzy_ctx, scale_sload_index(s_load_id),
-                          v);
-    // printf("Assignment: %lu\n", scale_sload_index(s_load_id) + 1);
-    z3fuzz_add_assignment(&smt_solver.fuzzy_ctx,
-                          scale_sload_index(s_load_id) + 1, z3_addr);
+    symbols_sizes[scale_sload_index(s_load_id) + 1] = sizeof(uintptr_t) * 8;
+    symbols_sizes[scale_sload_index(s_load_id)]     = s_load_size * 8;
+    symbols_count += 2;
+#if 0
+    printf("symbols_sizes[%lu] = %lu %p\n", scale_sload_index(s_load_id), s_load_size * 8, symbols_sizes);
+    printf("symbols_sizes[%lu] = %lu %p\n", scale_sload_index(s_load_id) + 1, sizeof(uintptr_t) * 8, symbols_sizes);
+
+    for (size_t i = 0; i < symbols_count; i++) {
+        assert(symbols_sizes[i]);
+        printf("Index=%lu size=%u\n", i, symbols_sizes[i]);
+    }
 #endif
 
     SLoad* s_load_obj = malloc(sizeof(SLoad));
@@ -3210,9 +3248,14 @@ static void smt_slice_query(Query* q)
     s_load_obj->expr  = e;
     sloads_exprs      = g_slist_append(sloads_exprs, (gpointer)s_load_obj);
 
-    symbols_sizes[scale_sload_index(s_load_id)]     = s_load_size * 8;
-    symbols_sizes[scale_sload_index(s_load_id) + 1] = sizeof(uintptr_t) * 8;
-    symbols_count += 2;
+#if USE_FUZZY_SOLVER
+    printf("Assignment: %lu\n", scale_sload_index(s_load_id) + 1);
+    z3fuzz_add_assignment(&smt_solver.fuzzy_ctx,
+                          scale_sload_index(s_load_id) + 1, z3_addr);
+
+    printf("Assignment: %lu\n", scale_sload_index(s_load_id));
+    z3fuzz_add_assignment(&smt_solver.fuzzy_ctx, scale_sload_index(s_load_id),                          v);
+#endif
 
     g_hash_table_add(inputs, (gpointer)s_load_id);
     z3_ast_exprs[GET_QUERY_IDX(q)] = e;
