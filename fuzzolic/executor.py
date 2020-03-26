@@ -140,25 +140,47 @@ class Executor(object):
         # launch solver
         if self.debug != 'no_solver':
             p_solver_args = []
-            p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
+            # p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
             p_solver_args += [SOLVER_BIN]
             p_solver_args += ['-i', testcase]
             p_solver_args += ['-t', self.__get_testcases_dir()]
             p_solver_args += ['-o', run_dir]
 
-            # p_solver_args += ['-b', self.__get_root_dir() + '/branch_bitmap']
-            p_solver_args += ['-b', os.path.join(self.output_dir, '/afl-bitmap')]
+            p_solver_args += ['-b', self.__get_root_dir() + '/branch_bitmap']
+            #p_solver_args += ['-b', os.path.join(self.output_dir, '/afl-bitmap')]
 
             p_solver_args += ['-c', self.__get_root_dir() + '/context_bitmap']
             p_solver_args += ['-m', self.__get_root_dir() + '/memory_bitmap']
-            p_solver = subprocess.Popen(p_solver_args,
+            if True:
+                p_solver = subprocess.Popen(p_solver_args,
                                         stdout=p_solver_log if not self.debug else None,
                                         stderr=subprocess.STDOUT if not self.debug else None,
                                         cwd=run_dir,
                                         env=env)
+            else:
+                p_solver = subprocess.Popen(['gdb'] + p_solver_args[0:1],
+                                        stdout=p_solver_log if not self.debug else None,
+                                        stderr=subprocess.STDOUT if not self.debug else None,
+                                        stdin=subprocess.PIPE,
+                                        cwd=run_dir,
+                                        bufsize=0,
+                                        env=env)
+
+                gdb_cmd = 'run ' + ' '.join(p_solver_args[1:])
+                gdb_cmd += "\n"
+                try:
+                    p_solver.wait(5)
+                except:
+                    pass
+                print("GDB command: %s" % gdb_cmd)
+                p_solver.stdin.write("break set_add__index_group_t\n".encode())
+                p_solver.stdin.write(gdb_cmd.encode())
+                # p_solver.stdin.close()
 
             # wait a few moments to let the solver setup setup shared memories
             time.sleep(SOLVER_WAIT_TIME_AT_STARTUP)
+
+        # time.sleep(10)
 
         # launch tracer
         p_tracer_log_name = run_dir + '/tracer.log'
@@ -225,6 +247,14 @@ class Executor(object):
         # print("Tracer completed")
         p_tracer_log.close()
 
+        if False:
+            for line in sys.stdin:
+                p_solver.stdin.write(line.encode())
+                if 'quit' in line or line.startswith('q'):
+                    print("Closing stdin in gdb")
+                    break
+            p_solver.stdin.close()
+
         if p_tracer.returncode != 0:
             returncode_str = "(SIGSEGV)" if p_tracer.returncode == -11 else ""
             print("ERROR: tracer has returned code %d %s" %
@@ -285,12 +315,12 @@ class Executor(object):
             self.__get_testcases_dir() + "/*.dat")
         for kt in known_tests:
             if filecmp.cmp(kt, t):
-                print('Discarding %s since it is a duplicate' % t)
+                print('Discarding %s since it is a duplicate (%s)' % (t, kt))
                 discard = True
                 break
 
         if not discard:
-            print("Importing %s" % t)
+            print("Importing %s with id=%s_%s" % (t, run_id, k))
             self.__import_test_case(
                 t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')
 
