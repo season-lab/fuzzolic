@@ -140,7 +140,7 @@ class Executor(object):
         # launch solver
         if self.debug != 'no_solver':
             p_solver_args = []
-            # p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
+            p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
             p_solver_args += [SOLVER_BIN]
             p_solver_args += ['-i', testcase]
             p_solver_args += ['-t', self.__get_testcases_dir()]
