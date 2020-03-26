@@ -164,12 +164,12 @@ static inline void smt_del_solver(Z3_solver solver)
 
 static inline void smt_destroy(void)
 {
-    if (smt_solver.ctx) {
-        Z3_del_context(smt_solver.ctx);
-    }
 #if USE_FUZZY_SOLVER
     z3fuzz_free(&smt_solver.fuzzy_ctx);
 #endif
+    if (smt_solver.ctx) {
+        Z3_del_context(smt_solver.ctx);
+    }
 }
 
 static inline void update_and_add_deps_to_solver(GHashTable* inputs,

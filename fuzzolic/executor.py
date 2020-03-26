@@ -421,7 +421,10 @@ class Executor(object):
         self.__check_shutdown_flag()
         testcase, target = self.__pick_testcase(True)
         while testcase:
+            start = time.time()
             self.fuzz_one(testcase, target)
+            end = time.time()
+            print("Run took %s secs" % (end-start))
             if self.debug:
                 return
             self.__check_shutdown_flag()
