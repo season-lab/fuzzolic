@@ -334,6 +334,8 @@ static inline Z3_ast get_deps(GHashTable* inputs)
         size_t      input_idx = (size_t)key;
         Dependency* dep       = dependency_graph[input_idx];
 
+        // printf("DEPS: Input_%lu\n", input_idx);
+
         if (!dep) {
             continue;
         }
@@ -2782,6 +2784,7 @@ static void smt_branch_query(Query* q)
 #endif
         } else {
             // printf("Branch is not interesting. Skipping it.\n");
+            update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
         }
     } else {
         // printf("No real inputs in branch condition. Skipping it.\n");
@@ -3072,7 +3075,7 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
     gpointer       key, value;
 
     Z3_ast query = get_deps(inputs);
-    print_z3_ast(query);
+    // print_z3_ast(query);
 
     for (size_t i = 0; i < testcase.size; i++) {
         eval_data[i] = testcase.data[i];
@@ -3278,7 +3281,7 @@ static void smt_slice_query(Query* q)
         assert(CONST(slice->op2) == s_load_id);
         slices_addrs[slices_count] = slice->op1;
         slices_count += 1;
-        printf("Slice at %p.\n", slice->op1);
+        // printf("Slice at %p.\n", slice->op1);
         assert(slices_count <= MAX_NUM_SLICES);
         slice += 1;
     }
