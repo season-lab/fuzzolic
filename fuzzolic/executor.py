@@ -132,13 +132,17 @@ class Executor(object):
         if not self.testcase_from_stdin:
             env['SYMBOLIC_TESTCASE_NAME'] = testcase
 
+        if self.debug == 'coverage':
+            env['COVERAGE_TRACER'] = self.output_dir + '/fuzzolic-bitmap'
+            env['COVERAGE_TRACER_LOG'] = self.output_dir + '/fuzzolic-coverage.out'
+
         self.__check_shutdown_flag()
 
         p_solver_log_name = run_dir + '/solver.log'
         p_solver_log = open(p_solver_log_name, 'w')
 
         # launch solver
-        if self.debug != 'no_solver':
+        if self.debug != 'no_solver' and self.debug != 'coverage':
             p_solver_args = []
             p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
             p_solver_args += [SOLVER_BIN]
@@ -259,10 +263,10 @@ class Executor(object):
             returncode_str = "(SIGSEGV)" if p_tracer.returncode == -11 else ""
             print("ERROR: tracer has returned code %d %s" %
                   (p_tracer.returncode, returncode_str))
-            if self.debug != 'no_solver':
+            if self.debug != 'no_solver' and self.debug != 'coverage':
                 p_solver.send_signal(signal.SIGINT)
 
-        if self.debug != 'no_solver':
+        if self.debug != 'no_solver' and self.debug != 'coverage':
             while not SHUTDOWN:
                 try:
                     p_solver.wait(SOLVER_TIMEOUT)
@@ -314,7 +318,7 @@ class Executor(object):
         known_tests = glob.glob(
             self.__get_testcases_dir() + "/*.dat")
         for kt in known_tests:
-            if filecmp.cmp(kt, t):
+            if filecmp.cmp(kt, t, shallow=False):
                 print('Discarding %s since it is a duplicate (%s)' % (t, kt))
                 discard = True
                 break

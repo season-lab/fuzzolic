@@ -11,7 +11,7 @@ unique_inputs = []
 for f in glob.glob(root_dir + "/*/*.dat"):
     is_unique = True
     for fu in unique_inputs:
-        if filecmp.cmp(f, fu):
+        if filecmp.cmp(f, fu, shallow=False):
             is_unique = False
             print("%s is equal to %s" % (f, fu))
             break

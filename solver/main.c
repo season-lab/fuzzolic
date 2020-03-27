@@ -15,7 +15,7 @@
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
-#define USE_FUZZY_SOLVER             0
+#define USE_FUZZY_SOLVER             1
 
 static int expr_pool_shm_id = -1;
 Expr*      pool;
@@ -3231,7 +3231,7 @@ static void smt_slice_query(Query* q)
     if (!r) {
         printf("Slice access has a single value. Concretizing it.\n");
         concretized_sloads[scale_sload_index(s_load_id)] = 1;
-        printf("Setting sloads_exprs for %lu (%lu)\n", s_load_id, scale_sload_index(s_load_id));
+        // printf("Setting sloads_exprs for %lu (%lu)\n", s_load_id, scale_sload_index(s_load_id));
         g_hash_table_remove(z3_expr_cache, (gpointer) s_load);
 #if 0
 #if USE_FUZZY_SOLVER
@@ -3514,11 +3514,11 @@ static void smt_query(Query* q)
             smt_slice_query(q);
             break;
         case SYMBOLIC_LOAD:
-            printf("\nSymbolic LOAD access\n");
+            // printf("\nSymbolic LOAD access\n");
             smt_expr_query(q, q->query->opkind);
             break;
         case SYMBOLIC_STORE:
-            printf("\nSymbolic LOAD access\n");
+            // printf("\nSymbolic LOAD access\n");
             smt_expr_query(q, q->query->opkind);
             break;
         default:

@@ -46,6 +46,7 @@ static inline void load_bitmap(const char* path, uint8_t* data, size_t size)
     int r = fread(data, 1, size, fp);
     if (r != size) {
         printf("Invalid bitmap %s. Resetting it.\n", path);
+        memset(data, 0, size);
     }
     fclose(fp);
 }
