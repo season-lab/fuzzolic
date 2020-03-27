@@ -3,7 +3,7 @@
 
 #define VERBOSE 0
 static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width,
-                                  GHashTable* inputs)
+                                  GHashTable** inputs)
 {
     // from TCG cc_helper.c
     // src3 ? dst <= src1 : dst < src1;
@@ -67,7 +67,7 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width,
 
 #define VERBOSE 0
 static inline Z3_ast eflags_c_sbb(Z3_context ctx, Expr* query, size_t width,
-                                  GHashTable* inputs)
+                                  GHashTable** inputs)
 {
     // DATA_TYPE src1 = dst + src2 + src3;
     // return (src3 ? src1 <= src2 : src1 < src2);
@@ -110,7 +110,7 @@ static inline Z3_ast eflags_c_sbb(Z3_context ctx, Expr* query, size_t width,
 
 #define VERBOSE 0
 static inline Z3_ast eflags_c_binary(Z3_context ctx, Expr* query, size_t width,
-                                     GHashTable* inputs)
+                                     GHashTable** inputs)
 {
     Z3_ast dst =
         smt_query_to_z3(query->op1, query->op1_is_const, width, inputs);
@@ -228,7 +228,7 @@ static inline Z3_ast eflags_of_b(Z3_context ctx, Z3_ast dst, Z3_ast src1,
 
 #define VERBOSE 0
 static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
-                                       size_t width, GHashTable* inputs)
+                                       size_t width, GHashTable** inputs)
 {
     Z3_ast cf, pf, af, zf, sf, of;
 
@@ -507,7 +507,7 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
 
 #define VERBOSE 0
 static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
-                                        size_t width, GHashTable* inputs)
+                                        size_t width, GHashTable** inputs)
 {
     Z3_ast cf, pf, af, zf, sf, of;
 
@@ -670,7 +670,7 @@ static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
 
 #define VERBOSE 0
 static inline Z3_ast eflags_all_adcxo(Z3_context ctx, Expr* query, size_t width,
-                                      OPKIND opkind, GHashTable* inputs)
+                                      OPKIND opkind, GHashTable** inputs)
 {
     Z3_ast zero = smt_new_const(0, sizeof(uintptr_t));
 
@@ -726,16 +726,19 @@ extern GHashTable* z3_expr_cache;
 
 #define VERBOSE 0
 Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
-                            size_t width, GHashTable* inputs)
+                            size_t width, GHashTable** inputs)
 {
-    Z3_ast r = g_hash_table_lookup(z3_expr_cache, (gpointer)query);
-    if (r) {
-        get_inputs_from_expr(r, inputs);
-        return r;
+    CachedExpr* ce = g_hash_table_lookup(z3_expr_cache, (gpointer)query);
+    if (ce) {
+        if (inputs) {
+            *inputs = ce->inputs;
+        }
+        return ce->expr;
     }
 
     assert(!is_const && "is_const is true in a i386 query");
 
+    Z3_ast   r = NULL;
     Z3_ast op1 = NULL;
     Z3_ast op2 = NULL;
     switch (query->opkind) {
@@ -846,7 +849,10 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             ABORT("Unknown expr i386 opkind: %u", query->opkind);
     }
 
-    g_hash_table_insert(z3_expr_cache, (gpointer)query, (gpointer)r);
+    ce = malloc(sizeof(CachedExpr));
+    ce->expr = r;
+    ce->inputs = inputs ? *inputs : NULL;
+    g_hash_table_insert(z3_expr_cache, (gpointer)query, (gpointer)ce);
     return r;
 }
 #undef VERBOSE

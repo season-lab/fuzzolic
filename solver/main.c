@@ -15,7 +15,7 @@
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
-#define USE_FUZZY_SOLVER             1
+#define USE_FUZZY_SOLVER             0
 
 static int expr_pool_shm_id = -1;
 Expr*      pool;
@@ -326,8 +326,9 @@ static inline Z3_ast get_deps(GHashTable* inputs)
     gboolean       res;
 
     GHashTable* added_exprs  = g_hash_table_new(NULL, NULL);
+#if 0
     GHashTable* added_inputs = g_hash_table_new(NULL, NULL);
-
+#endif
     g_hash_table_iter_init(&iter, inputs);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
         size_t      input_idx = (size_t)key;
@@ -336,12 +337,12 @@ static inline Z3_ast get_deps(GHashTable* inputs)
         if (!dep) {
             continue;
         }
-
+#if 0
         g_hash_table_iter_init(&iter2, dep->inputs);
         while (g_hash_table_iter_next(&iter2, &key, &value)) {
             g_hash_table_add(added_inputs, key);
         }
-
+#endif
         g_hash_table_iter_init(&iter2, dep->exprs);
         while (g_hash_table_iter_next(&iter2, &key, &value)) {
             // ToDo: can we remove this check?
@@ -362,13 +363,14 @@ static inline Z3_ast get_deps(GHashTable* inputs)
     if (r == NULL) {
         r = Z3_mk_true(smt_solver.ctx);
     }
-
+#if 0
     g_hash_table_iter_init(&iter2, added_inputs);
     while (g_hash_table_iter_next(&iter2, &key, &value)) {
         g_hash_table_add(inputs, key);
     }
 
     g_hash_table_destroy(added_inputs);
+#endif
     g_hash_table_destroy(added_exprs);
     return r;
 }
@@ -1908,9 +1910,14 @@ static inline size_t reverse_scale_sload_index(size_t index)
 }
 
 Z3_ast smt_query_to_z3_wrapper(Expr* query, uintptr_t is_const_value,
-                               size_t width, GHashTable* inputs)
+                               size_t width, GHashTable** inputs)
 {
     // print_expr(query);
+
+    GHashTable * ptr = NULL;
+    if (!inputs) {
+        inputs = &ptr;
+    }
 
     // printf("Translating...\n");
     struct timespec start, end;
@@ -1960,16 +1967,14 @@ void get_inputs_from_expr(Z3_ast e, GHashTable* inputs)
 
 #define VERBOSE 0
 Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
-                       GHashTable* inputs)
+                       GHashTable** inputs)
 {
-    Z3_ast r = g_hash_table_lookup(z3_expr_cache, (gpointer)query);
-    if (r) {
-        struct timespec start, end;
-        get_time(&start);
-        get_inputs_from_expr(r, inputs);
-        get_time(&end);
-        smt_solver.expr_visit_time += get_diff_time_microsec(&start, &end);
-        return r;
+    CachedExpr* ce = g_hash_table_lookup(z3_expr_cache, (gpointer)query);
+    if (ce) {
+        if (inputs) {
+            *inputs = ce->inputs;
+        }
+        return ce->expr;
     }
 
     if (width <= 0)
@@ -1985,6 +1990,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
 
     // printf("START opkind: %s\n", opkind_to_str(query->opkind));
 
+    Z3_ast     r = NULL;
     Z3_ast   op1 = NULL;
     Z3_ast   op2 = NULL;
     unsigned n   = 0;
@@ -2002,7 +2008,17 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             } else {
                 r = smt_new_symbol_int(id, 8 * n_bytes, query);
                 if (inputs) {
-                    g_hash_table_add(inputs, (gpointer)id);
+                    GHashTable* old = *inputs;
+                    *inputs = g_hash_table_new(NULL, NULL);
+                    if (old) {
+                        GHashTableIter iter;
+                        gpointer       key, value;
+                        g_hash_table_iter_init(&iter, old);
+                        while (g_hash_table_iter_next(&iter, &key, &value)) {
+                            g_hash_table_add(*inputs, (gpointer) key);
+                        }
+                    }
+                    g_hash_table_add(*inputs, (gpointer)id);
                 }
             }
             break;
@@ -2628,7 +2644,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
     // printf("POST OPTIMIZE\n");
     // printf("END opkind: %s\n", opkind_to_str(query->opkind));
 
-    g_hash_table_insert(z3_expr_cache, (gpointer)query, (gpointer)r);
+    ce = malloc(sizeof(CachedExpr));
+    ce->expr = r;
+    ce->inputs = inputs ? *inputs : NULL;
+    g_hash_table_insert(z3_expr_cache, (gpointer)query, (gpointer)ce);
     return r;
 }
 
@@ -2668,10 +2687,14 @@ static void smt_branch_query(Query* q)
 #endif
 
     // SAYF("Translating query %lu to Z3...\n", GET_QUERY_IDX(q));
-    GHashTable* inputs   = g_hash_table_new(NULL, NULL);
-    Z3_ast      z3_query = smt_query_to_z3_wrapper(q->query, 0, 0, inputs);
+    GHashTable* inputs = NULL;
+    Z3_ast      z3_query = smt_query_to_z3_wrapper(q->query, 0, 0, &inputs);
     z3_ast_exprs[GET_QUERY_IDX(q)] = z3_query;
     // SAYF("DONE: Translating query to Z3\n");
+
+    if (!inputs) {
+        return;
+    }
 
 #if 0
     get_inputs_expr(z3_query);
@@ -2691,6 +2714,7 @@ static void smt_branch_query(Query* q)
 #endif
 
     uint8_t        has_real_inputs = 0;
+
     GHashTableIter iter;
     gpointer       key, value;
     g_hash_table_iter_init(&iter, inputs);
@@ -2756,7 +2780,7 @@ static void smt_branch_query(Query* q)
                                           NULL);
             Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
             // SAYF("Running a query...\n");
-            // smt_query_check(solver, GET_QUERY_IDX(q));
+            smt_query_check(solver, GET_QUERY_IDX(q));
             smt_del_solver(solver);
 #endif
         } else {
@@ -2775,8 +2799,6 @@ static void smt_branch_query(Query* q)
     smt_dump_solver(solver, GET_QUERY_IDX(q));
     smt_del_solver(solver);
 #endif
-
-    g_hash_table_destroy(inputs);
 }
 
 static int get_eval_uint64(Z3_model m, Z3_ast e, uintptr_t* value)
@@ -3052,21 +3074,13 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
     GHashTableIter iter;
     gpointer       key, value;
 
-    // copy inputs since get_deps will add other inputs
-    // that we do not want to fuzz
-    GHashTable* inputs_copy = g_hash_table_new(NULL, NULL);
-    g_hash_table_iter_init(&iter, inputs);
-    while (g_hash_table_iter_next(&iter, &key, &value)) {
-        g_hash_table_add(inputs_copy, key);
-    }
-
     Z3_ast query = get_deps(inputs);
 
     for (size_t i = 0; i < testcase.size; i++) {
         eval_data[i] = testcase.data[i];
     }
 
-    g_hash_table_iter_init(&iter, inputs_copy);
+    g_hash_table_iter_init(&iter, inputs);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
         size_t index = CONST(key);
 
@@ -3092,9 +3106,11 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
                                    symbols_sizes, symbols_count);
                 if (g_hash_table_contains(solutions, (gpointer)solution) !=
                     TRUE) {
+#if 0
                     printf("Found a valid solution %lx using fuzz value %u at "
                            "index %ld\n",
                            solution, fuzz_values[i], index);
+ #endif
                     g_hash_table_add(solutions, (gpointer)solution);
                     // printf("Solution: %lx\n", solution);
                     if (dump_idx) {
@@ -3109,7 +3125,6 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
         }
     }
 
-    g_hash_table_destroy(inputs_copy);
     return g_hash_table_size(solutions) > 1;
 }
 
@@ -3182,8 +3197,9 @@ static void smt_slice_query(Query* q)
            GET_QUERY_IDX(q), s_load_id, scale_sload_index(s_load_id), addr_conc,
            s_load_size, s_load_value);
 
-    GHashTable* inputs  = g_hash_table_new(NULL, NULL);
-    Z3_ast      z3_addr = smt_query_to_z3_wrapper(addr_expr, 0, 0, inputs);
+    GHashTable* inputs = NULL;
+    Z3_ast      z3_addr = smt_query_to_z3_wrapper(addr_expr, 0, 0, &inputs);
+
 #if 0
     get_inputs_expr(z3_addr);
 #endif
@@ -3200,7 +3216,10 @@ static void smt_slice_query(Query* q)
 
     GHashTable* conc_addrs = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs, (gpointer)addr_conc);
-    int r = 0; // fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
+    int r = 0;
+    if (inputs) {
+        r = fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
+    }
 #if 0
     GHashTable* conc_addrs2 = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs2, (gpointer)addr_conc);
@@ -3244,7 +3263,6 @@ static void smt_slice_query(Query* q)
         }
 #endif
         g_hash_table_destroy(conc_addrs);
-        g_hash_table_destroy(inputs);
         return;
     }
 #if 0
@@ -3331,11 +3349,11 @@ static void smt_slice_query(Query* q)
     sloads_exprs      = g_slist_append(sloads_exprs, (gpointer)s_load_obj);
 
 #if USE_FUZZY_SOLVER
-    printf("Assignment: %lu\n", scale_sload_index(s_load_id) + 1);
+    // printf("Assignment: %lu\n", scale_sload_index(s_load_id) + 1);
     z3fuzz_add_assignment(&smt_solver.fuzzy_ctx,
                           scale_sload_index(s_load_id) + 1, z3_addr);
 
-    printf("Assignment: %lu\n", scale_sload_index(s_load_id));
+    // printf("Assignment: %lu\n", scale_sload_index(s_load_id));
     z3fuzz_add_assignment(&smt_solver.fuzzy_ctx, scale_sload_index(s_load_id),
                           v);
 #endif
@@ -3345,16 +3363,19 @@ static void smt_slice_query(Query* q)
     update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
 
     g_hash_table_destroy(conc_addrs);
-    g_hash_table_destroy(inputs);
 }
 
 static void smt_expr_query(Query* q, OPKIND opkind)
 {
     // SAYF("Translating %s %lu (0x%lx) to Z3...\n", opkind_to_str(opkind),
     //     GET_QUERY_IDX(q), (uintptr_t)q->query->op2);
-    GHashTable* inputs   = g_hash_table_new(NULL, NULL);
-    Z3_ast      z3_query = smt_query_to_z3_wrapper(q->query->op1, 0, 0, inputs);
+    GHashTable* inputs = NULL;
+    Z3_ast      z3_query = smt_query_to_z3_wrapper(q->query->op1, 0, 0, &inputs);
     // SAYF("DONE: Translating %s to Z3\n", opkind_to_str(opkind));
+
+    if (!inputs) {
+        return;
+    }
 
 #if 0
     print_z3_ast(z3_query);
@@ -3393,14 +3414,12 @@ static void smt_expr_query(Query* q, OPKIND opkind)
 
     if (!has_real_inputs) {
         // printf("No real inputs. Skipping it.\n");
-        g_hash_table_destroy(inputs);
         return;
     }
 
     if (inputs_are_concretized) {
         // printf("Address is likely to be already concretized. Skipping
         // it.\n");
-        g_hash_table_destroy(inputs);
         return;
     }
 
@@ -3471,8 +3490,6 @@ static void smt_expr_query(Query* q, OPKIND opkind)
         z3fuzz_notify_constraint(&smt_solver.fuzzy_ctx, c);
 #endif
     }
-
-    g_hash_table_destroy(inputs);
 }
 
 static void smt_query(Query* q)
