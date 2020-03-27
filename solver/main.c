@@ -3072,6 +3072,7 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
     gpointer       key, value;
 
     Z3_ast query = get_deps(inputs);
+    print_z3_ast(query);
 
     for (size_t i = 0; i < testcase.size; i++) {
         eval_data[i] = testcase.data[i];
@@ -3277,7 +3278,7 @@ static void smt_slice_query(Query* q)
         assert(CONST(slice->op2) == s_load_id);
         slices_addrs[slices_count] = slice->op1;
         slices_count += 1;
-        // printf("Slice at %p.\n", slice->op1);
+        printf("Slice at %p.\n", slice->op1);
         assert(slices_count <= MAX_NUM_SLICES);
         slice += 1;
     }
