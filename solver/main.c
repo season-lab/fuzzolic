@@ -3103,7 +3103,7 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
                                    symbols_sizes, symbols_count);
                 if (g_hash_table_contains(solutions, (gpointer)solution) !=
                     TRUE) {
-#if 0
+#if 1
                     printf("Found a valid solution %lx using fuzz value %u at "
                            "index %ld\n",
                            solution, fuzz_values[i], index);
@@ -3168,6 +3168,7 @@ static uintptr_t get_value_from_slice_array(Expr** slices_addrs,
             }
         }
     }
+    printf("Fetching value for addr 0x%lx\n", addr);
     ABORT("Address outside slice array");
 }
 
@@ -3325,7 +3326,7 @@ static void smt_slice_query(Query* q)
 
     free(or_args);
 
-    printf("Setting sloads_exprs for %lu\n", scale_sload_index(s_load_id));
+    // printf("Setting sloads_exprs for %lu\n", scale_sload_index(s_load_id));
 
     symbols_sizes[scale_sload_index(s_load_id) + 1] = sizeof(uintptr_t) * 8;
     symbols_sizes[scale_sload_index(s_load_id)]     = s_load_size * 8;
@@ -3371,7 +3372,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     // SAYF("DONE: Translating %s to Z3\n", opkind_to_str(opkind));
 
     if (!inputs) {
-        printf("No inputs in %s query\n", opkind_to_str(opkind));
+        // printf("No inputs in %s query\n", opkind_to_str(opkind));
         return;
     }
 
