@@ -2757,10 +2757,7 @@ static void smt_branch_query(Query* q)
             conc_eval_count = 0;
             struct timespec start, end;
             get_time(&start);
-            int r =
-                0; // z3fuzz_query_check_light(&smt_solver.fuzzy_ctx,
-                   // fuzzy_query,
-                   //                      z3_neg_query, &proof, &proof_size);
+            int r = z3fuzz_query_check_light(&smt_solver.fuzzy_ctx, fuzzy_query, z3_neg_query, &proof, &proof_size);
             get_time(&end);
             printf("Elapsed: %lu us\n", get_diff_time_microsec(&start, &end));
             if (r) {
