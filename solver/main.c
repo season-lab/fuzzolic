@@ -3374,6 +3374,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     // SAYF("DONE: Translating %s to Z3\n", opkind_to_str(opkind));
 
     if (!inputs) {
+        printf("No inputs in %s query\n", opkind_to_str(opkind));
         return;
     }
 
@@ -3391,6 +3392,8 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     gpointer       key, value;
     g_hash_table_iter_init(&iter, inputs);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
+
+        // printf("Input: %lu\n", (uint64_t) key);
 
         if (CONST(key) < testcase.size) {
             has_real_inputs = 1;
@@ -3418,13 +3421,12 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     }
 
     if (inputs_are_concretized) {
-        // printf("Address is likely to be already concretized. Skipping
-        // it.\n");
+        // printf("Address is likely to be already concretized. Skipping it.\n");
         return;
     }
 
     uintptr_t solution = (uintptr_t)q->query->op2;
-    if (is_interesting_memory(solution) && 0) {
+    if (is_interesting_memory(solution)) {
 
         printf("\nQuery %s\n", opkind_to_str(opkind));
 
@@ -3512,11 +3514,11 @@ static void smt_query(Query* q)
             smt_slice_query(q);
             break;
         case SYMBOLIC_LOAD:
-            //printf("\nSymbolic LOAD access\n");
+            printf("\nSymbolic LOAD access\n");
             smt_expr_query(q, q->query->opkind);
             break;
         case SYMBOLIC_STORE:
-            //printf("\nSymbolic LOAD access\n");
+            printf("\nSymbolic LOAD access\n");
             smt_expr_query(q, q->query->opkind);
             break;
         default:
