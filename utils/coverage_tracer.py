@@ -107,8 +107,8 @@ for dir in testcase_dirs:
 
         if use_stdin:
             p = subprocess.Popen(args,
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE,
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL,
                                  stdin=subprocess.PIPE,
                                  env=env,
                                  #cwd=workdir
@@ -121,12 +121,13 @@ for dir in testcase_dirs:
             args_new = args[:]
             args_new[arg_input_idx] = testcase
             p = subprocess.Popen(args_new,
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE,
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL,
                                  stdin=subprocess.PIPE,
                                  env=env,
                                  # cwd=workdir
                                  )
+            p.stdin.close()
             p.wait()
 
 # progressBar(testcase_count, testcase_total, 80)
