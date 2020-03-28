@@ -101,8 +101,8 @@ for dir in testcase_dirs:
         if testcase.startswith(".") or 'README' in testcase:
             continue
 
-        # print("Running testcase %s" % testcase)
-        progressBar(testcase_count, testcase_total, 80)
+        print("Running testcase %s" % testcase)
+        # progressBar(testcase_count, testcase_total, 80)
         testcase_count += 1
 
         if use_stdin:
@@ -129,7 +129,7 @@ for dir in testcase_dirs:
                                  )
             p.wait()
 
-progressBar(testcase_count, testcase_total, 80)
+# progressBar(testcase_count, testcase_total, 80)
 
 print("\n\nTotal number of basic blocks: %d" % file_lines_count(coverage_log_path))
 print("Total number of processed testcases: %d\n" % testcase_count)
