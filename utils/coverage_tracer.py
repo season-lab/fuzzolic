@@ -7,9 +7,19 @@ import subprocess
 import tempfile
 import shutil
 
-
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 TRACER_BIN = SCRIPT_DIR + "/fuzzolic_coverage_trace_bin"
+
+
+def progressBar(value, endvalue, bar_length=20):
+
+    percent = float(value) / endvalue
+    arrow = '=' * int(round(percent * bar_length)-1) + '>'
+    spaces = ' ' * (bar_length - len(arrow))
+
+    sys.stdout.write("\rPercent: [{0}] {1}%".format(arrow + spaces, int(round(percent * 100))))
+    sys.stdout.flush()
+
 
 def file_lines_count(fname):
     p = subprocess.Popen(['wc', '-l', fname], stdout=subprocess.PIPE, 
@@ -78,6 +88,13 @@ if filter_coverage_lib:
     print("Filtering out coverage from library code")
     env['COVERAGE_TRACER_FILTER_LIB'] = "1"
 
+testcase_total = 0
+for dir in testcase_dirs:
+    for testcase in glob.glob(dir + "/*"):
+        if testcase.startswith(".") or 'README' in testcase:
+            continue
+        testcase_total += 1
+
 testcase_count = 0
 for dir in testcase_dirs:
     for testcase in glob.glob(dir + "/*"):
@@ -85,6 +102,7 @@ for dir in testcase_dirs:
             continue
 
         # print("Running testcase %s" % testcase)
+        progressBar(testcase_count, testcase_total, 80)
         testcase_count += 1
 
         if use_stdin:
@@ -111,7 +129,9 @@ for dir in testcase_dirs:
                                  )
             p.wait()
 
-print("\nTotal number of basic blocks: %d" % file_lines_count(coverage_log_path))
+progressBar(testcase_count, testcase_total, 80)
+
+print("\n\nTotal number of basic blocks: %d" % file_lines_count(coverage_log_path))
 print("Total number of processed testcases: %d\n" % testcase_count)
 
 # if os.path.exists(workdir + '/.fuzzolic_workdir'):
