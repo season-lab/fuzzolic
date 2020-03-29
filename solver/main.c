@@ -3699,6 +3699,8 @@ int main(int argc, char* argv[])
     branch_bitmap = shmat(bitmap_shm_id, NULL, 0);
     if (!branch_bitmap)
         PFATAL("shmat() failed");
+#else
+    branch_bitmap = calloc(1, BRANCH_BITMAP_SIZE);
 #endif
 
     load_bitmaps();
@@ -3714,6 +3716,8 @@ int main(int argc, char* argv[])
     struct timespec polling_time;
     polling_time.tv_sec  = EXPR_QUEUE_POLLING_TIME_SECS;
     polling_time.tv_nsec = EXPR_QUEUE_POLLING_TIME_NS;
+
+    SAYF("Waiting for tracer termination B...\n");
 
     // wait tracer to finish its job
     while (1) {

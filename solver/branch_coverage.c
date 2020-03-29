@@ -41,7 +41,7 @@ static inline void load_bitmap(const char* path, uint8_t* data, size_t size)
 {
     FILE* fp = fopen(path, "r");
     if (!fp) {
-        printf("[SOLVER] Bitmap %s does not exist. Initializing it.\n", path);
+        printf("[SOLVER] Bitmap %s does not exist. Initializing it (%lu).\n", path, size);
         memset(data, 0, size);
         return;
     }
