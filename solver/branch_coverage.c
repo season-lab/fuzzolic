@@ -5,13 +5,14 @@ extern Config config;
 #define XXH_STATIC_LINKING_ONLY
 #include "xxHash/xxhash.h"
 
-#define BRANCH_BITMAP_SIZE (1 << 16)
-static uint8_t branch_bitmap[BRANCH_BITMAP_SIZE]     = {0};
-static uint8_t branch_neg_bitmap[BRANCH_BITMAP_SIZE] = {0};
 #if BRANCH_COVERAGE == QSYM
+static uint8_t branch_neg_bitmap[BRANCH_BITMAP_SIZE] = {0};
 static uint8_t context_bitmap[BRANCH_BITMAP_SIZE] = {0};
 #endif
+
+#if 0
 static uint8_t memory_bitmap[BRANCH_BITMAP_SIZE] = {0};
+#endif
 
 static uintptr_t last_branch_hash = 0;
 static int last_branch_is_interesting = 0;
@@ -40,12 +41,13 @@ static inline void load_bitmap(const char* path, uint8_t* data, size_t size)
 {
     FILE* fp = fopen(path, "r");
     if (!fp) {
-        printf("Bitmap %s does not exist. Initializing it.\n", path);
+        printf("[SOLVER] Bitmap %s does not exist. Initializing it.\n", path);
+        memset(data, 0, size);
         return;
     }
     int r = fread(data, 1, size, fp);
     if (r != size) {
-        printf("Invalid bitmap %s. Resetting it.\n", path);
+        printf("[SOLVER] Invalid bitmap %s. Resetting it.\n", path);
         memset(data, 0, size);
     }
     fclose(fp);
@@ -53,13 +55,13 @@ static inline void load_bitmap(const char* path, uint8_t* data, size_t size)
 
 void load_bitmaps()
 {
+    load_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
 #if BRANCH_COVERAGE == QSYM
-    load_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
     load_bitmap(config.context_bitmap_path, context_bitmap, BRANCH_BITMAP_SIZE);
-#elif BRANCH_COVERAGE == AFL
-    load_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
 #endif
+#if 0
     load_bitmap(config.memory_bitmap_path, memory_bitmap, BRANCH_BITMAP_SIZE);
+#endif
 }
 
 static inline void save_bitmap(const char* path, uint8_t* data, size_t size)
@@ -67,18 +69,20 @@ static inline void save_bitmap(const char* path, uint8_t* data, size_t size)
     FILE* fp = fopen(path, "w");
     int   r  = fwrite(data, 1, size, fp);
     if (r != size) {
-        printf("Failed to save bitmap: %s\n", path);
+        printf("[SOLVER] Failed to save bitmap: %s\n", path);
     }
     fclose(fp);
 }
 
 void save_bitmaps()
 {
-#if BRANCH_COVERAGE == QSYM
     save_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
+#if BRANCH_COVERAGE == QSYM
     save_bitmap(config.context_bitmap_path, context_bitmap, BRANCH_BITMAP_SIZE);
 #endif
+#if 0
     save_bitmap(config.memory_bitmap_path, memory_bitmap, BRANCH_BITMAP_SIZE);
+#endif
 }
 
 // same as QSYM
@@ -195,6 +199,19 @@ int is_interesting_branch(uintptr_t prev_loc, uintptr_t cur_loc)
     uintptr_t idx = cur_loc ^ prev_loc;
     if (branch_bitmap[idx] == 0) {
         branch_bitmap[idx]++;
+        last_branch_is_interesting = 1;
+        return 1;
+    }
+
+    last_branch_is_interesting = 0;
+    return 0;
+}
+
+#elif BRANCH_COVERAGE == FUZZOLIC
+int is_interesting_branch(uintptr_t idx, uintptr_t run_bitmap_idx)
+{
+    // printf("global[%lu]=%u vs local[%lu]=%lu\n", idx, branch_bitmap[idx], idx, run_bitmap_idx + 1);
+    if (run_bitmap_idx + 1 > branch_bitmap[idx]) {
         last_branch_is_interesting = 1;
         return 1;
     }

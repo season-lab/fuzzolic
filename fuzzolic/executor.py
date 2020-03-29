@@ -265,6 +265,8 @@ class Executor(object):
                   (p_tracer.returncode, returncode_str))
             if self.debug != 'no_solver' and self.debug != 'coverage':
                 p_solver.send_signal(signal.SIGINT)
+                time.sleep(2)
+                p_solver.send_signal(signal.SIGKILL)
 
         if self.debug != 'no_solver' and self.debug != 'coverage':
             while not SHUTDOWN:

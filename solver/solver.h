@@ -40,9 +40,12 @@ Z3_ast smt_to_bv_n(Z3_ast e, size_t width);
 void   smt_bv_resize(Z3_ast* a, Z3_ast* b, ssize_t size);
 Z3_ast optimize_z3_query(Z3_ast e);
 void get_inputs_from_expr(Z3_ast e, GHashTable* inputs);
+GHashTable* merge_inputs(GHashTable* a, GHashTable* b);
 
 void            add_expr_annotation(Expr* e, ExprAnnotation* ea);
 ExprAnnotation* get_expr_annotation(Expr* e);
+
+extern uint8_t* branch_bitmap;
 
 // branch_coverage.c
 #define CONTEXT_SENSITIVITY 1
