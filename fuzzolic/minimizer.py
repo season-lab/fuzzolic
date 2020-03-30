@@ -60,7 +60,7 @@ class TestcaseMinimizer(object):
         if global_bitmap_pre_run != self.global_bitmap_pre_run[0]:
             self.cleanup()
             fp, bitmap = tempfile.mkstemp()
-            close(fp)
+            os.close(fp)
             os.system("cp " + global_bitmap_pre_run + " " + bitmap)
             self.global_bitmap_pre_run = [global_bitmap_pre_run, bitmap]
 
@@ -79,12 +79,12 @@ class TestcaseMinimizer(object):
         # compare against the bitmap before running the trace
         # this is for decting false positive
         fp, initial_global_bitmap = tempfile.mkstemp()
-        close(fp)
+        os.close(fp)
         os.system("cp " + global_bitmap_pre_run + " " + initial_global_bitmap)
         env['COVERAGE_TRACER'] = initial_global_bitmap
 
         fp, coverage_log_path = tempfile.mkstemp()
-        close(fp)
+        os.close(fp)
         env['COVERAGE_TRACER_LOG'] = coverage_log_path
 
         self.run(args, env, testcase, arg_input_idx)
@@ -105,7 +105,7 @@ class TestcaseMinimizer(object):
 
             os.unlink(coverage_log_path)
             fp, coverage_log_path = tempfile.mkstemp()
-            close(fp)
+            os.close(fp)
             env['COVERAGE_TRACER_LOG'] = coverage_log_path
 
             self.run(args, env, testcase, arg_input_idx)
