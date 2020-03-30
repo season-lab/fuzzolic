@@ -88,8 +88,7 @@ class TestcaseMinimizer(object):
 
         delta_coverage = file_lines_count(coverage_log_path)
         if delta_coverage == 0:
-            print("[-] Discarding %s" %
-                  (delta_coverage, os.path.basename(testcase)))
+            print("[-] Discarding %s" % os.path.basename(testcase))
             print("WARNING: false positive?")
             is_interesting = False
         else:
