@@ -390,7 +390,7 @@ class Executor(object):
 
             #if initial_run:
             # update bitmap
-            self.minimizer.check_testcase(self.cur_input)
+            self.minimizer.check_testcase(self.cur_input, self.global_bitmap)
 
             return self.cur_input, os.path.basename(queued_inputs[0])
 
