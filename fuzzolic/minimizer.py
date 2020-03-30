@@ -53,7 +53,7 @@ class TestcaseMinimizer(object):
             p.stdin.close()
             p.wait()
 
-    def check_testcase(self, testcase, global_bitmap_pre_run):
+    def check_testcase(self, testcase, global_bitmap_pre_run, no_msg=False):
 
         # print("Testcase: %s" % testcase)
 
@@ -88,8 +88,9 @@ class TestcaseMinimizer(object):
 
         delta_coverage = file_lines_count(coverage_log_path)
         if delta_coverage == 0:
-            print("[-] Discarding %s" % os.path.basename(testcase))
-            print("WARNING: false positive?")
+            if not no_msg:
+                print("[-] Discarding %s" % os.path.basename(testcase))
+                print("WARNING: false positive?")
             is_interesting = False
         else:
             # compare against the bitmap after running the trace
@@ -107,11 +108,13 @@ class TestcaseMinimizer(object):
 
             delta_coverage = file_lines_count(coverage_log_path)
             if delta_coverage == 0:
-                print("[=] Discarding %s" % os.path.basename(testcase))
+                if not no_msg:
+                    print("[=] Discarding %s" % os.path.basename(testcase))
                 is_interesting = False
             else:
-                print("[+] Keeping %s (+%s)" %
-                      (os.path.basename(testcase), delta_coverage))
+                if not no_msg:
+                    print("[+] Keeping %s (+%s)" %
+                          (os.path.basename(testcase), delta_coverage))
                 is_interesting = True
 
                 # update global bitmap
