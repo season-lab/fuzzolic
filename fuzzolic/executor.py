@@ -222,6 +222,8 @@ class Executor(object):
             p_tracer_args += [self.binary]
             p_tracer_args += args
 
+        # print(p_tracer_args)
+
         p_tracer = subprocess.Popen(p_tracer_args,
                                     stdout=p_tracer_log if not self.debug else None,
                                     stderr=subprocess.STDOUT if not self.debug else None,
@@ -358,13 +360,13 @@ class Executor(object):
 
     def __check_testcase_afl(self, t, run_id, k, target, global_bitmap_pre_run = None):
         if self.minimizer.check_testcase(t, global_bitmap_pre_run):
-            print("Importing %s" % t)
+            # print("Importing %s" % t)
             target = os.path.basename(target)[:len("id:......")]
             name = "id:%06d,src:%s" % (self.tick(), target)
             self.__import_test_case(t, name)
             return True
         else:
-            print('Discarding %s since it is not interesting.' % t)
+            # print('Discarding %s since it is not interesting.' % t)
             return False
 
     def __import_test_case(self, testcase, name):
@@ -390,7 +392,7 @@ class Executor(object):
 
             #if initial_run:
             # update bitmap
-            self.minimizer.check_testcase(self.cur_input, self.global_bitmap)
+            self.minimizer.check_testcase(self.cur_input, self.global_bitmap, True)
 
             return self.cur_input, os.path.basename(queued_inputs[0])
 

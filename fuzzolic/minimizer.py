@@ -64,11 +64,11 @@ class TestcaseMinimizer(object):
             self.global_bitmap_pre_run = [global_bitmap_pre_run, bitmap]
 
         args = self.cmd
+        args = [TRACER_BIN] + ['-symbolic'] + args
         arg_input_idx = -1
         if "@@" in args:
             assert not self.use_stdin
             arg_input_idx = args.index("@@")
-        args = [TRACER_BIN] + ['-symbolic'] + args
 
         is_interesting = False
 
