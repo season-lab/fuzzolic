@@ -332,7 +332,6 @@ class Executor(object):
                 t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')
             return True
         else:
-
             return False
 
     def __check_testcase_full(self, t, run_id, k, target):
@@ -442,7 +441,7 @@ class Executor(object):
 
         files = list(set(files) - self.afl_processed_testcases)
         return sorted(files,
-                      key=functools.cmp_to_key(minimizer.testcase_compare),
+                      key=functools.cmp_to_key(minimizer_qsym.testcase_compare),
                       reverse=True)
 
     def run(self):
