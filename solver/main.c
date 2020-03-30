@@ -15,7 +15,7 @@
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
-#define USE_FUZZY_SOLVER             1
+#define USE_FUZZY_SOLVER             0
 
 static int expr_pool_shm_id = -1;
 Expr*      pool;
@@ -3716,8 +3716,6 @@ int main(int argc, char* argv[])
     struct timespec polling_time;
     polling_time.tv_sec  = EXPR_QUEUE_POLLING_TIME_SECS;
     polling_time.tv_nsec = EXPR_QUEUE_POLLING_TIME_NS;
-
-    SAYF("Waiting for tracer termination B...\n");
 
     // wait tracer to finish its job
     while (1) {

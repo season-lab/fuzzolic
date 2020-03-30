@@ -12,9 +12,10 @@ import configparser
 import re
 import shutil
 import functools
+import tempfile
 
+import minimizer_qsym
 import minimizer
-
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 SOLVER_BIN = SCRIPT_DIR + '/../solver/solver'
@@ -44,14 +45,18 @@ class Executor(object):
             sys.exit('ERROR: invalid input')
         self.input = os.path.abspath(input)
 
+        self.global_bitmap = self.__get_root_dir() + '/branch_bitmap'
+        os.system("touch " + self.global_bitmap)
+
         if afl:
             if not os.path.exists(afl):
                 sys.exit('ERROR: invalid AFL workdir')
             self.afl = os.path.abspath(afl)
-            self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, AFL_PATH, output_dir, True)
+            # self.minimizer = minimizer_qsym.TestcaseMinimizer([binary] + binary_args, AFL_PATH, output_dir, True)
+            self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
         else:
             self.afl = None
-            self.minimizer = None
+            self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
         self.afl_processed_testcases = set()
 
         self.debug = debug
@@ -138,6 +143,9 @@ class Executor(object):
 
         self.__check_shutdown_flag()
 
+        _, global_bitmap_pre_run = tempfile.mkstemp()
+        os.system("cp " + self.global_bitmap + " " + global_bitmap_pre_run)
+
         p_solver_log_name = run_dir + '/solver.log'
         p_solver_log = open(p_solver_log_name, 'w')
 
@@ -150,7 +158,7 @@ class Executor(object):
             p_solver_args += ['-t', self.__get_testcases_dir()]
             p_solver_args += ['-o', run_dir]
 
-            p_solver_args += ['-b', self.__get_root_dir() + '/branch_bitmap']
+            p_solver_args += ['-b', self.global_bitmap]
             #p_solver_args += ['-b', os.path.join(self.output_dir, '/afl-bitmap')]
 
             p_solver_args += ['-c', self.__get_root_dir() + '/context_bitmap']
@@ -308,13 +316,26 @@ class Executor(object):
         k = 0
         for t in files:
             if self.afl:
-                good = self.__check_testcase_afl(t, run_id, k, target)
+                good = self.__check_testcase_afl(t, run_id, k, target, global_bitmap_pre_run)
             else:
-                good = self.__check_testcase(t, run_id, k, target)
+                good = self.__check_testcase(t, run_id, k, target, global_bitmap_pre_run)
+                # good = self.__check_testcase_full(t, run_id, k, target)
             if good:
                 k += 1
 
-    def __check_testcase(self, t, run_id, k, target):
+        os.unlink(global_bitmap_pre_run)
+
+    def __check_testcase(self, t, run_id, k, target, global_bitmap_pre_run):
+
+        if self.minimizer.check_testcase(t, global_bitmap_pre_run):
+            self.__import_test_case(
+                t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')
+            return True
+        else:
+
+            return False
+
+    def __check_testcase_full(self, t, run_id, k, target):
         # check whether this a duplicate test case
         discard = False
         known_tests = glob.glob(
@@ -336,8 +357,8 @@ class Executor(object):
         self.tick_count += 1
         return self.tick_count - 1
 
-    def __check_testcase_afl(self, t, run_id, k, target):
-        if self.minimizer.check_testcase(t):
+    def __check_testcase_afl(self, t, run_id, k, target, global_bitmap_pre_run = None):
+        if self.minimizer.check_testcase(t, global_bitmap_pre_run):
             print("Importing %s" % t)
             target = os.path.basename(target)[:len("id:......")]
             name = "id:%06d,src:%s" % (self.tick(), target)
@@ -390,6 +411,8 @@ class Executor(object):
                     for t in glob.glob(self.input + '/*'):
                         test_case_path = self.__import_test_case(t, os.path.basename(t))
                         queued_inputs.append(test_case_path)
+
+                self.minimizer.check_testcase(queued_inputs[0], self.global_bitmap)
 
             elif len(queued_inputs) > 1:
                 # sort the queue

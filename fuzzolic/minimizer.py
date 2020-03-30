@@ -1,136 +1,128 @@
 #!/usr/bin/env python3
 
-"""
-This is taken from QSYM
-"""
-
-import atexit
 import os
-import subprocess as sp
+import sys
+import glob
+import subprocess
 import tempfile
-import copy
-import struct
+import shutil
 
-# status for TestCaseMinimizer
-NEW = 0
-OLD = 1
-CRASH = 2
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+TRACER_BIN = SCRIPT_DIR + '/../tracer/x86_64-linux-user/qemu-x86_64'
 
-TIMEOUT = 5 * 1000
-MAP_SIZE = 65536
-AT_FILE = "@@"
 
-def get_score(testcase):
-    # New coverage is the best
-    score1 = testcase.endswith("+cov")
-    # NOTE: seed files are not marked with "+cov"
-    # even though it contains new coverage
-    score2 = "orig:" in testcase
-    # Smaller size is better
-    score3 = -os.path.getsize(testcase)
-    # Since name contains id, so later generated one will be chosen earlier
-    score4 = testcase
-    return (score1, score2, score3, score4)
+def file_lines_count(fname):
+    p = subprocess.Popen(['wc', '-l', fname], stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE)
+    result, err = p.communicate()
+    if p.returncode != 0:
+        raise IOError(err)
+    return int(result.strip().split()[0])
 
-def testcase_compare(a, b):
-    a_score = get_score(a)
-    b_score = get_score(b)
-    return 1 if a_score > b_score else -1
-
-def read_bitmap_file(bitmap_file):
-    b = []
-    with open(bitmap_file, "rb") as f:
-        byte = f.read(1)
-        while byte:
-            b.append(struct.unpack('B', byte)[0])
-            byte = f.read(1)
-    return b
-
-def write_bitmap_file(bitmap_file, bitmap):
-    with open(bitmap_file, "wb") as f:
-        for b in bitmap:
-            f.write(struct.pack('B', b))
-
-def fix_at_file(cmd, testcase):
-    cmd = copy.copy(cmd)
-    if AT_FILE in cmd:
-        idx = cmd.index(AT_FILE)
-        cmd[idx] = testcase
-        stdin = None
-    else:
-        with open(testcase, "rb") as f:
-            stdin = f.read()
-
-    return cmd, stdin
 
 class TestcaseMinimizer(object):
-    def __init__(self, cmd, afl_path, out_dir, qemu_mode, map_size=MAP_SIZE):
+    def __init__(self, cmd, global_bitmap):
         self.cmd = cmd
-        self.qemu_mode = qemu_mode
-        self.showmap = os.path.join(afl_path, "afl-showmap")
-        self.bitmap_file = os.path.join(out_dir, "afl-bitmap")
-        self.crash_bitmap_file = os.path.join(out_dir, "afl-crash-bitmap")
-        _, self.temp_file = tempfile.mkstemp(dir=out_dir)
-        atexit.register(self.cleanup)
+        self.use_stdin = False if "@@" in cmd else True
+        self.global_bitmap = global_bitmap
+        self.global_bitmap_pre_run = [None, None]
 
-        self.map_size = map_size
-        self.bitmap = self.initialize_bitmap(self.bitmap_file, map_size)
-        self.crash_bitmap = self.initialize_bitmap(self.crash_bitmap_file, map_size)
-
-    def initialize_bitmap(self, filename, map_size):
-        if os.path.exists(filename):
-            print("Importing existing bitmap for minimizer")
-            bitmap = read_bitmap_file(filename)
-            assert len(bitmap) == map_size
+    def run(self, args, env, testcase, arg_input_idx):
+        if self.use_stdin:
+            p = subprocess.Popen(args,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                    stdin=subprocess.PIPE,
+                                    env=env,
+                                    # cwd=workdir
+                                    )
+            with open(testcase, "rb") as f:
+                p.stdin.write(f.read())
+            p.stdin.close()
+            p.wait()
         else:
-            print("Initializing bitmap for minimizer")
-            bitmap = [0] * map_size
-        return bitmap
+            args_new = args[:]
+            args_new[arg_input_idx] = testcase
+            p = subprocess.Popen(args_new,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                    stdin=subprocess.PIPE,
+                                    env=env,
+                                    # cwd=workdir
+                                    )
+            p.stdin.close()
+            p.wait()
 
-    def check_testcase(self, testcase):
-        cmd = [self.showmap,
-               "-t",
-               str(TIMEOUT),
-               "-m", "256T", # for ffmpeg
-               "-b" # binary mode
-        ]
+    def check_testcase(self, testcase, global_bitmap_pre_run):
 
-        if self.qemu_mode:
-            cmd += ['-Q']
+        # print("Testcase: %s" % testcase)
 
-        cmd += ["-o",
-               self.temp_file,
-               "--"
-        ] + self.cmd
+        if global_bitmap_pre_run != self.global_bitmap_pre_run[0]:
+            self.cleanup()
+            _, bitmap = tempfile.mkstemp()
+            os.system("cp " + global_bitmap_pre_run + " " + bitmap)
+            self.global_bitmap_pre_run = [global_bitmap_pre_run, bitmap]
 
-        cmd, stdin = fix_at_file(cmd, testcase)
-        with open(os.devnull, "wb") as devnull:
-            proc = sp.Popen(cmd, stdin=sp.PIPE, stdout=devnull, stderr=devnull)
-            proc.communicate(stdin)
+        args = self.cmd
+        arg_input_idx = -1
+        if "@@" in args:
+            assert not self.use_stdin
+            arg_input_idx = args.index("@@")
+        args = [TRACER_BIN] + ['-symbolic'] + args
 
-        this_bitmap = read_bitmap_file(self.temp_file)
-        return self.is_interesting_testcase(this_bitmap, proc.returncode)
+        is_interesting = False
 
-    def is_interesting_testcase(self, bitmap, returncode):
-        if returncode == 0:
-            my_bitmap = self.bitmap
-            my_bitmap_file = self.bitmap_file
+        env = os.environ.copy()
+        env['COVERAGE_TRACER_FILTER_LIB'] = "-1"
+
+        # compare against the bitmap before running the trace
+        # this is for decting false positive
+        _, initial_global_bitmap = tempfile.mkstemp()
+        os.system("cp " + global_bitmap_pre_run + " " + initial_global_bitmap)
+        env['COVERAGE_TRACER'] = initial_global_bitmap
+
+        _, coverage_log_path = tempfile.mkstemp()
+        env['COVERAGE_TRACER_LOG'] = coverage_log_path
+
+        self.run(args, env, testcase, arg_input_idx)
+
+        delta_coverage = file_lines_count(coverage_log_path)
+        if delta_coverage == 0:
+            print("[-] Discarding %s" %
+                  (delta_coverage, os.path.basename(testcase)))
+            print("WARNING: false positive?")
+            is_interesting = False
         else:
-            my_bitmap = self.crash_bitmap
-            my_bitmap_file = self.crash_bitmap_file
+            # compare against the bitmap after running the trace
+            # we may have generated testcases that reach
+            # similar basic blocks. We don't use the global
+            # bitmap because the solver has already marked
+            # solved branches as visited.
+            env['COVERAGE_TRACER'] = self.global_bitmap_pre_run[1]
 
-        # Maybe need to port in C to speed up
-        interesting = False
-        for i in range(self.map_size):
-            old = my_bitmap[i]
-            new = my_bitmap[i] | bitmap[i]
-            if old != new:
-                interesting = True
-                my_bitmap[i] = new
+            os.unlink(coverage_log_path)
+            _, coverage_log_path = tempfile.mkstemp()
+            env['COVERAGE_TRACER_LOG'] = coverage_log_path
 
-        if interesting:
-            write_bitmap_file(my_bitmap_file, my_bitmap)
-        return interesting
+            self.run(args, env, testcase, arg_input_idx)
+
+            delta_coverage = file_lines_count(coverage_log_path)
+            if delta_coverage == 0:
+                print("[=] Discarding %s" % os.path.basename(testcase))
+                is_interesting = False
+            else:
+                print("[+] Keeping %s (+%s)" %
+                      (os.path.basename(testcase), delta_coverage))
+                is_interesting = True
+
+                # update global bitmap
+                env['COVERAGE_TRACER'] = self.global_bitmap
+                self.run(args, env, testcase, arg_input_idx)
+
+        os.unlink(initial_global_bitmap)
+        os.unlink(coverage_log_path)
+        return is_interesting
 
     def cleanup(self):
-        os.unlink(self.temp_file)
+        if self.global_bitmap_pre_run[1]:
+            os.unlink(self.global_bitmap_pre_run[1])

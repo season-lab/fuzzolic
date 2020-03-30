@@ -66,6 +66,7 @@ void load_bitmaps()
 
 static inline void save_bitmap(const char* path, uint8_t* data, size_t size)
 {
+    printf("Saving bitmap %s\n", path);
     FILE* fp = fopen(path, "w");
     int   r  = fwrite(data, 1, size, fp);
     if (r != size) {
@@ -210,7 +211,7 @@ int is_interesting_branch(uintptr_t prev_loc, uintptr_t cur_loc)
 #elif BRANCH_COVERAGE == FUZZOLIC
 int is_interesting_branch(uintptr_t idx, uintptr_t run_bitmap_idx)
 {
-    //printf("global[%lu]=%u vs local[%lu]=%lu\n", idx, branch_bitmap[idx], idx, run_bitmap_idx + 1);
+    // printf("global[%lu]=%u vs local[%lu]=%lu\n", idx, branch_bitmap[idx], idx, run_bitmap_idx + 1);
     if (run_bitmap_idx < 255 && run_bitmap_idx + 1 > branch_bitmap[idx]) {
 
         branch_bitmap[idx] = run_bitmap_idx + 1;

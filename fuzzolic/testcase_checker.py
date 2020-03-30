@@ -37,7 +37,7 @@ def usage():
     sys.exit(1)
 
 
-def run(args, use_stdin, env, testcase):
+def run(args, use_stdin, env, testcase, arg_input_idx):
     if use_stdin:
         p = subprocess.Popen(args,
                                 stdout=subprocess.DEVNULL,
@@ -113,7 +113,7 @@ for testcase in glob.glob(testcase_dir + "/test_case_*.dat"):
     env['COVERAGE_TRACER'] = coverage_bitmap_path_copy_run
     env['COVERAGE_TRACER_LOG'] = coverage_log_path
 
-    run(args, use_stdin, env, testcase)
+    run(args, use_stdin, env, testcase, arg_input_idx)
 
     delta_coverage = file_lines_count(coverage_log_path)
     if delta_coverage == 0:
@@ -125,7 +125,7 @@ for testcase in glob.glob(testcase_dir + "/test_case_*.dat"):
         _, coverage_log_path = tempfile.mkstemp()
         env['COVERAGE_TRACER_LOG'] = coverage_log_path
 
-        run(args, use_stdin, env, testcase)
+        run(args, use_stdin, env, testcase, arg_input_idx)
 
         delta_coverage = file_lines_count(coverage_log_path)
         if delta_coverage == 0:
