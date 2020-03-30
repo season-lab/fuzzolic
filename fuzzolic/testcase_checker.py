@@ -87,8 +87,9 @@ if "@@" in args:
 
 coverage_bitmap_path = sys.argv[2]
 if not os.path.exists(coverage_bitmap_path):
-    print("Invalid bitmap file.")
-    usage()
+    os.system("touch " + coverage_bitmap_path)
+#    print("Invalid bitmap file.")
+#    usage()
 coverage_bitmap_path = os.path.abspath(coverage_bitmap_path)
 
 env = os.environ.copy()

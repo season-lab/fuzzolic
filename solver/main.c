@@ -15,7 +15,7 @@
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
-#define USE_FUZZY_SOLVER             0
+#define USE_FUZZY_SOLVER             1
 
 static int expr_pool_shm_id = -1;
 Expr*      pool;
@@ -2781,8 +2781,8 @@ static void smt_branch_query(Query* q)
 #elif BRANCH_COVERAGE == FUZZOLIC
         if (is_interesting_branch(q->args16.index, q->args16.count)) {
 #endif
-            printf("\nBranch at 0x%lx (id=%lu)\n", q->address,
-                   GET_QUERY_IDX(q));
+            printf("\nBranch at 0x%lx (id=%lu, bitmap=%u)\n", q->address,
+                   GET_QUERY_IDX(q), q->args16.index);
 #if USE_FUZZY_SOLVER
             Z3_ast deps;
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL,
@@ -3754,7 +3754,7 @@ int main(int argc, char* argv[])
             smt_query(&next_query[0]);
             next_query++;
 #if 0
-            if (GET_QUERY_IDX(next_query) > 500) {
+            if (GET_QUERY_IDX(next_query) > 4000) {
                 printf("Exiting...\n");
                 save_bitmaps();
                 exit(0);
