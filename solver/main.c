@@ -3484,7 +3484,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     }
 
     uintptr_t solution = (uintptr_t)q->query->op2;
-    if (is_interesting_memory(solution)) {
+    if (is_interesting_memory(solution) && 0) {
 
         printf("\nQuery %s\n", opkind_to_str(opkind));
 
