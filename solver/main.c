@@ -15,7 +15,7 @@
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
-#define USE_FUZZY_SOLVER             1
+#define USE_FUZZY_SOLVER             0
 
 static int expr_pool_shm_id = -1;
 Expr*      pool;
