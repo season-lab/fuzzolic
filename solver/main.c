@@ -2076,6 +2076,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
         //
         case NEG:
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
+            op1 = smt_to_bv_n(op1, 8);
 #if VERBOSE
             printf("NEG\n");
             smt_print_ast_sort(op1);
@@ -2823,7 +2824,7 @@ static void smt_branch_query(Query* q)
             smt_del_solver(solver);
 #endif
         } else {
-            // printf("Branch is not interesting. Skipping it.\n");
+            //printf("Branch is not interesting. Skipping it.\n");
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
         }
     } else {
@@ -3422,8 +3423,10 @@ static void smt_slice_query(Query* q)
 
 static void smt_expr_query(Query* q, OPKIND opkind)
 {
-    // SAYF("Translating %s %lu (0x%lx) to Z3...\n", opkind_to_str(opkind),
-    //     GET_QUERY_IDX(q), (uintptr_t)q->query->op2);
+#if 0
+    SAYF("\nTranslating %s %lu (0x%lx) to Z3...\n", opkind_to_str(opkind),
+         GET_QUERY_IDX(q), (uintptr_t)q->query->op2);
+#endif
     GHashTable* inputs = NULL;
     Z3_ast      z3_query = smt_query_to_z3_wrapper(q->query->op1, 0, 0, &inputs);
     // SAYF("DONE: Translating %s to Z3\n", opkind_to_str(opkind));
