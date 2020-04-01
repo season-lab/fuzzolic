@@ -165,8 +165,8 @@ class Executor(object):
             p_solver_args += ['-m', self.__get_root_dir() + '/memory_bitmap']
             if True:
                 p_solver = subprocess.Popen(p_solver_args,
-                                        #stdout=p_solver_log if not self.debug else None,
-                                        #stderr=subprocess.STDOUT if not self.debug else None,
+                                        stdout=p_solver_log if not self.debug else None,
+                                        stderr=subprocess.STDOUT if not self.debug else None,
                                         cwd=run_dir,
                                         env=env)
             else:
