@@ -93,7 +93,7 @@ class TestcaseMinimizer(object):
         if delta_coverage == 0:
             if not no_msg:
                 print("[-] Discarding %s" % os.path.basename(testcase))
-                print("WARNING: false positive?")
+                # print("WARNING: false positive?")
             is_interesting = False
         else:
             # compare against the bitmap after running the trace

@@ -27,7 +27,7 @@ static Query* query_queue;
 uint8_t* branch_bitmap = NULL;
 
 #if BRANCH_COVERAGE == FUZZOLIC
-static int    bitmap_shm_id = -1;
+static int bitmap_shm_id = -1;
 #endif
 
 GHashTable* z3_expr_cache;
@@ -259,7 +259,8 @@ static inline void update_and_add_deps_to_solver(GHashTable* inputs,
                 size_t query_dep_idx = (size_t)key;
                 assert(z3_ast_exprs[query_dep_idx]);
                 and_args[k++] = z3_ast_exprs[query_dep_idx];
-                // printf("Adding expr %lu for %lu\n", query_dep_idx, query_idx);
+                // printf("Adding expr %lu for %lu\n", query_dep_idx,
+                // query_idx);
             }
             *deps = Z3_mk_and(smt_solver.ctx, g_hash_table_size(current->exprs),
                               and_args);
@@ -333,7 +334,7 @@ static inline Z3_ast get_deps(GHashTable* inputs)
     gpointer       key, value;
     gboolean       res;
 
-    GHashTable* added_exprs  = g_hash_table_new(NULL, NULL);
+    GHashTable* added_exprs = g_hash_table_new(NULL, NULL);
 #if 0
     GHashTable* added_inputs = g_hash_table_new(NULL, NULL);
 #endif
@@ -1929,7 +1930,7 @@ Z3_ast smt_query_to_z3_wrapper(Expr* query, uintptr_t is_const_value,
 {
     // print_expr(query);
 
-    GHashTable * ptr = NULL;
+    GHashTable* ptr = NULL;
     if (!inputs) {
         inputs = &ptr;
     }
@@ -1961,7 +1962,7 @@ void get_inputs_from_expr(Z3_ast e, GHashTable* inputs)
 
     // print_z3_ast(e);
 
-    Z3_decl_kind decl_kind    = OP(e);
+    Z3_decl_kind decl_kind = OP(e);
     switch (decl_kind) {
         case Z3_OP_UNINTERPRETED: {
             Z3_func_decl decl   = Z3_get_app_decl(ctx, APP(e));
@@ -1971,7 +1972,7 @@ void get_inputs_from_expr(Z3_ast e, GHashTable* inputs)
             break;
         }
         default: {
-            unsigned     num_operands = N_ARGS(e);
+            unsigned num_operands = N_ARGS(e);
             for (size_t i = 0; i < num_operands; i++) {
                 Z3_ast child = Z3_get_app_arg(ctx, APP(e), i);
                 get_inputs_from_expr(child, inputs);
@@ -1982,8 +1983,10 @@ void get_inputs_from_expr(Z3_ast e, GHashTable* inputs)
 
 GHashTable* merge_inputs(GHashTable* a, GHashTable* b)
 {
-    if (a == NULL) return b;
-    if (b == NULL) return a;
+    if (a == NULL)
+        return b;
+    if (b == NULL)
+        return a;
     GHashTable* merged = g_hash_table_new(NULL, NULL);
 
     GHashTableIter iter;
@@ -2005,11 +2008,11 @@ GHashTable* merge_inputs(GHashTable* a, GHashTable* b)
 
     g_hash_table_iter_init(&iter, a);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
-        g_hash_table_add(merged, (gpointer) key);
+        g_hash_table_add(merged, (gpointer)key);
     }
     g_hash_table_iter_init(&iter, b);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
-        g_hash_table_add(merged, (gpointer) key);
+        g_hash_table_add(merged, (gpointer)key);
     }
     return merged;
 }
@@ -2038,12 +2041,12 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
 
     // printf("START opkind: %s\n", opkind_to_str(query->opkind));
 
-    Z3_ast     r = NULL;
-    Z3_ast   op1 = NULL;
-    Z3_ast   op2 = NULL;
+    Z3_ast      r          = NULL;
+    Z3_ast      op1        = NULL;
+    Z3_ast      op2        = NULL;
     GHashTable* op1_inputs = NULL;
     GHashTable* op2_inputs = NULL;
-    unsigned n   = 0;
+    unsigned    n          = 0;
     switch (query->opkind) {
         case RESERVED:
             ABORT("Invalid opkind (RESERVER). There is a bug somewhere :(");
@@ -2056,7 +2059,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             if (concretized_sloads[id]) {
                 r = smt_new_const(CONST(query->op3), 8 * n_bytes);
             } else {
-                r = smt_new_symbol_int(id, 8 * n_bytes, query);
+                r          = smt_new_symbol_int(id, 8 * n_bytes, query);
                 op1_inputs = g_hash_table_new(NULL, NULL);
                 g_hash_table_add(op1_inputs, (gpointer)id);
             }
@@ -2066,7 +2069,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             break;
         //
         case NOT:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
 #if VERBOSE
             printf("NOT\n");
             smt_print_ast_sort(op1);
@@ -2075,7 +2079,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             break;
         //
         case NEG:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
             op1 = smt_to_bv_n(op1, 8);
 #if VERBOSE
             printf("NEG\n");
@@ -2085,8 +2090,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             break;
         //
         case ADD:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             smt_bv_resize(&op1, &op2, (ssize_t)query->op3);
 #if VERBOSE
             printf("ADD\n");
@@ -2125,8 +2132,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             }
             break;
         case SUB:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             smt_bv_resize(&op1, &op2, (ssize_t)query->op3);
 #if VERBOSE
             printf("SUB\n");
@@ -2137,8 +2146,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_bvsub(smt_solver.ctx, op1, op2);
             break;
         case MUL:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1       = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2       = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             ssize_t s = (ssize_t)query->op3;
             assert(s >= 0);
             smt_bv_resize(&op1, &op2, (ssize_t)query->op3);
@@ -2150,8 +2161,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_bvmul(smt_solver.ctx, op1, op2);
             break;
         case DIVU: // 8
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2171,7 +2184,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                 add_expr_annotation(query->op1, ea);
             }
 
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
 
             if (ea && ea->result) {
                 assert(Z3_get_sort_kind(smt_solver.ctx,
@@ -2180,8 +2194,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                 printf("EFLAGS: optimized flag extraction\n");
                 r = ea->result;
             } else {
-                op2 =
-                    smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+                op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                      &op2_inputs);
                 assert(query->op3 == 0);
 #if VERBOSE
                 printf("AND\n");
@@ -2206,8 +2220,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
 
             break;
         case OR: // 12
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(((ssize_t)query->op3) >= 0);
             smt_bv_resize(&op1, &op2, (ssize_t)query->op3);
 #if VERBOSE
@@ -2218,8 +2234,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_bvor(smt_solver.ctx, op1, op2);
             break;
         case XOR: // 13
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2230,8 +2248,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_bvxor(smt_solver.ctx, op1, op2);
             break;
         case SHL: // 14
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             smt_bv_resize(&op1, &op2, (ssize_t)query->op3);
 #if VERBOSE
             printf("SHL\n");
@@ -2241,8 +2261,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_bvshl(smt_solver.ctx, op1, op2);
             break;
         case SHR: // 15
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
 #if VERBOSE
             printf("SHR\n");
@@ -2252,8 +2274,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_bvlshr(smt_solver.ctx, op1, op2);
             break;
         case SAR:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
 #if VERBOSE
             printf("SAR\n");
@@ -2264,14 +2288,17 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             break;
         case ROTL: // 17
             assert(query->op2_is_const && "Second arg of ROL must be concrete");
-            op2 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
+            op2     = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
             int pos = (int)(long long)query->op2;
             r       = Z3_mk_rotate_left(smt_solver.ctx, pos, op2);
             break;
         //
         case EQ:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2282,8 +2309,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_eq(smt_solver.ctx, smt_to_bv(op1), smt_to_bv(op2));
             break;
         case NE:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2297,8 +2326,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             break;
         //
         case LT:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2310,8 +2341,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             break;
         //
         case LE:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2322,8 +2355,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_bvsle(smt_solver.ctx, op1, op2);
             break;
         case GE:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2334,8 +2369,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_bvsge(smt_solver.ctx, smt_to_bv(op1), smt_to_bv(op2));
             break;
         case GT:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2347,8 +2384,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             break;
         //
         case LTU:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2359,8 +2398,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_bvult(smt_solver.ctx, op1, op2);
             break;
         case LEU:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2371,8 +2412,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_bvule(smt_solver.ctx, op1, op2);
             break;
         case GEU:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2383,8 +2426,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_bvuge(smt_solver.ctx, op1, op2);
             break;
         case GTU:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             assert(query->op3 == 0);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2401,8 +2446,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                 op1 = smt_query_to_z3(query->op1->op1, query->op1->op1_is_const,
                                       0, &op1_inputs);
             } else {
-                op1 =
-                    smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
+                op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                      &op1_inputs);
             }
             unsigned n = (uintptr_t)query->op2;
 #if VERBOSE
@@ -2424,7 +2469,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             }
             break;
         case SEXT:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
             n   = (uintptr_t)query->op2;
             op1 = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
             op1 = optimize_z3_query(op1);
@@ -2435,8 +2481,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_sign_ext(smt_solver.ctx, 64 - n, op1);
             break;
         case CONCAT:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
 #if VERBOSE
             printf("CONCAT\n");
             smt_print_ast_sort(op1);
@@ -2445,8 +2493,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_concat(smt_solver.ctx, op1, op2);
             break;
         case CONCAT8:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
 #if VERBOSE
             printf("CONCAT8\n");
             smt_print_ast_sort(op1);
@@ -2455,7 +2505,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_concat(smt_solver.ctx, op1, op2);
             break;
         case EXTRACT8:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
+            op1           = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
             unsigned high = ((((uintptr_t)query->op2) + 1) * 8) - 1;
             unsigned low  = ((uintptr_t)query->op2) * 8;
 #if VERBOSE
@@ -2465,7 +2516,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             r = Z3_mk_extract(smt_solver.ctx, high, low, op1);
             break;
         case EXTRACT:
-            op1  = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
+            op1  = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
             high = (uintptr_t)query->op2;
             low  = (uintptr_t)query->op3;
 #if VERBOSE
@@ -2482,8 +2534,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             // DEPOSIT(arg0, arg1, arg2, pos, len):
             //    arg0 = (arg1 & ~MASK(pos, len)) | ((arg2 << pos) & MASK(pos,
             //    len))
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             op2 = smt_to_bv(op2);
             smt_bv_resize(&op1, &op2, 0);
 #if VERBOSE
@@ -2506,8 +2560,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             break;
         //
         case QZEXTRACT2:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             smt_bv_resize(&op1, &op2, 8);
             dpos = (uintptr_t)query->op3;
 #if VERBOSE
@@ -2520,8 +2576,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             break;
         //
         case MUL_HIGH:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             smt_bv_resize(&op1, &op2, 8);
             if (query->op3 != 0 && CONST(query->op3) != 8) {
                 ssize_t s = (ssize_t)query->op3;
@@ -2556,8 +2614,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             }
             break;
         case MULU_HIGH:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
             smt_bv_resize(&op1, &op2, 8);
             if (query->op3 != 0 && CONST(query->op3) != 8) {
                 ssize_t s = (ssize_t)query->op3;
@@ -2593,8 +2653,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             break;
         //
         case CTZ:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
-            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
 #if VERBOSE
             printf("CTZ\n");
             smt_print_ast_sort(op1);
@@ -2685,9 +2747,9 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
     // printf("POST OPTIMIZE\n");
     // printf("END opkind: %s\n", opkind_to_str(query->opkind));
 
-    ce = malloc(sizeof(CachedExpr));
-    ce->expr = r;
-    *inputs = merge_inputs(op1_inputs, op2_inputs);
+    ce         = malloc(sizeof(CachedExpr));
+    ce->expr   = r;
+    *inputs    = merge_inputs(op1_inputs, op2_inputs);
     ce->inputs = *inputs;
     g_hash_table_insert(z3_expr_cache, (gpointer)query, (gpointer)ce);
     return r;
@@ -2729,7 +2791,7 @@ static void smt_branch_query(Query* q)
 #endif
 
     // SAYF("Translating query %lu to Z3...\n", GET_QUERY_IDX(q));
-    GHashTable* inputs = NULL;
+    GHashTable* inputs   = NULL;
     Z3_ast      z3_query = smt_query_to_z3_wrapper(q->query, 0, 0, &inputs);
     z3_ast_exprs[GET_QUERY_IDX(q)] = z3_query;
     // SAYF("DONE: Translating query to Z3\n");
@@ -2755,7 +2817,7 @@ static void smt_branch_query(Query* q)
     print_z3_ast(z3_neg_query);
 #endif
 
-    uint8_t        has_real_inputs = 0;
+    uint8_t has_real_inputs = 0;
 
     GHashTableIter iter;
     gpointer       key, value;
@@ -2781,10 +2843,11 @@ static void smt_branch_query(Query* q)
 #elif BRANCH_COVERAGE == AFL
         if (is_interesting_branch(q->address, q->args64)) {
 #elif BRANCH_COVERAGE == FUZZOLIC
-        if (is_interesting_branch(q->args16.index, q->args16.count)) {
+        if (is_interesting_branch(q->args16.index, q->args16.count,
+                                  q->args16.index_inv, q->args16.count_inv)) {
 #endif
             printf("\nBranch at 0x%lx (id=%lu, bitmap=%u)\n", q->address,
-                   GET_QUERY_IDX(q), q->args16.index);
+               GET_QUERY_IDX(q), q->args16.index);
 #if USE_FUZZY_SOLVER
             Z3_ast deps;
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL,
@@ -2794,14 +2857,15 @@ static void smt_branch_query(Query* q)
             Z3_ast         fuzzy_query = Z3_mk_and(smt_solver.ctx, 2, args);
             const uint8_t* proof;
             size_t         proof_size;
-            //print_z3_ast(fuzzy_query);
-            //print_z3_ast(z3_neg_query);
+            // print_z3_ast(fuzzy_query);
+            // print_z3_ast(z3_neg_query);
             SAYF("Running a query...\n");
             conc_eval_time  = 0;
             conc_eval_count = 0;
             struct timespec start, end;
             get_time(&start);
-            int r = z3fuzz_query_check_light(&smt_solver.fuzzy_ctx, fuzzy_query, z3_neg_query, &proof, &proof_size);
+            int r = z3fuzz_query_check_light(&smt_solver.fuzzy_ctx, fuzzy_query,
+                                             z3_neg_query, &proof, &proof_size);
             get_time(&end);
             printf("Elapsed: %lu us\n", get_diff_time_microsec(&start, &end));
             if (r) {
@@ -2829,7 +2893,7 @@ static void smt_branch_query(Query* q)
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
         }
     } else {
-        //printf("No real inputs in branch condition. Skipping it.\n");
+        // printf("No real inputs in branch condition. Skipping it.\n");
     }
 
 #if 0
@@ -3153,7 +3217,7 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
                     printf("Found a valid solution %lx using fuzz value %u at "
                            "index %ld\n",
                            solution, fuzz_values[i], index);
- #endif
+#endif
                     g_hash_table_add(solutions, (gpointer)solution);
                     // printf("Solution: %lx\n", solution);
                     if (dump_idx) {
@@ -3183,7 +3247,9 @@ static uintptr_t get_value_from_slice_array(Expr** slices_addrs,
         // printf("Base addr for slice %lu is %lx\n", i, base_addr);
         // assert(addr >= base_addr);
         if (addr < base_addr) {
-            printf("ERROR: out of bounds slice access: addr=%lu slice_id=%lu base_addr=%lu\n", addr, i, base_addr);
+            printf("ERROR: out of bounds slice access: addr=%lu slice_id=%lu "
+                   "base_addr=%lu\n",
+                   addr, i, base_addr);
             *out_of_bounds = 1;
         }
         if (base_addr + SLICE_SIZE > addr) {
@@ -3247,7 +3313,7 @@ static void smt_slice_query(Query* q)
            GET_QUERY_IDX(q), s_load_id, scale_sload_index(s_load_id), addr_conc,
            s_load_size, s_load_value);
 
-    GHashTable* inputs = NULL;
+    GHashTable* inputs  = NULL;
     Z3_ast      z3_addr = smt_query_to_z3_wrapper(addr_expr, 0, 0, &inputs);
 
 #if 0
@@ -3267,7 +3333,7 @@ static void smt_slice_query(Query* q)
     GHashTable* conc_addrs = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs, (gpointer)addr_conc);
     int r = 0;
-    if (inputs && 0) {
+    if (inputs) {
         r = fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
     }
 #if 0
@@ -3281,8 +3347,9 @@ static void smt_slice_query(Query* q)
     if (!r) {
         printf("Slice access has a single value. Concretizing it.\n");
         concretized_sloads[scale_sload_index(s_load_id)] = 1;
-        // printf("Setting sloads_exprs for %lu (%lu)\n", s_load_id, scale_sload_index(s_load_id));
-        g_hash_table_remove(z3_expr_cache, (gpointer) s_load);
+        // printf("Setting sloads_exprs for %lu (%lu)\n", s_load_id,
+        // scale_sload_index(s_load_id));
+        g_hash_table_remove(z3_expr_cache, (gpointer)s_load);
 #if 0
 #if USE_FUZZY_SOLVER
         // printf("Assignment: %lu\n", scale_sload_index(s_load_id));
@@ -3358,10 +3425,10 @@ static void smt_slice_query(Query* q)
             continue; // initial value of v
         }
 
-        uint8_t is_out_of_slice_bounds;
-        uintptr_t conc_value = get_value_from_slice_array(
-            slices_addrs, slices_count, addr, s_load_size,
-            &is_out_of_slice_bounds);
+        uint8_t   is_out_of_slice_bounds;
+        uintptr_t conc_value =
+            get_value_from_slice_array(slices_addrs, slices_count, addr,
+                                       s_load_size, &is_out_of_slice_bounds);
 
         if (is_out_of_slice_bounds) {
             continue;
@@ -3429,7 +3496,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
          GET_QUERY_IDX(q), (uintptr_t)q->query->op2);
 #endif
     GHashTable* inputs = NULL;
-    Z3_ast      z3_query = smt_query_to_z3_wrapper(q->query->op1, 0, 0, &inputs);
+    Z3_ast z3_query    = smt_query_to_z3_wrapper(q->query->op1, 0, 0, &inputs);
     // SAYF("DONE: Translating %s to Z3\n", opkind_to_str(opkind));
 
     if (!inputs) {
@@ -3480,12 +3547,13 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     }
 
     if (inputs_are_concretized) {
-        // printf("Address is likely to be already concretized. Skipping it.\n");
+        // printf("Address is likely to be already concretized. Skipping
+        // it.\n");
         return;
     }
 
     uintptr_t solution = (uintptr_t)q->query->op2;
-    if (is_interesting_memory(solution) && 0) {
+    if (is_interesting_memory(solution)) {
 
         printf("\nQuery %s\n", opkind_to_str(opkind));
 
@@ -3561,15 +3629,15 @@ static void smt_query(Query* q)
 
     switch (q->query->opkind) {
         case SYMBOLIC_PC:
-            //printf("\nSymbolic PC\n");
+            // printf("\nSymbolic PC\n");
             smt_expr_query(q, q->query->opkind);
             break;
         case SYMBOLIC_JUMP_TABLE_ACCESS:
-            //printf("\nSymbolic JUMP access\n");
+            // printf("\nSymbolic JUMP access\n");
             smt_expr_query(q, q->query->opkind);
             break;
         case MEMORY_SLICE_ACCESS:
-            //printf("\nSymbolic SLICE access %lu\n", GET_QUERY_IDX(q));
+            // printf("\nSymbolic SLICE access %lu\n", GET_QUERY_IDX(q));
             smt_slice_query(q);
             break;
         case SYMBOLIC_LOAD:
@@ -3581,7 +3649,7 @@ static void smt_query(Query* q)
             smt_expr_query(q, q->query->opkind);
             break;
         default:
-            //printf("\nBranch at 0x%lx\n", q->address);
+            // printf("\nBranch at 0x%lx\n", q->address);
             smt_branch_query(q);
     }
 }
@@ -3674,8 +3742,8 @@ int main(int argc, char* argv[])
 
 #if BRANCH_COVERAGE == FUZZOLIC
     bitmap_shm_id = shmget(BITMAP_SHM_KEY, // IPC_PRIVATE,
-                          sizeof(uint8_t) * BRANCH_BITMAP_SIZE,
-                          IPC_CREAT | 0666); /*| IPC_EXCL */
+                           sizeof(uint8_t) * BRANCH_BITMAP_SIZE,
+                           IPC_CREAT | 0666); /*| IPC_EXCL */
     if (bitmap_shm_id < 0)
         PFATAL("shmget() failed");
 #endif
@@ -3744,8 +3812,10 @@ int main(int argc, char* argv[])
             if (next_query[0].query == FINAL_QUERY) {
                 SAYF("\n\nReached final query. Exiting...\n");
 
-                printf("Translation time: %lu usecs\n", smt_solver.translation_time);
-                printf("Expr visit  time: %lu usecs\n", smt_solver.expr_visit_time);
+                printf("Translation time: %lu usecs\n",
+                       smt_solver.translation_time);
+                printf("Expr visit  time: %lu usecs\n",
+                       smt_solver.expr_visit_time);
 
                 save_bitmaps();
                 exit(0);

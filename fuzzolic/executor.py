@@ -165,8 +165,8 @@ class Executor(object):
             p_solver_args += ['-m', self.__get_root_dir() + '/memory_bitmap']
             if True:
                 p_solver = subprocess.Popen(p_solver_args,
-                                        stdout=p_solver_log if not self.debug else None,
-                                        stderr=subprocess.STDOUT if not self.debug else None,
+                                        #stdout=p_solver_log if not self.debug else None,
+                                        #stderr=subprocess.STDOUT if not self.debug else None,
                                         cwd=run_dir,
                                         env=env)
             else:
@@ -383,9 +383,14 @@ class Executor(object):
 
         if self.afl:
             queued_inputs = self.__import_from_afl()
+            waiting_rounds = 0
             while len(queued_inputs) == 0:
-                time.sleep(1)
+                waiting_rounds += 1
+                time.sleep(0.1)
                 queued_inputs = self.__import_from_afl()
+
+            if waiting_rounds > 0:
+                print("\nWaited %s seconds for a new input from AFL\n" % (waiting_rounds * 0.1))
 
             self.afl_processed_testcases.add(queued_inputs[0])
             shutil.copy2(queued_inputs[0], self.cur_input)
@@ -413,7 +418,7 @@ class Executor(object):
                         test_case_path = self.__import_test_case(t, os.path.basename(t))
                         queued_inputs.append(test_case_path)
 
-                self.minimizer.check_testcase(queued_inputs[0], self.global_bitmap)
+                self.minimizer.check_testcase(queued_inputs[0], self.global_bitmap, True)
 
             elif len(queued_inputs) > 1:
                 # sort the queue

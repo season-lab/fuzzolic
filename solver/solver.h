@@ -49,7 +49,15 @@ extern uint8_t* branch_bitmap;
 
 // branch_coverage.c
 #define CONTEXT_SENSITIVITY 1
+
+#if BRANCH_COVERAGE == QSYM || BRANCH_COVERAGE == AFL
 int  is_interesting_branch(uintptr_t pc, uintptr_t taken);
+#elif BRANCH_COVERAGE == FUZZOLIC
+int is_interesting_branch(uint16_t idx,
+                            uint16_t local_count_idx,
+                            uint16_t idx_inv,
+                            uint16_t local_count_idx_inv);
+#endif
 int  is_interesting_memory(uintptr_t addr);
 void load_bitmaps();
 void save_bitmaps();

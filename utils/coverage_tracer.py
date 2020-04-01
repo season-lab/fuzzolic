@@ -71,6 +71,8 @@ if os.path.exists(fuzzer_dir + "/queue"):
     testcase_dirs.append(fuzzer_dir + "/queue")
 if os.path.exists(fuzzer_dir + "/crash"):
     testcase_dirs.append(fuzzer_dir + "/crash")
+if os.path.exists(fuzzer_dir + "/tests"):
+    testcase_dirs.append(fuzzer_dir + "/tests")
 
 if len(testcase_dirs) == 0:
     print("No known directory inside %s" % fuzzer_dir)
@@ -138,6 +140,7 @@ print("Total number of processed testcases: %d\n" % testcase_count)
 
 # if os.path.exists(workdir + '/.fuzzolic_workdir'):
 #    shutil.rmtree(workdir)
+# print(coverage_bitmap_path)
 os.unlink(coverage_bitmap_path)
 os.unlink(coverage_log_path)
 

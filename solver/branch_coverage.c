@@ -7,17 +7,26 @@ extern Config config;
 
 #if BRANCH_COVERAGE == QSYM
 static uint8_t branch_neg_bitmap[BRANCH_BITMAP_SIZE] = {0};
-static uint8_t context_bitmap[BRANCH_BITMAP_SIZE] = {0};
+static uint8_t context_bitmap[BRANCH_BITMAP_SIZE]    = {0};
+
+#elif BRANCH_COVERAGE == FUZZOLIC
+static uint8_t symbolic_edges[BRANCH_BITMAP_SIZE] = {0};
 #endif
 
 #if 0
 static uint8_t memory_bitmap[BRANCH_BITMAP_SIZE] = {0};
 #endif
 
-static uintptr_t last_branch_hash = 0;
-static int last_branch_is_interesting = 0;
+static uintptr_t last_branch_hash           = 0;
+static int       last_branch_is_interesting = 0;
 
 #define IS_POWER_OF_TWO(x) ((x & (x - 1)) == 0)
+
+// from AFL
+static const uint8_t count_class_binary[256] = {
+    [0] = 0,          [1] = 1,           [2] = 2,
+    [3] = 4,          [4 ... 7] = 8,     [8 ... 15] = 16,
+    [16 ... 31] = 32, [32 ... 127] = 64, [128 ... 255] = 128};
 
 #if CONTEXT_SENSITIVITY
 static GHashTable* visited_branches = NULL;
@@ -41,7 +50,8 @@ static inline void load_bitmap(const char* path, uint8_t* data, size_t size)
 {
     FILE* fp = fopen(path, "r");
     if (!fp) {
-        printf("[SOLVER] Bitmap %s does not exist. Initializing it (%lu).\n", path, size);
+        printf("[SOLVER] Bitmap %s does not exist. Initializing it (%lu).\n",
+               path, size);
         memset(data, 0, size);
         return;
     }
@@ -58,7 +68,11 @@ void load_bitmaps()
     load_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
 #if BRANCH_COVERAGE == QSYM
     load_bitmap(config.context_bitmap_path, context_bitmap, BRANCH_BITMAP_SIZE);
+
+#elif BRANCH_COVERAGE == FUZZOLIC
+    load_bitmap(config.context_bitmap_path, symbolic_edges, BRANCH_BITMAP_SIZE);
 #endif
+
 #if 0
     load_bitmap(config.memory_bitmap_path, memory_bitmap, BRANCH_BITMAP_SIZE);
 #endif
@@ -80,7 +94,11 @@ void save_bitmaps()
     save_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
 #if BRANCH_COVERAGE == QSYM
     save_bitmap(config.context_bitmap_path, context_bitmap, BRANCH_BITMAP_SIZE);
+
+#elif BRANCH_COVERAGE == FUZZOLIC
+    save_bitmap(config.context_bitmap_path, symbolic_edges, BRANCH_BITMAP_SIZE);
 #endif
+
 #if 0
     save_bitmap(config.memory_bitmap_path, memory_bitmap, BRANCH_BITMAP_SIZE);
 #endif
@@ -178,7 +196,7 @@ int is_interesting_branch(uintptr_t pc, uintptr_t taken)
         ret = 0;
     }
 
-    last_branch_hash = h;
+    last_branch_hash           = h;
     last_branch_is_interesting = ret;
     return ret;
 }
@@ -209,12 +227,29 @@ int is_interesting_branch(uintptr_t prev_loc, uintptr_t cur_loc)
 }
 
 #elif BRANCH_COVERAGE == FUZZOLIC
-int is_interesting_branch(uintptr_t idx, uintptr_t run_bitmap_idx)
+int is_interesting_branch(uint16_t idx, uint16_t count, uint16_t idx_inv,
+                          uint16_t count_inv)
 {
-    // printf("global[%lu]=%u vs local[%lu]=%lu\n", idx, branch_bitmap[idx], idx, run_bitmap_idx + 1);
-    if (run_bitmap_idx < 255 && run_bitmap_idx + 1 > branch_bitmap[idx]) {
+#if 0
+    printf("symbolic_edges[%u]=%u vs %u - symbolic_edges[%u]=%u vs %u\n",
+        idx, symbolic_edges[idx], count + 1,
+        idx_inv, symbolic_edges[idx_inv], count_inv + 1);
+#endif
+    // first handle the inverse branch which is taken by the current testcase
+    // normalize hit count during the run
+    uint8_t normalized_hit_count = count_class_binary[count_inv + 1];
+    // update bitmap symbolic edges
+    symbolic_edges[idx_inv] |= normalized_hit_count;
 
-        branch_bitmap[idx] = run_bitmap_idx + 1;
+    // normalize hit count during the run
+    normalized_hit_count = count_class_binary[count + 1];
+    // check if we already tried to solve this symbolic branch in the past
+    if ((normalized_hit_count | symbolic_edges[idx]) != symbolic_edges[idx]) {
+
+        //printf("marking branch as interesting: normalized_hit_count=%u\n", normalized_hit_count);
+
+        // update bitmap symbolic edges
+        symbolic_edges[idx] |= normalized_hit_count;
 
         last_branch_is_interesting = 1;
         return 1;
