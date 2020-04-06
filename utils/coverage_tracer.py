@@ -73,6 +73,10 @@ if os.path.exists(fuzzer_dir + "/crash"):
     testcase_dirs.append(fuzzer_dir + "/crash")
 if os.path.exists(fuzzer_dir + "/tests"):
     testcase_dirs.append(fuzzer_dir + "/tests")
+if "fuzzolic-0" == os.path.basename(fuzzer_dir):
+    testcase_dirs.append(fuzzer_dir)
+if "qsym-out-0" == os.path.basename(fuzzer_dir):
+    testcase_dirs.append(fuzzer_dir)
 
 if len(testcase_dirs) == 0:
     print("No known directory inside %s" % fuzzer_dir)
@@ -102,6 +106,8 @@ testcase_count = 0
 for dir in testcase_dirs:
     for testcase in glob.glob(dir + "/*"):
         if testcase.startswith(".") or 'README' in testcase:
+            continue
+        if testcase.endswith(".log") or testcase.endswith(".query"):
             continue
 
         # print("Running testcase %s" % testcase)

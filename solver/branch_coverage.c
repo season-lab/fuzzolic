@@ -189,6 +189,7 @@ int is_interesting_branch(uintptr_t pc, uintptr_t taken)
         ret = 1;
 #if CONTEXT_SENSITIVITY
     } else if (new_context) {
+        printf("Branch is interesting due to context\n");
         ret = 1;
         // save_bitmaps();
 #endif
@@ -235,14 +236,10 @@ int is_interesting_branch(uint16_t idx, uint16_t count, uint16_t idx_inv,
         idx, symbolic_edges[idx], count + 1,
         idx_inv, symbolic_edges[idx_inv], count_inv + 1);
 #endif
-    // first handle the inverse branch which is taken by the current testcase
-    // normalize hit count during the run
-    uint8_t normalized_hit_count = count_class_binary[count_inv + 1];
-    // update bitmap symbolic edges
-    symbolic_edges[idx_inv] |= normalized_hit_count;
+    uint8_t normalized_hit_count;
 
     // normalize hit count during the run
-    normalized_hit_count = count_class_binary[count + 1];
+    normalized_hit_count = count + 1; // count_class_binary[count + 1];
     // check if we already tried to solve this symbolic branch in the past
     if ((normalized_hit_count | symbolic_edges[idx]) != symbolic_edges[idx]) {
 
@@ -250,6 +247,12 @@ int is_interesting_branch(uint16_t idx, uint16_t count, uint16_t idx_inv,
 
         // update bitmap symbolic edges
         symbolic_edges[idx] |= normalized_hit_count;
+
+        // the inverse branch is taken by the current testcase
+        // normalize hit count during the run
+        normalized_hit_count = count_inv + 1; // count_class_binary[count_inv + 1];
+        // update bitmap symbolic edges
+        symbolic_edges[idx_inv] |= normalized_hit_count;
 
         last_branch_is_interesting = 1;
         return 1;

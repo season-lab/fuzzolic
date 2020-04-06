@@ -52,11 +52,12 @@ class Executor(object):
             if not os.path.exists(afl):
                 sys.exit('ERROR: invalid AFL workdir')
             self.afl = os.path.abspath(afl)
-            # self.minimizer = minimizer_qsym.TestcaseMinimizer([binary] + binary_args, AFL_PATH, output_dir, True)
-            self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
+            self.minimizer = minimizer_qsym.TestcaseMinimizer([binary] + binary_args, AFL_PATH, output_dir, True)
+            # self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
         else:
             self.afl = None
-            self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
+            self.minimizer = minimizer_qsym.TestcaseMinimizer([binary] + binary_args, AFL_PATH, output_dir, True)
+            # self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
         self.afl_processed_testcases = set()
 
         self.debug = debug
@@ -208,9 +209,9 @@ class Executor(object):
 
         if self.debug != 'gdb':
             p_tracer_args += ['-symbolic']
-            if self.debug == 'trace': #  or self.debug == 'no_solver'
+            if self.debug == 'trace': # or self.debug == 'no_solver':
                 p_tracer_args += ['-d']
-                p_tracer_args += ['in_asm,op_opt,out_asm']  # 'in_asm,op_opt,out_asm'
+                p_tracer_args += ['in_asm,op_opt']  # 'in_asm,op_opt,out_asm'
 
         args = self.binary_args
         if not self.testcase_from_stdin:

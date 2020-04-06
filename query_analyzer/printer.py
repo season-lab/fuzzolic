@@ -127,7 +127,7 @@ class Condition:
 
     def get_vars(self):
         if self.vars is None:
-            if self.opkind in ['extract', 'SExt']:
+            if self.opkind in ['extract', 'SExt', 'ZExt']:
                 self.vars = self.args[0].get_vars()
             elif self.opkind == 'const':
                 self.vars = set()
@@ -141,7 +141,7 @@ class Condition:
 
     def get_ops(self):
         if self.ops is None:
-            if  self.opkind in ['extract', 'SExt']:
+            if  self.opkind in ['extract', 'SExt', 'ZExt']:
                 self.ops = {self.opkind}
                 self.ops |= self.args[0].get_ops()
             elif self.opkind == 'const':
@@ -725,6 +725,8 @@ def parse_condition(e):
         return Condition(e.size(), 'input', ['input_' + n])
     elif opkind.startswith('s_load_'):
         return Condition(e.size(), 'input', [str(e)])
+    elif opkind == "True" or opkind == "False":
+        return Condition(1, 'input', [str(e)])
 
     args += [parse_condition(e.arg(0))]
 
@@ -748,6 +750,10 @@ def parse_condition(e):
     elif opkind == 'SignExt':
         assert e.num_args() == 1
         return Condition(e.size(), 'SExt', [args[0]] + e.params())
+
+    elif opkind == 'ZeroExt':
+        assert e.num_args() == 1
+        return Condition(e.size(), 'ZExt', [args[0]] + e.params())
 
     elif opkind == 'Extract':
         assert e.num_args() == 1
@@ -849,6 +855,10 @@ def parse_condition(e):
         assert str(e.sort()) == 'Bool'
         opkind = '&&'
 
+    elif opkind == 'Or':
+        assert str(e.sort()) == 'Bool'
+        opkind = '||'
+
     elif opkind in ['&']:
         opkind = '&'
         args, expr = Transformer.and_const_args(args, opkind)
@@ -924,7 +934,11 @@ def traslate_to_pseudocode(query):
 
     defs = {}
     deps = {}
+    parsed_exprs = set()
     for e in conjs:
+        if e.get_id() in parsed_exprs:
+            continue
+        parsed_exprs.add(e.get_id())
         c = parse_condition(e)
         cond = str(c)
         for v in defs:
@@ -1013,7 +1027,7 @@ def find_opkind_expr(e, opkinds, depth):
         return [None, None, None]
     elif e.opkind == 'input':
         return [None, None, None]
-    elif e.opkind in ['extract', 'SExt']:
+    elif e.opkind in ['extract', 'SExt', 'ZExt']:
         r = find_opkind_expr(e.args[0], opkinds, depth + 1)
         if r[0]:
             r[2] |= other_opkinds
@@ -1038,7 +1052,7 @@ def find_expr(e, e2):
         return False
     elif e.opkind == 'input':
         return False
-    elif e.opkind in ['extract', 'SExt']:
+    elif e.opkind in ['extract', 'SExt', 'ZExt']:
         return find_expr(e.args[0], e2)
     else:
         for a in e.args:
@@ -1197,7 +1211,7 @@ if len(sys.argv) != 2:
 query_file = sys.argv[1]
 query = z3.parse_smt2_file(query_file)
 
-if True:
+if False:
     print(query)
     print("\n##########\n")
 
@@ -1250,7 +1264,7 @@ if True:
         #if not remove_condition(C[k]):
             solver.add(prev[k])
     start = time.time()
-    solver.set("timeout", 3000)
+    solver.set("timeout", 15000)
     r = solver.check()
     end = time.time()
     print("prev branches is %s - time %s\n" % (r, str(end - start)))
@@ -1259,20 +1273,33 @@ if True:
     if not remove_condition(C[-1]):
         solver.add(query.children()[-1])
     start = time.time()
-    solver.set("timeout", 3000)
+    solver.set("timeout", 15000)
     r = solver.check()
     end = time.time()
     print("current branch is %s - time %s\n" % (r, str(end - start)))
 
 if True:
-    solver = z3.Solver()
+    solver = z3.SimpleSolver()
+    solver.set(':core.minimize', True)
     E = query.children()
+    ctracks = []
     for k in range(len(E)):
-        if k in S_deps and not remove_condition(C[k]):
+        if True:
+        #if k in S_deps and not remove_condition(C[k]):
         #if not remove_condition(C[k]):
-            solver.add(E[k])
+            ctrack = z3.Bool('p' + str(len(ctracks)))
+            solver.assert_and_track(E[k], ctrack)
+            ctracks.append(ctrack)
     start = time.time()
-    solver.set("timeout", 3000)
+    solver.set(timeout=15000)
     r = solver.check()
     end = time.time()
     print("query is %s - time %s\n" % (r, str(end - start)))
+
+    if str(r) == 'unsat':
+        unsat_core = solver.unsat_core()
+        for p in unsat_core:
+            idx = str(p).split("p")[1]
+            s, S, C, deps = traslate_to_pseudocode(E[int(idx)])
+            print(s)
+            #print(E[int(idx)])

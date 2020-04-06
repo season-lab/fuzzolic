@@ -87,7 +87,7 @@ class TestcaseMinimizer(object):
             bitmap = [0] * map_size
         return bitmap
 
-    def check_testcase(self, testcase, global_bitmap_pre_run = None):
+    def check_testcase(self, testcase, global_bitmap_pre_run=None, no_msg=False):
         cmd = [self.showmap,
                "-t",
                str(TIMEOUT),
@@ -109,7 +109,14 @@ class TestcaseMinimizer(object):
             proc.communicate(stdin)
 
         this_bitmap = read_bitmap_file(self.temp_file)
-        return self.is_interesting_testcase(this_bitmap, proc.returncode)
+        interesting = self.is_interesting_testcase(this_bitmap, proc.returncode)
+
+        if interesting:
+            print("[+] Keeping %s" % os.path.basename(testcase))
+        else:
+            print("[-] Discarding %s" % os.path.basename(testcase))
+
+        return interesting
 
     def is_interesting_testcase(self, bitmap, returncode):
         if returncode == 0:
@@ -130,6 +137,7 @@ class TestcaseMinimizer(object):
 
         if interesting:
             write_bitmap_file(my_bitmap_file, my_bitmap)
+
         return interesting
 
     def cleanup(self):

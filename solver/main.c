@@ -32,6 +32,8 @@ static int bitmap_shm_id = -1;
 
 GHashTable* z3_expr_cache;
 
+void print_z3_ast(Z3_ast e);
+
 typedef struct SMTSolver {
     Z3_context ctx;
     uint64_t   sat_count;
@@ -184,6 +186,13 @@ static inline void smt_destroy(void)
     g_hash_table_destroy(z3_expr_cache);
 }
 
+static void print_z3_original(Z3_ast e)
+{
+    Z3_set_ast_print_mode(smt_solver.ctx, Z3_PRINT_LOW_LEVEL);
+    const char* z3_query_str = Z3_ast_to_string(smt_solver.ctx, e);
+    SAYF("\n%s\n", z3_query_str);
+}
+
 static inline void update_and_add_deps_to_solver(GHashTable* inputs,
                                                  size_t      query_idx,
                                                  Z3_solver solver, Z3_ast* deps)
@@ -244,8 +253,11 @@ static inline void update_and_add_deps_to_solver(GHashTable* inputs,
             size_t query_dep_idx = (size_t)key;
             assert(z3_ast_exprs[query_dep_idx]);
             Z3_solver_assert(smt_solver.ctx, solver,
-                             z3_ast_exprs[query_dep_idx]);
+                            //Z3_simplify(smt_solver.ctx, z3_ast_exprs[query_dep_idx]));
+                            z3_ast_exprs[query_dep_idx]);
             // printf("Adding expr %lu for %lu\n", query_dep_idx, query_idx);
+            // print_z3_ast(z3_ast_exprs[query_dep_idx]);
+            //print_z3_original(z3_ast_exprs[query_dep_idx]);
         }
     }
 
@@ -633,13 +645,6 @@ static int smt_query_check_eval_uint64(Z3_solver solver, size_t idx, Z3_ast e,
     return qres;
 }
 
-static void print_z3_original(Z3_ast e)
-{
-    Z3_set_ast_print_mode(smt_solver.ctx, Z3_PRINT_LOW_LEVEL);
-    const char* z3_query_str = Z3_ast_to_string(smt_solver.ctx, e);
-    SAYF("\n%s\n", z3_query_str);
-}
-
 static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op,
                                   uint8_t parent_is_concat)
 {
@@ -944,12 +949,13 @@ static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op,
     }
 }
 
-static void print_z3_ast(Z3_ast e)
+void print_z3_ast(Z3_ast e)
 {
     // print_z3_original(e);
-    printf("\n");
+    // printf("\n");
     print_z3_ast_internal(e, 0, 0);
-    printf("\n\n");
+    printf("\n");
+    //printf("\n");
 }
 
 void smt_print_ast_sort(Z3_ast e)
@@ -1166,7 +1172,40 @@ static inline maker_op_t get_make_op(Z3_decl_kind decl_kind)
         case Z3_OP_SGT:
             return Z3_mk_bvsgt;
 
+        case Z3_OP_BADD:
+            return Z3_mk_bvadd;
+        case Z3_OP_BSUB:
+            return Z3_mk_bvsub;
+        case Z3_OP_BMUL:
+            return Z3_mk_bvmul;
+        case Z3_OP_BUDIV:
+            return Z3_mk_bvudiv;
+        case Z3_OP_BSDIV:
+            return Z3_mk_bvsdiv;
+        case Z3_OP_BUREM:
+            return Z3_mk_bvurem;
+        case Z3_OP_BSREM:
+            return Z3_mk_bvsrem;
+
+        case Z3_OP_BAND:
+            return Z3_mk_bvand;
+        case Z3_OP_BOR:
+            return Z3_mk_bvor;
+        case Z3_OP_BXOR:
+            return Z3_mk_bvxor;
+
+        case Z3_OP_BSHL:
+            return Z3_mk_bvshl;
+        case Z3_OP_BLSHR:
+            return Z3_mk_bvlshr;
+        case Z3_OP_BASHR:
+            return Z3_mk_bvashr;
+
+        case Z3_OP_CONCAT:
+            return Z3_mk_concat;
+
         default:
+            printf("decl_kind %d not yet implemented\n", decl_kind);
             ABORT();
     }
 }
@@ -1174,7 +1213,6 @@ static inline maker_op_t get_make_op(Z3_decl_kind decl_kind)
 static inline uint8_t get_shifted_bytes(Z3_ast e, Z3_ast* bytes, int n)
 {
     if (OP(e) == Z3_OP_BSHL) {
-        // printf("Check SHL\n");
         assert(N_ARGS(e) == 2);
         uint64_t value;
         if (!is_const(ARG2(e), &value) || OP(ARG1(e)) != Z3_OP_CONCAT) {
@@ -1328,6 +1366,26 @@ Z3_ast optimize_z3_query(Z3_ast e)
         Z3_ast op1          = ARG1(e);
         Z3_ast op1_original = op1;
         op1                 = optimize_z3_query(op1);
+#if 0
+        // from:
+        //  X != 0
+        // to:
+        //  X > 0
+        if (OP(op1) == Z3_OP_EQ && is_zero_const(ARG2(op1))) {
+            unsigned size_op1 = SIZE(ARG1(op1));
+            Z3_ast a1 = Z3_mk_bvsge(ctx, smt_new_const(FF_MASK(size_op1 - 1), size_op1),  ARG1(op1));
+            Z3_ast b1 = Z3_mk_bvsle(ctx, smt_new_const(1, size_op1),  ARG1(op1));
+            Z3_ast a2 = Z3_mk_bvsge(ctx, smt_new_const(FF_MASK(size_op1), size_op1),  ARG1(op1));
+            Z3_ast b2 = Z3_mk_bvsle(ctx, smt_new_const(FF_MASK(size_op1 - 1) + 1, size_op1),  ARG1(op1));
+            Z3_ast args_1[2] = { a1, b1 };
+            Z3_ast a = Z3_mk_and(ctx, 2, args_1);
+            Z3_ast args_2[2] = { a2, b2 };
+            Z3_ast b = Z3_mk_and(ctx, 2, args_2);
+            Z3_ast args[2] = { a, b };
+            e = Z3_mk_or(ctx, 2, args);
+            return e;
+        }
+#endif
         if (op1_original != op1) {
             return Z3_mk_not(ctx, op1);
         } else {
@@ -1557,6 +1615,14 @@ Z3_ast optimize_z3_query(Z3_ast e)
             return optimize_z3_query(e);
         }
 
+        if (OP(op1) == Z3_OP_EXTRACT) {
+            return get_make_op(decl_kind)(ctx, optimize_z3_query(op1), op2);
+        }
+
+        if (OP(op2) == Z3_OP_EXTRACT) {
+            return get_make_op(decl_kind)(ctx, op1, optimize_z3_query(op2));
+        }
+
     } else if (decl_kind == Z3_OP_EXTRACT) {
 
         Z3_ast op1  = ARG1(e);
@@ -1567,6 +1633,10 @@ Z3_ast optimize_z3_query(Z3_ast e)
 
         if (low == 0 && SIZE(op1) == high + 1) {
             return op1;
+        }
+
+        if (low == 0 && is_const(op1, &value)) {
+            return smt_new_const(value, high + 1);
         }
 
         if (low == high && is_const(op1, &value)) {
@@ -1673,6 +1743,48 @@ Z3_ast optimize_z3_query(Z3_ast e)
                 e        = Z3_mk_bvadd(ctx, c, ARG2(ARG2(op1)));
                 return optimize_z3_query(e);
             }
+        }
+
+        // from:
+        //   ((0#M1 .. X) op (0#M2 .. Y))[high:0]))
+        // where:
+        //   - size(X) <= high + 1
+        //   - size(Y) <= high + 1
+        // to:
+        //   ((0#K1 .. X) op (0#K2 .. Y))
+        // where:
+        //   K1 = high + 1 - size(X)
+        //   K2 = high + 1 - size(Y)
+        if (N_ARGS(op1) == 2 && OP(ARG1(op1)) == Z3_OP_CONCAT && low == 0 &&
+            is_zero_const(ARG1(ARG1(op1))) && N_ARGS(ARG1(op1)) == 2 &&
+            OP(ARG2(op1)) == Z3_OP_CONCAT && is_zero_const(ARG1(ARG2(op1))) && 
+            N_ARGS(ARG2(op1)) == 2 && SIZE(ARG2(ARG1(op1))) <= high + 1 &&
+            SIZE(ARG2(ARG2(op1))) <= high + 1) {
+
+            Z3_ast a = ARG2(ARG1(op1));
+            Z3_ast b = ARG2(ARG2(op1));
+
+            if (SIZE(a) < high + 1) {
+                a = Z3_mk_concat(ctx, smt_new_const(0, high + 1 - SIZE(a)), a);
+            }
+            if (SIZE(b) < high + 1) {
+                b = Z3_mk_concat(ctx, smt_new_const(0, high + 1 - SIZE(b)), b);
+            }
+            return get_make_op(OP(op1))(ctx, a, b);
+        }
+
+        // from:
+        //   (X op Y)[high:0])
+        // where:
+        //   - op is in {+, -, *}
+        // to:
+        //   X[high:0] op Y[high:0]
+        if ((OP(op1) == Z3_OP_BADD || OP(op1) == Z3_OP_BSUB || OP(op1) == Z3_OP_BMUL) 
+                && low == 0) {
+
+            Z3_ast a = optimize_z3_query(Z3_mk_extract(ctx, high, 0, ARG1(op1)));
+            Z3_ast b = optimize_z3_query(Z3_mk_extract(ctx, high, 0, ARG2(op1)));
+            return get_make_op(OP(op1))(ctx, a, b);
         }
 
         // from:
@@ -1904,6 +2016,7 @@ Z3_ast optimize_z3_query(Z3_ast e)
                 return ARG3(e);
             }
         }
+
     }
 
     return e;
@@ -2784,6 +2897,8 @@ static uint64_t symbols_count = 0;
 static uint64_t unsat_time    = 0;
 static uint64_t unsat_count   = 0;
 
+static Z3_solver cached_solver = NULL;
+
 static void smt_branch_query(Query* q)
 {
 #if 0
@@ -2846,8 +2961,8 @@ static void smt_branch_query(Query* q)
         if (is_interesting_branch(q->args16.index, q->args16.count,
                                   q->args16.index_inv, q->args16.count_inv)) {
 #endif
-            printf("\nBranch at 0x%lx (id=%lu, bitmap=%u)\n", q->address,
-               GET_QUERY_IDX(q), q->args16.index);
+            printf("\nBranch at 0x%lx (id=%lu, taken=%u)\n", q->address,
+               GET_QUERY_IDX(q), (uint16_t) q->args64);
 #if USE_FUZZY_SOLVER
             Z3_ast deps;
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL,
@@ -2880,13 +2995,29 @@ static void smt_branch_query(Query* q)
                 printf("UNSAT: sum=%lu count=%lu\n", unsat_time, unsat_count);
             }
 #else
-            Z3_solver solver = smt_new_solver();
+            if (cached_solver == NULL) {
+                cached_solver = smt_new_solver();
+            }
+            Z3_solver solver = cached_solver;
+
+            // print_z3_ast(z3_neg_query);
+            // print_z3_original(z3_neg_query);
+
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), solver,
                                           NULL);
-            Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
+            Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query); // Z3_simplify(smt_solver.ctx, z3_neg_query)
             // SAYF("Running a query...\n");
-            smt_query_check(solver, GET_QUERY_IDX(q));
-            smt_del_solver(solver);
+            int is_sat = smt_query_check(solver, GET_QUERY_IDX(q));
+
+            printf(" [INFO] Branch interesting: addr=0x%lx taken=%u sat=%d\n", 
+                q->address, (uint16_t) q->args64, is_sat);
+
+#if 0
+            smt_dump_solver(solver, GET_QUERY_IDX(q));
+#endif
+
+            // smt_del_solver(solver);
+            Z3_solver_reset(smt_solver.ctx, solver);
 #endif
         } else {
             //printf("Branch is not interesting. Skipping it.\n");
@@ -2895,16 +3026,6 @@ static void smt_branch_query(Query* q)
     } else {
         // printf("No real inputs in branch condition. Skipping it.\n");
     }
-
-#if 0
-    solver = smt_new_solver();
-    for (size_t i = 0; i < GET_QUERY_IDX(q); i++) {
-        Z3_solver_assert(smt_solver.ctx, solver, z3_ast_exprs[i]);
-    }
-    Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
-    smt_dump_solver(solver, GET_QUERY_IDX(q));
-    smt_del_solver(solver);
-#endif
 }
 
 static int get_eval_uint64(Z3_model m, Z3_ast e, uintptr_t* value)
@@ -3333,9 +3454,11 @@ static void smt_slice_query(Query* q)
     GHashTable* conc_addrs = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs, (gpointer)addr_conc);
     int r = 0;
+#if 0
     if (inputs) {
         r = fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
     }
+#endif
 #if 0
     GHashTable* conc_addrs2 = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs2, (gpointer)addr_conc);
@@ -3345,6 +3468,7 @@ static void smt_slice_query(Query* q)
 #endif
 
     if (!r) {
+        // print_z3_ast(z3_addr);
         printf("Slice access has a single value. Concretizing it.\n");
         concretized_sloads[scale_sload_index(s_load_id)] = 1;
         // printf("Setting sloads_exprs for %lu (%lu)\n", s_load_id,
@@ -3379,6 +3503,19 @@ static void smt_slice_query(Query* q)
             printf("Index=%lu size=%u\n", i, symbols_sizes[i]);
         }
 #endif
+
+        // concretize the address
+        if (inputs) {
+            Z3_ast c = Z3_mk_eq(smt_solver.ctx, z3_addr,
+                                smt_new_const(addr_conc, sizeof(uintptr_t) * 8));
+
+            z3_ast_exprs[GET_QUERY_IDX(q)] = c;
+            update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
+        }
+#if USE_FUZZY_SOLVER
+        z3fuzz_notify_constraint(&smt_solver.fuzzy_ctx, c);
+#endif
+
         g_hash_table_destroy(conc_addrs);
         return;
     }
@@ -3545,15 +3682,15 @@ static void smt_expr_query(Query* q, OPKIND opkind)
         // printf("No real inputs. Skipping it.\n");
         return;
     }
-
+#if 0
     if (inputs_are_concretized) {
         // printf("Address is likely to be already concretized. Skipping
         // it.\n");
         return;
     }
-
+#endif
     uintptr_t solution = (uintptr_t)q->query->op2;
-    if (is_interesting_memory(solution)) {
+    if (is_interesting_memory(solution) && 0) {
 
         printf("\nQuery %s\n", opkind_to_str(opkind));
 
@@ -3711,6 +3848,24 @@ static inline void load_initial_testcase()
     symbols_count = testcase.size;
 }
 
+static void run_query_from_file(const char * path)
+{
+    Z3_ast_vector ast_vector = Z3_parse_smtlib2_file(smt_solver.ctx, path, 0, NULL, NULL, 0, NULL, NULL);
+    Z3_ast_vector_inc_ref(smt_solver.ctx, ast_vector);
+    unsigned num_asts = Z3_ast_vector_size(smt_solver.ctx, ast_vector);
+
+    Z3_solver solver = smt_new_solver();
+    for (size_t i = 0; i < num_asts; i++) {
+        Z3_solver_assert(smt_solver.ctx, solver, 
+            Z3_ast_vector_get(smt_solver.ctx, ast_vector, i));
+    }
+    smt_query_check(solver, 0);
+    smt_del_solver(solver);
+
+    Z3_ast_vector_dec_ref(smt_solver.ctx, ast_vector);
+    exit(0);
+}
+
 int main(int argc, char* argv[])
 {
     parse_opts(argc, argv, &config);
@@ -3721,6 +3876,10 @@ int main(int argc, char* argv[])
     signal(SIGTERM, sig_handler);
 
     smt_init();
+
+#if 0
+    run_query_from_file("/home/ercoppa/Desktop/code/fuzzolic/test_case_31.query");
+#endif
 
 #if 0
     printf("Expression size: %lu\n", sizeof(Expr));
@@ -3826,7 +3985,7 @@ int main(int argc, char* argv[])
             smt_query(&next_query[0]);
             next_query++;
 #if 0
-            if (GET_QUERY_IDX(next_query) > 4000) {
+            if (GET_QUERY_IDX(next_query) > 5) {
                 printf("Exiting...\n");
                 save_bitmaps();
                 exit(0);
