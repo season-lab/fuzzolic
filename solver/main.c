@@ -3922,6 +3922,31 @@ static void smt_expr_query(Query* q, OPKIND opkind)
 #endif
     }
 }
+static void smt_mem_concr_query(Query* q, OPKIND opkind)
+{
+#if 0
+    SAYF("\nTranslating %s %lu to Z3...\n", opkind_to_str(opkind),
+         GET_QUERY_IDX(q));
+#endif
+    GHashTable* inputs = NULL;
+    Z3_ast memory_expr = smt_query_to_z3_wrapper(q->query->op1, 0, 0, &inputs);
+    // SAYF("DONE: Translating %s to Z3\n", opkind_to_str(opkind));
+
+    if (!inputs) {
+        printf("No inputs in %s query\n", opkind_to_str(opkind));
+        ABORT();
+    }
+
+    uintptr_t conc_val = CONST(q->query->op2);
+    Z3_ast c = Z3_mk_eq(smt_solver.ctx, memory_expr,
+                            smt_new_const(conc_val, SIZE(memory_expr)));
+
+    z3_ast_exprs[GET_QUERY_IDX(q)] = c;
+    update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
+#if USE_FUZZY_SOLVER
+    z3fuzz_notify_constraint(&smt_solver.fuzzy_ctx, c);
+#endif
+}
 
 static void smt_query(Query* q)
 {
@@ -3949,6 +3974,10 @@ static void smt_query(Query* q)
         case SYMBOLIC_STORE:
             // printf("\nSymbolic LOAD access\n");
             smt_expr_query(q, q->query->opkind);
+            break;
+        case MEMORY_CONCRETIZATION:
+            // printf("\nMEMORY CONCRETIZATION\n");
+            smt_mem_concr_query(q, q->query->opkind);
             break;
         default:
             // printf("\nBranch at 0x%lx\n", q->address);
