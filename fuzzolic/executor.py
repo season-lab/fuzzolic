@@ -69,16 +69,18 @@ class Executor(object):
     def __load_config(self):
         config = {}
         if not os.path.exists(self.binary + '.fuzzolic'):
-            sys.exit('Configuration file for %s is missing' % self.binary)
-        with open(self.binary + '.fuzzolic', 'r') as cfgfile:
-            for line in cfgfile:
-                line = line.rstrip('\n').strip()
-                if line.startswith('#') or '=' not in line:
-                    continue
-                pivot = line.index('=')
-                key = line[:pivot]
-                value = line[pivot + 1:]
-                config[key] = value
+            print('Configuration file for %s is missing. Using default configuration.' % self.binary)
+            config['SYMBOLIC_INJECT_INPUT_MODE'] = "FROM_FILE"
+        else:
+            with open(self.binary + '.fuzzolic', 'r') as cfgfile:
+                for line in cfgfile:
+                    line = line.rstrip('\n').strip()
+                    if line.startswith('#') or '=' not in line:
+                        continue
+                    pivot = line.index('=')
+                    key = line[:pivot]
+                    value = line[pivot + 1:]
+                    config[key] = value
         self.config = config
 
     def __get_root_dir(self):
@@ -209,9 +211,9 @@ class Executor(object):
 
         if self.debug != 'gdb':
             p_tracer_args += ['-symbolic']
-            if self.debug == 'trace': # or self.debug == 'no_solver':
+            if self.debug == 'trace':# or self.debug == 'no_solver':
                 p_tracer_args += ['-d']
-                p_tracer_args += ['in_asm,op_opt']  # 'in_asm,op_opt,out_asm'
+                p_tracer_args += ['in_asm,op_opt,out_asm']  # 'in_asm,op_opt,out_asm'
 
         args = self.binary_args
         if not self.testcase_from_stdin:
@@ -244,7 +246,7 @@ class Executor(object):
                     p_tracer.stdin.write(f.read())
                     p_tracer.stdin.close()
         else:
-            gdb_cmd = 'run -symbolic ' + self.binary + ' ' + ' '.join(args)
+            gdb_cmd = 'run -d in_asm,op,op_opt,out_asm -symbolic ' + self.binary + ' ' + ' '.join(args)
             if self.testcase_from_stdin:
                 gdb_cmd += ' < ' + testcase
             gdb_cmd += "\n"

@@ -50,9 +50,9 @@ static inline Z3_ast eflags_c_adc(Z3_context ctx, Expr* query, size_t width,
         printf("EFLAGS_C_ADCQ: symbolic src3\n");
         print_expr(query->op3);
 #endif
-        Z3_ast src3 =
-            smt_query_to_z3(query->op3, query->op3_is_const, width, &op3_inputs);
-        *inputs = merge_inputs(*inputs, op3_inputs);
+        Z3_ast src3 = smt_query_to_z3(query->op3, query->op3_is_const, width,
+                                      &op3_inputs);
+        *inputs     = merge_inputs(*inputs, op3_inputs);
         // src3 is a boolean, no need to cast it
 #if VERBOSE
         printf("EFLAGS_C_ADCQ: symbolic src3 2\n");
@@ -142,7 +142,7 @@ static inline Z3_ast eflags_c_binary(Z3_context ctx, Expr* query, size_t width,
     }
 
 #if VERBOSE
-    printf("EFLAGS_C_ADD\n");
+    printf("EFLAGS_C_OP\n");
     smt_print_ast_sort(dst);
     smt_print_ast_sort(src1);
 #endif
@@ -177,6 +177,8 @@ static inline Z3_ast eflags_c_binary(Z3_context ctx, Expr* query, size_t width,
         default:
             ABORT("Unknown i386 eflags_c_binary opkind: %u", query->opkind);
     }
+
+    r = smt_to_bv(r);
 
     Z3_ast zero = smt_new_const(0, (sizeof(uintptr_t) - width) * 8);
     r           = Z3_mk_concat(ctx, zero, r);
@@ -262,6 +264,10 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
     GHashTable* op1_inputs = NULL;
     GHashTable* op2_inputs = NULL;
 
+#if VERBOSE
+    printf("BEFORE: %s\n", opkind_to_str(query->opkind));
+#endif
+
     Z3_ast dst =
         smt_query_to_z3(query->op1, query->op1_is_const, width, &op1_inputs);
     Z3_ast src1 =
@@ -276,7 +282,7 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
     }
 
 #if VERBOSE
-    printf("%s\n", opkind_to_str(opkind));
+    printf("%s\n", opkind_to_str(query->opkind));
     smt_print_ast_sort(dst);
     smt_print_ast_sort(src1);
 #endif
@@ -442,7 +448,7 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
             sf = lshift(ctx, dst, 8 - (8 * width), width);
             sf = Z3_mk_bvand(ctx, sf, smt_new_const(CC_S, width * 8));
             // of = cf * CC_O;
-            zf = Z3_mk_ite(ctx, cf, smt_new_const(CC_O, width * 8), zero);
+            of = Z3_mk_ite(ctx, cf, smt_new_const(CC_O, width * 8), zero);
             break;
         case EFLAGS_ALL_BMILG:
             // cf = (src1 == 0);
@@ -502,6 +508,10 @@ static inline Z3_ast eflags_all_binary(Z3_context ctx, Expr* query,
                 break;
             case CC_O:
                 r          = of;
+                ea->result = r;
+                break;
+            case (CC_C | CC_Z):
+                r          = Z3_mk_bvor(ctx, zf, cf);
                 ea->result = r;
                 break;
             default:
@@ -564,7 +574,7 @@ static inline Z3_ast eflags_all_ternary(Z3_context ctx, Expr* query,
     }
 
 #if VERBOSE
-    printf("%s\n", opkind_to_str(opkind));
+    printf("%s\n", opkind_to_str(query->opkind));
     smt_print_ast_sort(dst);
     smt_print_ast_sort(src1);
     smt_print_ast_sort(src3);
@@ -776,24 +786,22 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
 
     assert(!is_const && "is_const is true in a i386 query");
 
-    Z3_ast   r = NULL;
-    Z3_ast op1 = NULL;
-    Z3_ast op2 = NULL;
+    Z3_ast      r          = NULL;
+    Z3_ast      op1        = NULL;
+    Z3_ast      op2        = NULL;
     GHashTable* op1_inputs = NULL;
     GHashTable* op2_inputs = NULL;
     switch (query->opkind) {
 
-            // case RCL:
-
-        case CMP_EQ:;
+        case CMP_EQ: {
             size_t slice = (uintptr_t)query->op3;
             if (slice > sizeof(uintptr_t))
                 printf("CMPQ slice=%ld\n", slice);
             assert(slice <= sizeof(uintptr_t));
-            op1 =
-                smt_query_to_z3(query->op1, query->op1_is_const, slice, &op1_inputs);
-            op2 =
-                smt_query_to_z3(query->op2, query->op2_is_const, slice, &op2_inputs);
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, slice,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, slice,
+                                  &op2_inputs);
 #if VERBOSE
             printf("CMP_EQ\n");
             smt_print_ast_sort(op1);
@@ -804,8 +812,10 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             Z3_ast zeros = smt_new_const(0, slice * 8);
             r            = Z3_mk_ite(ctx, r, ones, zeros);
             break;
-        case PMOVMSKB:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0, &op1_inputs);
+        }
+        case PMOVMSKB: {
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
             // printf("PMOVMSKB\n");
             for (size_t i = 0; i < XMM_BITES; i++) {
                 unsigned msb = (8 * (i + 1)) - 1;
@@ -818,10 +828,45 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
                 }
                 // smt_print_ast_sort(r);
             }
-            zeros = smt_new_const(0, 64 - XMM_BITES);
-            r     = Z3_mk_concat(ctx, zeros, r);
+            Z3_ast zeros = smt_new_const(0, 64 - XMM_BITES);
+            r            = Z3_mk_concat(ctx, zeros, r);
             // smt_print_ast_sort(r);
             break;
+        }
+        //
+        case MIN: {
+            size_t slice = (uintptr_t)query->op3;
+            assert(slice <= sizeof(uintptr_t));
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, slice,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, slice,
+                                  &op2_inputs);
+#if VERBOSE
+            printf("MIN\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r = Z3_mk_bvule(ctx, op1, op2);
+            r = Z3_mk_ite(ctx, r, op1, op2);
+            break;
+        }
+        //
+        case MAX: {
+            size_t slice = (uintptr_t)query->op3;
+            assert(slice <= sizeof(uintptr_t));
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, slice,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, slice,
+                                  &op2_inputs);
+#if VERBOSE
+            printf("MAX\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r = Z3_mk_bvuge(ctx, op1, op2);
+            r = Z3_mk_ite(ctx, r, op1, op2);
+            break;
+        }
         //
         case EFLAGS_ALL_ADD:
         case EFLAGS_ALL_SUB:
@@ -832,7 +877,8 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
         case EFLAGS_ALL_SHL:
         case EFLAGS_ALL_SAR:
         case EFLAGS_ALL_BMILG:
-            r = eflags_all_binary(ctx, query, (uintptr_t)query->op3, &op1_inputs);
+            r = eflags_all_binary(ctx, query, (uintptr_t)query->op3,
+                                  &op1_inputs);
             break;
         case EFLAGS_ALL_ADCB:
         case EFLAGS_ALL_ADCW:
@@ -842,7 +888,8 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
         case EFLAGS_ALL_SBBW:
         case EFLAGS_ALL_SBBL:
         case EFLAGS_ALL_SBBQ:
-            r = eflags_all_ternary(ctx, query, (uintptr_t)query->op3, &op1_inputs);
+            r = eflags_all_ternary(ctx, query, (uintptr_t)query->op3,
+                                   &op1_inputs);
             break;
         case EFLAGS_ALL_ADCX:
         case EFLAGS_ALL_ADOX:
@@ -889,9 +936,9 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             ABORT("Unknown expr i386 opkind: %u", query->opkind);
     }
 
-    ce = malloc(sizeof(CachedExpr));
-    ce->expr = r;
-    *inputs = merge_inputs(op1_inputs, op2_inputs);
+    ce         = malloc(sizeof(CachedExpr));
+    ce->expr   = r;
+    *inputs    = merge_inputs(op1_inputs, op2_inputs);
     ce->inputs = *inputs;
     g_hash_table_insert(z3_expr_cache, (gpointer)query, (gpointer)ce);
     return r;
