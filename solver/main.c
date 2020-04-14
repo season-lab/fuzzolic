@@ -2379,7 +2379,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             } else {
                 op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
                                       &op2_inputs);
-                assert(query->op3 == 0);
+                smt_bv_resize(&op1, &op2, CONST(query->op3));
 #if VERBOSE
                 printf("AND\n");
                 smt_print_ast_sort(op1);
@@ -2965,6 +2965,21 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             }
             break;
         }
+        //
+        case NAND: {
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
+            smt_bv_resize(&op1, &op2, CONST(query->op3));
+#if VERBOSE
+            printf("NAND\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r = Z3_mk_bvnand(smt_solver.ctx, op1, op2);
+            break;
+        }
         // x86 specific
         case RCL:
         case CMP_EQ:
@@ -3115,7 +3130,7 @@ static void smt_branch_query(Query* q)
 #endif
     if (has_real_inputs) {
 #if BRANCH_COVERAGE == QSYM
-        if (1 && is_interesting_branch(q->address, q->args8.arg0)) {
+        if (is_interesting_branch(q->address, q->args8.arg0)) {
 #elif BRANCH_COVERAGE == AFL
         if (is_interesting_branch(q->address, q->args64)) {
 #elif BRANCH_COVERAGE == FUZZOLIC
@@ -3170,7 +3185,7 @@ static void smt_branch_query(Query* q)
                 smt_solver.ctx, solver,
                 z3_neg_query); // Z3_simplify(smt_solver.ctx, z3_neg_query)
             // SAYF("Running a query...\n");
-#if 0
+#if 1
             int is_sat = smt_query_check(solver, GET_QUERY_IDX(q));
 
             printf(" [INFO] Branch interesting: addr=0x%lx taken=%u sat=%d\n", 
