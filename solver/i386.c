@@ -798,18 +798,24 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             if (slice > sizeof(uintptr_t))
                 printf("CMPQ slice=%ld\n", slice);
             assert(slice <= sizeof(uintptr_t));
+            Expr* old_op1 = query->op1;
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, slice,
                                   &op1_inputs);
+            assert(old_op1 == query->op1);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, slice,
                                   &op2_inputs);
+            assert(old_op1 == query->op1);
 #if VERBOSE
             printf("CMP_EQ\n");
             smt_print_ast_sort(op1);
             smt_print_ast_sort(op2);
+            // if (op1) print_z3_ast(op1);
+            // if (op2) print_z3_ast(op2);
 #endif
             r            = Z3_mk_eq(ctx, op1, op2);
-            Z3_ast ones  = smt_new_const((1 << (8 * slice)) - 1, slice * 8);
+            Z3_ast ones  = smt_new_const(FF_MASK(slice * 8), slice * 8);
             Z3_ast zeros = smt_new_const(0, slice * 8);
+            r            = optimize_z3_query(r);
             r            = Z3_mk_ite(ctx, r, ones, zeros);
             break;
         }

@@ -984,8 +984,9 @@ Z3_ast smt_to_bv_n(Z3_ast e, size_t width) // cast boolean to a bitvector
 {
     if (Z3_get_sort_kind(smt_solver.ctx, Z3_get_sort(smt_solver.ctx, e)) ==
         Z3_BOOL_SORT) {
-        return Z3_mk_ite(smt_solver.ctx, e, smt_new_const(1, width * 8),
+        e = Z3_mk_ite(smt_solver.ctx, e, smt_new_const(1, width * 8),
                          smt_new_const(0, width * 8));
+        return optimize_z3_query(e);
     } else {
         return e;
     }
@@ -1006,6 +1007,8 @@ Z3_ast smt_to_bv_n(Z3_ast e, size_t width) // cast boolean to a bitvector
 #define OP(e) get_op(APP(e))
 #define SIZE(e)                                                                \
     Z3_get_bv_sort_size(smt_solver.ctx, Z3_get_sort(smt_solver.ctx, e))
+#define IS_BOOL(e) \
+    (Z3_get_sort_kind(smt_solver.ctx, Z3_get_sort(smt_solver.ctx, e)) == Z3_BOOL_SORT)
 
 static inline uint8_t is_zero_const(Z3_ast e)
 {
@@ -1132,6 +1135,9 @@ void smt_bv_resize(Z3_ast* a, Z3_ast* b, ssize_t bytes_size)
                               *b);
         }
     }
+
+    *a = optimize_z3_query(*a);
+    *b = optimize_z3_query(*b);
 }
 #undef VERBOSE
 
@@ -1352,8 +1358,6 @@ static inline uint8_t get_shifted_bytes(Z3_ast e, Z3_ast* bytes, int n)
     return 0;
 }
 
-#define FF_MASK(bits) ((2LU << ((bits)-1)) - 1LU)
-
 Z3_ast optimize_z3_query(Z3_ast e)
 {
 #if 0
@@ -1370,6 +1374,31 @@ Z3_ast optimize_z3_query(Z3_ast e)
 
     Z3_decl_kind decl_kind    = OP(e);
     unsigned     num_operands = N_ARGS(e);
+
+    uint64_t value, value2;
+
+    // constant folding
+    if (OP(e) != Z3_OP_UNINTERPRETED) {
+        uint8_t is_constant = 1;
+        for (size_t i = 0; i < num_operands; i++) {
+            Z3_ast child = Z3_get_app_arg(ctx, APP(e), i);
+            if (!is_const(child, &value)) {
+                is_constant = 0;
+                break;
+            }
+        }
+        if (is_constant) {
+            //printf("COSTANT PROPAGATION: ");
+            //print_z3_ast(e);
+            value = Z3_custom_eval(ctx, e, NULL, NULL, 0);
+            //printf("COSTANT PROPAGATION DONE: %lu\n", value);
+            if (!IS_BOOL(e)) {
+                return smt_new_const(value, SIZE(e));
+            } else {
+                return value ? Z3_mk_true(ctx) : Z3_mk_false(ctx);
+            }
+        }
+    }
 
     if (decl_kind == Z3_OP_NOT) {
         Z3_ast op1          = ARG1(e);
@@ -1401,8 +1430,6 @@ Z3_ast optimize_z3_query(Z3_ast e)
             return e;
         }
     }
-
-    uint64_t value;
 
     // if (decl_kind == Z3_OP_EXTRACT)
     // printf("\ndecl_kind: %u %u\n", decl_kind, Z3_OP_EQ);
@@ -1695,7 +1722,7 @@ Z3_ast optimize_z3_query(Z3_ast e)
             Z3_ast c1 = smt_new_const(value, high + 1);
             Z3_ast c2 = smt_new_const(value2, high + 1);
             e         = Z3_mk_ite(ctx, ARG1(op1), c1, c2);
-            return e;
+            return optimize_z3_query(e);
         }
 
         // from:
@@ -1893,6 +1920,16 @@ Z3_ast optimize_z3_query(Z3_ast e)
             return optimize_z3_query(e);
         }
 
+        if (low == 0 && high == 7 && OP(op1) == Z3_OP_BOR
+                && N_ARGS(op1) == 2 
+                && OP(ARG1(op1)) == Z3_OP_BAND
+                && is_const(ARG2(ARG1(op1)), &value)
+                && value == 0xffffffffffffff00) {
+
+            e = Z3_mk_extract(ctx, 7, 0, ARG2(op1));
+            return optimize_z3_query(e);
+        }
+
     } else if (decl_kind == Z3_OP_BOR) {
         assert(num_operands == 2);
 
@@ -1960,10 +1997,16 @@ Z3_ast optimize_z3_query(Z3_ast e)
             assert(SIZE(e) == orig_size);
             return optimize_z3_query(e);
         }
+
     } else if (decl_kind == Z3_OP_CONCAT) {
 
         Z3_ast op1 = ARG1(e);
         Z3_ast op2 = ARG2(e);
+
+        if (is_const(op1, &value) && is_const(op2, &value2)) {
+            printf("HERE");
+            ABORT();
+        }
 
         // from:
         //   (Y .. ((0#M .. X)[high:0]))
@@ -1972,7 +2015,7 @@ Z3_ast optimize_z3_query(Z3_ast e)
         // to:
         //   Y .. X
         if (OP(op2) == Z3_OP_EXTRACT && OP(ARG1(op2)) == Z3_OP_CONCAT &&
-            is_zero_const(ARG1(ARG1(op2)))) {
+            is_zero_const(ARG1(ARG1(op2))) && N_ARGS(2) == 2) {
 
             int high = PARAM1(op2);
             int low  = PARAM2(op2);
@@ -1993,7 +2036,7 @@ Z3_ast optimize_z3_query(Z3_ast e)
         }
 
         if (OP(op2) == Z3_OP_CONCAT && is_zero_const(op1) &&
-            is_zero_const(ARG1(op2))) {
+            is_zero_const(ARG1(op2)) && N_ARGS(2) == 2) {
 
             op1 = smt_new_const(0, SIZE(op1) + SIZE(ARG1(op2)));
             e   = Z3_mk_concat(ctx, op1, ARG2(op2));
@@ -2001,6 +2044,10 @@ Z3_ast optimize_z3_query(Z3_ast e)
         }
 
     } else if (decl_kind == Z3_OP_BAND) {
+
+        if (N_ARGS(e) != 2) {
+            return e;
+        }
 
         Z3_ast op1 = ARG1(e);
         Z3_ast op2 = ARG2(e);
@@ -2031,8 +2078,9 @@ Z3_ast optimize_z3_query(Z3_ast e)
             Z3_ast c1 = smt_new_const(value, SIZE(e));
             Z3_ast c2 = smt_new_const(value2, SIZE(e));
             e         = Z3_mk_ite(ctx, ARG1(op1), c1, c2);
-            return e;
+            return optimize_z3_query(e);
         }
+
     } else if (decl_kind == Z3_OP_ITE) {
 
         if (is_const(ARG1(e), &value)) {
@@ -2041,6 +2089,14 @@ Z3_ast optimize_z3_query(Z3_ast e)
             } else {
                 return ARG3(e);
             }
+        }
+
+        if (OP(ARG1(e)) == Z3_OP_TRUE) {
+            return ARG2(e);
+        }
+
+        if (OP(ARG1(e)) == Z3_OP_FALSE) {
+            return ARG3(e);
         }
     }
 
@@ -2203,7 +2259,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             }
             break;
         case IS_CONST:
-            r = smt_new_const(CONST(query->op1), 64);
+            r = smt_new_const(CONST(query->op1), 8);
             break;
         //
         case NOT:
@@ -2374,7 +2430,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                 assert(Z3_get_sort_kind(smt_solver.ctx,
                                         Z3_get_sort(smt_solver.ctx, op1)) !=
                        Z3_BOOL_SORT);
-                printf("EFLAGS: optimized flag extraction\n");
+                // printf("EFLAGS: optimized flag extraction\n");
                 r = ea->result;
             } else {
                 op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
@@ -2448,7 +2504,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                                   &op1_inputs);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
                                   &op2_inputs);
-            assert(query->op3 == 0);
+            smt_bv_resize(&op1, &op2, (ssize_t)query->op3);
 #if VERBOSE
             printf("SHR\n");
             smt_print_ast_sort(op1);
@@ -2675,13 +2731,25 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
 #endif
             r = Z3_mk_concat(smt_solver.ctx, op1, op2);
             break;
-        case CONCAT8:
-            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+        case CONCAT8R:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 1,
                                   &op1_inputs);
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
                                   &op2_inputs);
 #if VERBOSE
-            printf("CONCAT8\n");
+            printf("CONCAT8R\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            r = Z3_mk_concat(smt_solver.ctx, op1, op2);
+            break;
+        case CONCAT8L:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 1,
+                                  &op2_inputs);
+#if VERBOSE
+            printf("CONCAT8L\n");
             smt_print_ast_sort(op1);
             smt_print_ast_sort(op2);
 #endif
@@ -2868,7 +2936,6 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                 ABORT("Not yet implemented");
             } else {
                 // ToDo
-                print_expr(query);
                 for (size_t i = 0; i < SIZE(op1); i++) {
                     Z3_ast byte =
                         Z3_mk_extract(smt_solver.ctx, SIZE(op1) - 1 - i,
@@ -2894,7 +2961,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                         }
                     }
                 }
-                assert(0);
+                ABORT("Not yet implemented");
             }
             break;
         }
@@ -2932,14 +2999,15 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                         r = Z3_mk_ite(smt_solver.ctx, byte, r,
                                         smt_new_const(k, SIZE(op1)));
                     }
+                    r = optimize_z3_query(r);
                 }
             }
             if (op1 != op2) {
-                r = Z3_mk_ite(smt_solver.ctx,
-                        Z3_mk_eq(smt_solver.ctx, 
+                Z3_ast c = Z3_mk_eq(smt_solver.ctx, 
                                     op1, 
-                                    smt_new_const(0, SIZE(op1))), 
-                                        op2, r);
+                                    smt_new_const(0, SIZE(op1)));
+                c = optimize_z3_query(c);
+                r = Z3_mk_ite(smt_solver.ctx, c, op2, r);
             }
             break;
         }
@@ -3104,7 +3172,7 @@ static void smt_branch_query(Query* q)
     const char* z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
     SAYF("%s", z3_query_str);
 #endif
-#if 0
+#if 1
     print_z3_ast(z3_neg_query);
 #endif
 
@@ -3199,7 +3267,8 @@ static void smt_branch_query(Query* q)
             Z3_solver_reset(smt_solver.ctx, solver);
 #endif
         } else {
-            // printf("Branch is not interesting. Skipping it.\n");
+            printf("Branch (addr=%lx id=%lu) is not interesting. Skipping it.\n", 
+                    q->address, GET_QUERY_IDX(q));
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
         }
     } else {
@@ -3604,14 +3673,14 @@ static void smt_slice_query(Query* q)
     assert(s_load_size > 0);
     uintptr_t s_load_value = CONST(s_load->op3);
 
+    printf("\nSlice access: id=%lu load_id=%lu (%lu) conc_addr=0x%lx size=%lu "
+           "value=0x%lx.\n",  GET_QUERY_IDX(q), s_load_id, scale_sload_index(s_load_id), 
+           addr_conc, s_load_size, s_load_value);
+
     Z3_ast s_expr = smt_query_to_z3_wrapper(s_load, 0, 0, NULL);
 #if 0
     get_inputs_expr(s_expr);
 #endif
-    printf("\nSlice access: id=%lu load_id=%lu (%lu) conc_addr=0x%lx size=%lu "
-           "value=0x%lx.\n",
-           GET_QUERY_IDX(q), s_load_id, scale_sload_index(s_load_id), addr_conc,
-           s_load_size, s_load_value);
 
     GHashTable* inputs  = NULL;
     Z3_ast      z3_addr = smt_query_to_z3_wrapper(addr_expr, 0, 0, &inputs);
@@ -3633,7 +3702,7 @@ static void smt_slice_query(Query* q)
     GHashTable* conc_addrs = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs, (gpointer)addr_conc);
     int r = 0;
-#if 0
+#if 1
     if (inputs) {
         r = fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
     }
@@ -3754,7 +3823,9 @@ static void smt_slice_query(Query* q)
         Z3_ast v1 = smt_new_const(conc_value, s_load_size * 8);
         Z3_ast c  = Z3_mk_eq(smt_solver.ctx, s,
                             smt_new_const(addr, sizeof(uintptr_t) * 8));
+        c = optimize_z3_query(c);
         v         = Z3_mk_ite(smt_solver.ctx, c, v1, v);
+        v = optimize_z3_query(v);
 
         or_args[k++] = Z3_mk_eq(smt_solver.ctx, s,
                                 smt_new_const(addr, sizeof(uintptr_t) * 8));
@@ -3768,6 +3839,8 @@ static void smt_slice_query(Query* q)
     e             = Z3_mk_and(smt_solver.ctx, 3, args);
 
     free(or_args);
+
+    print_z3_ast(e);
 
     // printf("Setting sloads_exprs for %lu\n", scale_sload_index(s_load_id));
 

@@ -43,6 +43,7 @@ void get_inputs_from_expr(Z3_ast e, GHashTable* inputs);
 GHashTable* merge_inputs(GHashTable* a, GHashTable* b);
 void print_z3_ast(Z3_ast e);
 void print_z3_original(Z3_ast e);
+#define FF_MASK(bits) ((2LU << ((bits)-1)) - 1LU)
 
 void            add_expr_annotation(Expr* e, ExprAnnotation* ea);
 ExprAnnotation* get_expr_annotation(Expr* e);
