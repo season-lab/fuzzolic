@@ -9,7 +9,7 @@ import shutil
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 TRACER_BIN = SCRIPT_DIR + "/fuzzolic_coverage_trace_bin"
-
+# TRACER_BIN = SCRIPT_DIR + "/../tracer/x86_64-linux-user/qemu-x86_64"
 
 def progressBar(value, endvalue, bar_length=20):
 
@@ -84,6 +84,7 @@ if len(testcase_dirs) == 0:
 
 coverage_bitmap, coverage_bitmap_path = tempfile.mkstemp()
 coverage_log, coverage_log_path = tempfile.mkstemp()
+coverage_edges_log, coverage_log_edges_path = tempfile.mkstemp()
 
 # workdir = tempfile.mkdtemp()
 # os.system("touch " + workdir + "/.fuzzolic_workdir")
@@ -91,6 +92,7 @@ coverage_log, coverage_log_path = tempfile.mkstemp()
 env = os.environ.copy()
 env['COVERAGE_TRACER'] = coverage_bitmap_path
 env['COVERAGE_TRACER_LOG'] = coverage_log_path
+env['COVERAGE_TRACER_LOG_EDGES'] = coverage_log_edges_path
 if filter_coverage_lib:
     print("Filtering out coverage from library code")
     env['COVERAGE_TRACER_FILTER_LIB'] = "1"
@@ -142,6 +144,7 @@ for dir in testcase_dirs:
 progressBar(testcase_count, testcase_total, 80)
 
 print("\n\nTotal number of basic blocks: %d" % file_lines_count(coverage_log_path))
+print("Total number of edges: %d" % file_lines_count(coverage_log_edges_path))
 print("Total number of processed testcases: %d\n" % testcase_count)
 
 # if os.path.exists(workdir + '/.fuzzolic_workdir'):
@@ -149,4 +152,5 @@ print("Total number of processed testcases: %d\n" % testcase_count)
 # print(coverage_bitmap_path)
 os.unlink(coverage_bitmap_path)
 os.unlink(coverage_log_path)
+os.unlink(coverage_log_edges_path)
 

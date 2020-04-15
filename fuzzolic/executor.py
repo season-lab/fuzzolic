@@ -152,6 +152,8 @@ class Executor(object):
         p_solver_log_name = run_dir + '/solver.log'
         p_solver_log = open(p_solver_log_name, 'w')
 
+        gdb_solver = False
+
         # launch solver
         if self.debug != 'no_solver' and self.debug != 'coverage':
             p_solver_args = []
@@ -166,7 +168,7 @@ class Executor(object):
 
             p_solver_args += ['-c', self.__get_root_dir() + '/context_bitmap']
             p_solver_args += ['-m', self.__get_root_dir() + '/memory_bitmap']
-            if True:
+            if not gdb_solver:
                 p_solver = subprocess.Popen(p_solver_args,
                                         stdout=p_solver_log if not self.debug else None,
                                         stderr=subprocess.STDOUT if not self.debug else None,
@@ -195,7 +197,8 @@ class Executor(object):
             # wait a few moments to let the solver setup setup shared memories
             time.sleep(SOLVER_WAIT_TIME_AT_STARTUP)
 
-        # time.sleep(10)
+        if gdb_solver:
+            time.sleep(10)
 
         # launch tracer
         p_tracer_log_name = run_dir + '/tracer.log'
@@ -264,7 +267,7 @@ class Executor(object):
         # print("Tracer completed")
         p_tracer_log.close()
 
-        if False:
+        if gdb_solver:
             for line in sys.stdin:
                 p_solver.stdin.write(line.encode())
                 if 'quit' in line or line.startswith('q'):

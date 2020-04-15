@@ -2003,9 +2003,18 @@ Z3_ast optimize_z3_query(Z3_ast e)
         Z3_ast op1 = ARG1(e);
         Z3_ast op2 = ARG2(e);
 
-        if (is_const(op1, &value) && is_const(op2, &value2)) {
-            printf("HERE");
-            ABORT();
+        if (is_const(op1, &value) && num_operands == 2
+                && OP(op2) == Z3_OP_CONCAT 
+                && N_ARGS(op2) == 2
+                && is_const(ARG1(op2), &value2)) {
+
+            value   = value << SIZE(op2);
+            value2  = value2 << SIZE(ARG2(op2));
+            value = value | value2;
+            e = Z3_mk_concat(ctx,
+                    smt_new_const(value, SIZE(op1) + SIZE(ARG1(op2))),
+                    ARG2(op2));
+            return optimize_z3_query(e);
         }
 
         // from:
@@ -2015,7 +2024,7 @@ Z3_ast optimize_z3_query(Z3_ast e)
         // to:
         //   Y .. X
         if (OP(op2) == Z3_OP_EXTRACT && OP(ARG1(op2)) == Z3_OP_CONCAT &&
-            is_zero_const(ARG1(ARG1(op2))) && N_ARGS(2) == 2) {
+            is_zero_const(ARG1(ARG1(op2))) && N_ARGS(e) == 2) {
 
             int high = PARAM1(op2);
             int low  = PARAM2(op2);
@@ -2036,7 +2045,7 @@ Z3_ast optimize_z3_query(Z3_ast e)
         }
 
         if (OP(op2) == Z3_OP_CONCAT && is_zero_const(op1) &&
-            is_zero_const(ARG1(op2)) && N_ARGS(2) == 2) {
+            is_zero_const(ARG1(op2)) && N_ARGS(e) == 2) {
 
             op1 = smt_new_const(0, SIZE(op1) + SIZE(ARG1(op2)));
             e   = Z3_mk_concat(ctx, op1, ARG2(op2));
@@ -3172,7 +3181,7 @@ static void smt_branch_query(Query* q)
     const char* z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
     SAYF("%s", z3_query_str);
 #endif
-#if 1
+#if 0
     print_z3_ast(z3_neg_query);
 #endif
 
@@ -3256,8 +3265,17 @@ static void smt_branch_query(Query* q)
 #if 1
             int is_sat = smt_query_check(solver, GET_QUERY_IDX(q));
 
+            if (!is_sat) {
+                Z3_solver_reset(smt_solver.ctx, solver);
+                Z3_solver_assert(
+                    smt_solver.ctx, solver,
+                    z3_neg_query);
+                smt_query_check(solver, GET_QUERY_IDX(q));
+            }
+
             printf(" [INFO] Branch interesting: addr=0x%lx taken=%u sat=%d\n", 
                 q->address, (uint16_t) q->args64, is_sat);
+
 #endif
 #if 0
             smt_dump_solver(solver, GET_QUERY_IDX(q));
@@ -3267,8 +3285,10 @@ static void smt_branch_query(Query* q)
             Z3_solver_reset(smt_solver.ctx, solver);
 #endif
         } else {
+#if 0
             printf("Branch (addr=%lx id=%lu) is not interesting. Skipping it.\n", 
                     q->address, GET_QUERY_IDX(q));
+#endif
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
         }
     } else {
@@ -3840,7 +3860,7 @@ static void smt_slice_query(Query* q)
 
     free(or_args);
 
-    print_z3_ast(e);
+    // print_z3_ast(e);
 
     // printf("Setting sloads_exprs for %lu\n", scale_sload_index(s_load_id));
 

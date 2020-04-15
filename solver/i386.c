@@ -831,6 +831,7 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
                     r = bit;
                 } else {
                     r = Z3_mk_concat(ctx, bit, r);
+                    r = optimize_z3_query(r);
                 }
                 // smt_print_ast_sort(r);
             }
