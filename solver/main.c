@@ -16,6 +16,9 @@
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
 #define USE_FUZZY_SOLVER             0
+#define OPTIMISTIC_SOLVING           0
+#define MEMORY_SLICE_REASONING       1
+#define ADDRESS_REASONING            0
 
 static int expr_pool_shm_id = -1;
 Expr*      pool;
@@ -3264,7 +3267,7 @@ static void smt_branch_query(Query* q)
             // SAYF("Running a query...\n");
 #if 1
             int is_sat = smt_query_check(solver, GET_QUERY_IDX(q));
-
+#if OPTIMISTIC_SOLVING
             if (!is_sat) {
                 Z3_solver_reset(smt_solver.ctx, solver);
                 Z3_solver_assert(
@@ -3272,7 +3275,7 @@ static void smt_branch_query(Query* q)
                     z3_neg_query);
                 smt_query_check(solver, GET_QUERY_IDX(q));
             }
-
+#endif
             printf(" [INFO] Branch interesting: addr=0x%lx taken=%u sat=%d\n", 
                 q->address, (uint16_t) q->args64, is_sat);
 
@@ -3722,7 +3725,7 @@ static void smt_slice_query(Query* q)
     GHashTable* conc_addrs = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs, (gpointer)addr_conc);
     int r = 0;
-#if 1
+#if MEMORY_SLICE_REASONING
     if (inputs) {
         r = fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
     }
@@ -3963,7 +3966,8 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     }
 #endif
     uintptr_t solution = (uintptr_t)q->query->op2;
-    if (is_interesting_memory(solution) && 0) {
+#if ADDRESS_REASONING
+    if (is_interesting_memory(solution)) {
 
         printf("\nQuery %s\n", opkind_to_str(opkind));
 
@@ -4016,6 +4020,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     } else {
         // printf("Address is not interesting. Skipping it.\n");
     }
+#endif
 
     if (opkind == SYMBOLIC_LOAD || opkind == SYMBOLIC_STORE) {
         Z3_ast c = Z3_mk_eq(smt_solver.ctx, z3_query,
