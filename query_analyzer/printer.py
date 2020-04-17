@@ -712,7 +712,9 @@ def parse_condition(e):
     args = []
 
     op_map = {'ULE': '<=u', 'UGT': '>u', 'UDiv': '/u',
-              'bvudiv_i': '/u_i', 'UGE': '>=u', '>=': '>=', '<=': '<=', 'ULT':'<u', '>':'>', '<':'<'}
+              'bvudiv_i': '/u_i', 'UGE': '>=u', '>=': '>=',
+              '<=': '<=', 'ULT':'<u', '>':'>', '<':'<',
+              'SRem': '%', 'URem': '%u'}
 
     if opkind == 'bv':
         val = int(e.params()[0])
@@ -1255,7 +1257,7 @@ else:
             print("Condition c%s detected as add overflow\n" % x)
     print("\n#######\n")
 
-if True:
+if False:
     solver = z3.Solver()
     prev = query.children()[:-1]
     assert len(query.children()) - 1 == len(prev)
@@ -1268,7 +1270,7 @@ if True:
     r = solver.check()
     end = time.time()
     print("prev branches is %s - time %s\n" % (r, str(end - start)))
-if True:
+if False:
     solver = z3.Solver()
     if not remove_condition(C[-1]):
         solver.add(query.children()[-1])
