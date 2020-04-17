@@ -712,6 +712,7 @@ def parse_condition(e):
     args = []
 
     op_map = {'ULE': '<=u', 'UGT': '>u', 'UDiv': '/u',
+              '/': '/',
               'bvudiv_i': '/u_i', 'UGE': '>=u', '>=': '>=',
               '<=': '<=', 'ULT':'<u', '>':'>', '<':'<',
               'SRem': '%', 'URem': '%u'}
