@@ -111,10 +111,11 @@ class TestcaseMinimizer(object):
         this_bitmap = read_bitmap_file(self.temp_file)
         interesting = self.is_interesting_testcase(this_bitmap, proc.returncode)
 
-        if interesting:
-            print("[+] Keeping %s" % os.path.basename(testcase))
-        else:
-            print("[-] Discarding %s" % os.path.basename(testcase))
+        if not no_msg:
+            if interesting:
+                print("[+] Keeping %s" % os.path.basename(testcase))
+            else:
+                print("[-] Discarding %s" % os.path.basename(testcase))
 
         return interesting
 
