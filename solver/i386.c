@@ -165,6 +165,7 @@ static inline Z3_ast eflags_c_binary(Z3_context ctx, Expr* query, size_t width,
             // (src1 >> (DATA_BITS - 1)) & CC_C
             r = Z3_mk_bvashr(ctx, src1,
                              smt_new_const((8 * width) - 1, 8 * width));
+            r = optimize_z3_query(r);
             r = Z3_mk_bvand(ctx, src1, smt_new_const(CC_C, 8 * width));
             break;
         case EFLAGS_C_BMILG:;

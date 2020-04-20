@@ -715,7 +715,8 @@ def parse_condition(e):
               '/': '/',
               'bvudiv_i': '/u_i', 'UGE': '>=u', '>=': '>=',
               '<=': '<=', 'ULT':'<u', '>':'>', '<':'<',
-              'SRem': '%', 'URem': '%u'}
+              'SRem': '%', 'URem': '%u', 'bvsdiv_i': '/i',
+              'bvsrem_i': '%i'}
 
     if opkind == 'bv':
         val = int(e.params()[0])
@@ -1299,7 +1300,7 @@ if True:
     end = time.time()
     print("query is %s - time %s\n" % (r, str(end - start)))
 
-    if str(r) == 'unsat':
+    if False and str(r) == 'unsat':
         unsat_core = solver.unsat_core()
         for p in unsat_core:
             idx = str(p).split("p")[1]
