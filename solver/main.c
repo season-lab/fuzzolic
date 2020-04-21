@@ -3964,10 +3964,10 @@ static void smt_branch_query(Query* q)
             smt_dump_solver_to_file(solver, "/home/ercoppa/Desktop/code/fuzzolic/temp.query");
             int is_sat = smt_run_from_file("/home/ercoppa/Desktop/code/fuzzolic/temp.query");
 #endif
-#if 1
+#if 0
             int is_sat = smt_run_from_string(solver, GET_QUERY_IDX(q));
 #endif
-#if 0
+#if 1
             // int is_sat = smt_query_check(solver, GET_QUERY_IDX(q));
 #if OPTIMISTIC_SOLVING
             if (!is_sat) {
