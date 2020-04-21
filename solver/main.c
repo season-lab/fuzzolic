@@ -151,7 +151,11 @@ static void smt_init(void)
     smt_solver.ctx = Z3_mk_context(cfg);
     Z3_set_error_handler(smt_solver.ctx, smt_error_handler);
     Z3_del_config(cfg);
-
+#if 0
+    char ts[32];
+    sprintf(ts, "%u", SOLVER_TIMEOUT_MS);
+    Z3_global_param_set("timeout", ts);
+#endif
     z3_expr_cache = g_hash_table_new(NULL, NULL);
 
 #if USE_FUZZY_SOLVER
@@ -162,14 +166,18 @@ static void smt_init(void)
 
 static inline Z3_solver smt_new_solver()
 {
+#if 1
     Z3_solver solver = Z3_mk_solver(smt_solver.ctx);
+#else
+    Z3_solver solver = Z3_mk_simple_solver(smt_solver.ctx);
+#endif
     Z3_solver_inc_ref(smt_solver.ctx, solver);
-
+#if 1
     Z3_symbol timeout = Z3_mk_string_symbol(smt_solver.ctx, "timeout");
     Z3_params params  = Z3_mk_params(smt_solver.ctx);
     Z3_params_set_uint(smt_solver.ctx, params, timeout, SOLVER_TIMEOUT_MS);
     Z3_solver_set_params(smt_solver.ctx, solver, params);
-
+#endif
     return solver;
 }
 
@@ -454,7 +462,7 @@ Z3_ast smt_new_const(uint64_t value, size_t n_bits)
     return s;
 }
 
-static void smt_dump_solution(Z3_model m, size_t idx, size_t sub_idx)
+static void smt_dump_solution(Z3_context ctx, Z3_model m, size_t idx, size_t sub_idx)
 {
     size_t input_size = testcase.size;
 
@@ -467,25 +475,30 @@ static void smt_dump_solution(Z3_model m, size_t idx, size_t sub_idx)
     SAYF("Dumping solution into %s\n", testcase_name);
 #endif
 
+    char           var_name[128];
+    Z3_sort   bv_sort = Z3_mk_bv_sort(ctx, 8);
     FILE* fp = fopen(testcase_name, "w");
     for (long i = 0; i < input_size; i++) {
-        Z3_ast input_slice   = input_exprs[i];
+        int n = snprintf(var_name, sizeof(var_name), "k!%lu", i);
+        assert(n > 0 && n < sizeof(var_name) && "symbol name too long");
+        Z3_symbol s    = Z3_mk_string_symbol(ctx, var_name);
+        Z3_ast input_slice   = Z3_mk_const(ctx, s, bv_sort);;
         int    solution_byte = 0;
         if (input_slice) {
             // SAYF("input slice %ld\n", i);
             Z3_ast  solution;
             Z3_bool successfulEval =
-                Z3_model_eval(smt_solver.ctx, m, input_slice,
+                Z3_model_eval(ctx, m, input_slice,
                               Z3_FALSE, // model_completion
                               &solution);
             assert(successfulEval && "Failed to evaluate model");
-            if (Z3_get_ast_kind(smt_solver.ctx, solution) == Z3_NUMERAL_AST) {
+            if (Z3_get_ast_kind(ctx, solution) == Z3_NUMERAL_AST) {
                 Z3_bool successGet = Z3_get_numeral_int(
-                    smt_solver.ctx, solution, &solution_byte);
+                    ctx, solution, &solution_byte);
                 if (successGet) // && solution_byte
                     printf("Solution[%ld]: 0x%x\n", i, solution_byte);
             } else {
-                assert(Z3_get_ast_kind(smt_solver.ctx, solution) == Z3_APP_AST);
+                assert(Z3_get_ast_kind(ctx, solution) == Z3_APP_AST);
                 solution_byte = i < testcase.size ? testcase.data[i] : 0;
             }
         } else {
@@ -518,6 +531,91 @@ static void smt_dump_testcase(const uint8_t* data, size_t size, size_t stride,
         }
         fwrite(&byte, sizeof(char), 1, fp);
     }
+    fclose(fp);
+}
+
+static int inline smt_run_from_string(Z3_solver source_solver, uintptr_t idx)
+// static int inline smt_run_from_file(char * path)
+{
+    Z3_string s_query_orig = Z3_solver_to_string(smt_solver.ctx, source_solver);
+#if 0
+    FILE* fp = fopen("temp.query", "w");
+    fwrite(s_query_orig, strlen(s_query_orig), 1, fp);
+    fclose(fp);
+#endif
+    Z3_config cfg = Z3_mk_config();
+    Z3_context ctx = Z3_mk_context(cfg);
+#if 0
+    Z3_ast_vector queries =
+        Z3_parse_smtlib2_file(ctx, path, 0, 0, 0, 0, 0, 0);
+#else 
+    Z3_ast_vector queries =
+        Z3_parse_smtlib2_string(ctx, s_query_orig, 0, 0, 0, 0, 0, 0);
+#endif
+    Z3_ast_vector_inc_ref(ctx, queries);
+    unsigned num_queries = Z3_ast_vector_size(ctx, queries);
+
+    //Z3_solver solver = Z3_mk_solver(ctx);
+    Z3_solver solver = Z3_mk_simple_solver(ctx);
+    Z3_solver_inc_ref(ctx, solver);
+
+    Z3_global_param_set("timeout", "10000");
+#if 0
+    Z3_symbol timeout = Z3_mk_string_symbol(ctx, "timeout");
+    Z3_params params  = Z3_mk_params(ctx);
+    Z3_params_set_uint(ctx, params, timeout, SOLVER_TIMEOUT_MS);
+    Z3_solver_set_params(ctx, solver, params);
+#endif
+
+    for (size_t i = 0; i < num_queries; i++) {
+        Z3_ast query = Z3_ast_vector_get(ctx, queries, i);
+        Z3_inc_ref(ctx, query);
+        Z3_solver_assert(ctx, solver, query);
+    }
+
+    struct timespec start;
+    get_time(&start);
+
+    int r = 0;
+    Z3_lbool res = Z3_solver_check(ctx, solver);
+    if (res == Z3_L_TRUE) {
+        printf("Query is SAT\n");
+        r = 1;
+        Z3_model m = Z3_solver_get_model(smt_solver.ctx, solver);
+        if (m) {
+            Z3_model_inc_ref(ctx, m);
+            smt_dump_solution(ctx, m, idx, 0);
+        }
+    } else if (res == Z3_L_FALSE) {
+        printf("Query is UNSAT\n");
+    } else {
+        printf("Query is UNKNOWN\n");
+    }
+
+    struct timespec end;
+    get_time(&end);
+    uint64_t elapsed_microsecs = get_diff_time_microsec(&start, &end);
+
+    printf("SMT FROM FILE: elapsed=%lu ms\n", elapsed_microsecs / 1000);
+
+    for (size_t i = 0; i < num_queries; i++) {
+        Z3_ast query = Z3_ast_vector_get(ctx, queries, i);
+        Z3_dec_ref(ctx, query);
+    }
+
+    Z3_del_config(cfg);
+    Z3_ast_vector_dec_ref(ctx, queries);
+    Z3_solver_dec_ref(ctx, solver);
+    Z3_del_context(ctx);
+
+    return r;
+}
+
+static void inline smt_dump_solver_to_file(Z3_solver solver, char * path)
+{
+    Z3_string s_query = Z3_solver_to_string(smt_solver.ctx, solver);
+    FILE* fp = fopen(path, "w");
+    fwrite(s_query, strlen(s_query), 1, fp);
     fclose(fp);
 }
 
@@ -567,7 +665,7 @@ static int smt_query_check(Z3_solver solver, size_t idx)
             m = Z3_solver_get_model(smt_solver.ctx, solver);
             if (m) {
                 Z3_model_inc_ref(smt_solver.ctx, m);
-                smt_dump_solution(m, idx, 0);
+                smt_dump_solution(smt_solver.ctx, m, idx, 0);
             }
             qres = 1;
             break;
@@ -635,7 +733,7 @@ static int smt_query_check_eval_uint64(Z3_solver solver, size_t idx, Z3_ast e,
             if (m) {
                 Z3_model_inc_ref(smt_solver.ctx, m);
                 if (dump_idx) {
-                    smt_dump_solution(m, idx, dump_idx);
+                    smt_dump_solution(smt_solver.ctx, m, idx, dump_idx);
                 }
                 if (value) {
                     *value = smt_query_eval_uint64(m, e);
@@ -3862,8 +3960,15 @@ static void smt_branch_query(Query* q)
                 z3_neg_query); 
                 //Z3_simplify(smt_solver.ctx, z3_neg_query));
             // SAYF("Running a query...\n");
+#if 0
+            smt_dump_solver_to_file(solver, "/home/ercoppa/Desktop/code/fuzzolic/temp.query");
+            int is_sat = smt_run_from_file("/home/ercoppa/Desktop/code/fuzzolic/temp.query");
+#endif
 #if 1
-            int is_sat = smt_query_check(solver, GET_QUERY_IDX(q));
+            int is_sat = smt_run_from_string(solver, GET_QUERY_IDX(q));
+#endif
+#if 0
+            // int is_sat = smt_query_check(solver, GET_QUERY_IDX(q));
 #if OPTIMISTIC_SOLVING
             if (!is_sat) {
                 Z3_solver_reset(smt_solver.ctx, solver);
@@ -3878,7 +3983,7 @@ static void smt_branch_query(Query* q)
 
 #endif
 #if 0
-            if (q->address == 0x4152ff) {
+            if (q->address == 0x4152cf) {
                 smt_dump_solver(solver, GET_QUERY_IDX(q));
             }
 #endif
