@@ -2654,7 +2654,6 @@ Z3_ast optimize_z3_query(Z3_ast e)
                     }
                 }
             }
-        
         }
 
     } else if (decl_kind == Z3_OP_BSHL) {
@@ -2753,6 +2752,32 @@ Z3_ast optimize_z3_query(Z3_ast e)
                     }
                 }
             }
+        }
+
+    }  else if (decl_kind == Z3_OP_BUREM || decl_kind == Z3_OP_BSREM) {
+
+        assert(N_ARGS(e) == 2);
+        Z3_ast op1 = ARG1(e);
+        Z3_ast op2 = ARG2(e);
+
+        if (is_zero_const(op1)) {
+            return op1;
+        }
+
+        if (is_const(op2, &value) && value < FF_MASK(SIZE(e)) && IS_POWER_OF_TWO(value)) {
+            unsigned n = LOG2(value);
+            Z3_ast a = smt_new_const(0, SIZE(e) - n);
+            Z3_ast b = Z3_mk_extract(ctx, n, 0, op1);
+            b = optimize_z3_query(b);
+
+            printf("\nREM OPTIMIZATION: op2=%lu\n", value);
+            print_z3_ast(e);
+
+            e = Z3_mk_concat(ctx, a, b);
+
+            print_z3_ast(e);
+
+            return optimize_z3_query(e);
         }
 
     } else if (decl_kind == Z3_OP_BLSHR) {
@@ -3968,7 +3993,7 @@ static void smt_branch_query(Query* q)
             int is_sat = smt_run_from_string(solver, GET_QUERY_IDX(q));
 #endif
 #if 1
-            // int is_sat = smt_query_check(solver, GET_QUERY_IDX(q));
+            int is_sat = smt_query_check(solver, GET_QUERY_IDX(q));
 #if OPTIMISTIC_SOLVING
             if (!is_sat) {
                 Z3_solver_reset(smt_solver.ctx, solver);
