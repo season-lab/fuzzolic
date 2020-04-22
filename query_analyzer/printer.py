@@ -1283,7 +1283,7 @@ if False:
     print("current branch is %s - time %s\n" % (r, str(end - start)))
 
 if True:
-    solver = z3.SimpleSolver()
+    solver = z3.Solver()
     solver.set(':core.minimize', True)
     E = query.children()
     ctracks = []
@@ -1300,7 +1300,7 @@ if True:
     end = time.time()
     print("query is %s - time %s\n" % (r, str(end - start)))
 
-    if False and str(r) == 'unsat':
+    if True and str(r) == 'unsat':
         unsat_core = solver.unsat_core()
         for p in unsat_core:
             idx = str(p).split("p")[1]

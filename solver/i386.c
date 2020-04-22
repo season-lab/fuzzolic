@@ -824,16 +824,20 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
                                   &op1_inputs);
             // printf("PMOVMSKB\n");
+            // print_z3_ast(op1);
             for (size_t i = 0; i < XMM_BITES; i++) {
                 unsigned msb = (8 * (i + 1)) - 1;
                 Z3_ast   bit = Z3_mk_extract(ctx, msb, msb, op1);
+                // print_z3_ast(bit);
                 bit          = optimize_z3_query(bit);
+                // print_z3_ast(bit);
                 if (i == 0) {
                     r = bit;
                 } else {
                     r = Z3_mk_concat(ctx, bit, r);
                     r = optimize_z3_query(r);
                 }
+                // print_z3_ast(r);
                 // smt_print_ast_sort(r);
             }
             Z3_ast zeros = smt_new_const(0, 64 - XMM_BITES);
