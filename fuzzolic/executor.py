@@ -190,7 +190,6 @@ class Executor(object):
                 except:
                     pass
                 print("GDB command: %s" % gdb_cmd)
-                p_solver.stdin.write("break set_add__index_group_t\n".encode())
                 p_solver.stdin.write(gdb_cmd.encode())
                 # p_solver.stdin.close()
 
@@ -214,9 +213,9 @@ class Executor(object):
 
         if self.debug != 'gdb':
             p_tracer_args += ['-symbolic']
-            if self.debug == 'trace':# or self.debug == 'no_solver':
+            if False or self.debug == 'trace': # or self.debug == 'no_solver':
                 p_tracer_args += ['-d']
-                p_tracer_args += ['in_asm,op_opt,out_asm']  # 'in_asm,op_opt,out_asm'
+                p_tracer_args += ['in_asm,op,op_opt,out_asm']  # 'in_asm,op_opt,out_asm'
 
         args = self.binary_args
         if not self.testcase_from_stdin:

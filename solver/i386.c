@@ -211,7 +211,7 @@ static inline Z3_ast eflags_pf(Z3_context ctx, Z3_ast dst, size_t width)
         }
     }
     Z3_ast cond_pf = Z3_mk_eq(ctx, pf, smt_new_const(0, 1));
-    pf = Z3_mk_ite(ctx, cond_pf, zero, smt_new_const(CC_P, width * 8));
+    pf = Z3_mk_ite(ctx, cond_pf, smt_new_const(CC_P, width * 8), zero);
     return pf;
 }
 
@@ -828,8 +828,10 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             for (size_t i = 0; i < XMM_BITES; i++) {
                 unsigned msb = (8 * (i + 1)) - 1;
                 Z3_ast   bit = Z3_mk_extract(ctx, msb, msb, op1);
+                // printf("MSB BEFORE:\n");
                 // print_z3_ast(bit);
                 bit          = optimize_z3_query(bit);
+                // printf("MSB AFTER:\n");
                 // print_z3_ast(bit);
                 if (i == 0) {
                     r = bit;
@@ -837,12 +839,13 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
                     r = Z3_mk_concat(ctx, bit, r);
                     r = optimize_z3_query(r);
                 }
+                // printf("After index: %lu\n", i);
                 // print_z3_ast(r);
                 // smt_print_ast_sort(r);
             }
             Z3_ast zeros = smt_new_const(0, 64 - XMM_BITES);
             r            = Z3_mk_concat(ctx, zeros, r);
-            // smt_print_ast_sort(r);
+            //smt_print_ast_sort(r);
             break;
         }
         //
