@@ -197,7 +197,7 @@ class Executor(object):
             time.sleep(SOLVER_WAIT_TIME_AT_STARTUP)
 
         if gdb_solver:
-            time.sleep(10)
+            time.sleep(2)
 
         # launch tracer
         p_tracer_log_name = run_dir + '/tracer.log'
