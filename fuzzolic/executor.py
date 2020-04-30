@@ -190,6 +190,7 @@ class Executor(object):
                 except:
                     pass
                 print("GDB command: %s" % gdb_cmd)
+                p_solver.stdin.write("break exit\n".encode())
                 p_solver.stdin.write(gdb_cmd.encode())
                 # p_solver.stdin.close()
 

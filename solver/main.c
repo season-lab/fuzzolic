@@ -15,7 +15,7 @@
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
-#define USE_FUZZY_SOLVER             0
+#define USE_FUZZY_SOLVER             1
 #define OPTIMISTIC_SOLVING           0
 #define MEMORY_SLICE_REASONING       0
 #define ADDRESS_REASONING            0
@@ -1062,7 +1062,7 @@ static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op,
 
     } else {
 
-        if (decl_kind == Z3_OP_AND || decl_kind == Z3_OP_OR) {
+        if (decl_kind == Z3_OP_AND || decl_kind == Z3_OP_OR || decl_kind == Z3_OP_CONCAT) {
             // print_z3_original(e);
             printf("(");
             for (size_t i = 0; i < num_operands; i++) {
@@ -1540,16 +1540,16 @@ Z3_ast optimize_z3_query(Z3_ast e)
             }
         }
         if (is_constant) {
-            //printf("CONSTANT PROPAGATION: ");
-            //print_z3_ast(e);
+            // printf("CONSTANT PROPAGATION: ");
+            // print_z3_ast(e);
             value = Z3_custom_eval(ctx, e, NULL, NULL, 0);
             if (!IS_BOOL(e)) {
                 e = smt_new_const(value, SIZE(e));
             } else {
                 e = value ? Z3_mk_true(ctx) : Z3_mk_false(ctx);
             }
-            //printf("CONSTANT PROPAGATION DONE: ");
-            //print_z3_ast(e);
+            // printf("CONSTANT PROPAGATION DONE: ");
+            // print_z3_ast(e);
             return e;
         }
     }
@@ -1626,34 +1626,6 @@ Z3_ast optimize_z3_query(Z3_ast e)
             return optimize_z3_query(e);
         } else if (is_zero_const(op2) && OP(op1) == Z3_OP_BSUB) {
             e = get_make_op(decl_kind)(ctx, ARG1(op1), ARG2(op1));
-            return optimize_z3_query(e);
-        }
-
-        // from:
-        //  (0x0#N .. X#M) op Y#(N+M)
-        // where:
-        //  Y is a constant smaller than 0xFF
-        //  op is a comparison operator
-        //  M == 8
-        // to:
-        //  X == Y
-        if (is_const(op2, &value) && value < 0xFF && OP(op1) == Z3_OP_CONCAT &&
-            N_ARGS(op1) == 2 && SIZE(ARG2(op1)) == 8 &&
-            is_zero_const(ARG1(op1))) {
-            op2 = smt_new_const(value, 8);
-            e   = get_make_op(decl_kind)(ctx, ARG2(op1), op2);
-            return optimize_z3_query(e);
-        }
-
-        // from:
-        //  (0x0#N .. X#M) == 0#(N+M)
-        // to:
-        //  X == 0#size(X)
-        if (decl_kind == Z3_OP_EQ && is_zero_const(op2) &&
-            OP(op1) == Z3_OP_CONCAT && N_ARGS(op1) == 2 &&
-            is_zero_const(ARG1(op1))) {
-            op2 = smt_new_const(0, SIZE(ARG2(op1)));
-            e   = get_make_op(decl_kind)(ctx, ARG2(op1), op2);
             return optimize_z3_query(e);
         }
 
@@ -2496,6 +2468,12 @@ Z3_ast optimize_z3_query(Z3_ast e)
                 Z3_ast zero = smt_new_const(0, SIZE(op1) - 1);
                 e = Z3_mk_concat(ctx, zero, e);
                 return optimize_z3_query(e);
+            } else if (value == 0x7) {
+                e = Z3_mk_extract(ctx, 2, 0, op2);
+                e = optimize_z3_query(e);
+                Z3_ast zero = smt_new_const(0, SIZE(op1) - 3);
+                e = Z3_mk_concat(ctx, zero, e);
+                return optimize_z3_query(e);
             } else if (value == 0xF) {
                 e = Z3_mk_extract(ctx, 3, 0, op2);
                 e = optimize_z3_query(e);
@@ -2513,6 +2491,12 @@ Z3_ast optimize_z3_query(Z3_ast e)
                 e = optimize_z3_query(e);
                 Z3_ast zero = smt_new_const(0, SIZE(op1) - 8);
                 e = Z3_mk_concat(ctx, zero, e);
+                return optimize_z3_query(e);
+            } else if (value == 0xfffffffffffffff8) {
+                e = Z3_mk_extract(ctx, 63, 3, op2);
+                e = optimize_z3_query(e);
+                Z3_ast zero = smt_new_const(0, 3);
+                e = Z3_mk_concat(ctx, e, zero);
                 return optimize_z3_query(e);
             } else if (value == 0xfffffffffffffff0) {
                 e = Z3_mk_extract(ctx, 63, 4, op2);
@@ -2544,6 +2528,12 @@ Z3_ast optimize_z3_query(Z3_ast e)
                 Z3_ast zero = smt_new_const(0, SIZE(op2) - 1);
                 e = Z3_mk_concat(ctx, zero, e);
                 return optimize_z3_query(e);
+            } else if (value == 0x7) {
+                e = Z3_mk_extract(ctx, 2, 0, op1);
+                e = optimize_z3_query(e);
+                Z3_ast zero = smt_new_const(0, SIZE(op2) - 3);
+                e = Z3_mk_concat(ctx, zero, e);
+                return optimize_z3_query(e);
             } else if (value == 0xF) {
                 e = Z3_mk_extract(ctx, 3, 0, op1);
                 e = optimize_z3_query(e);
@@ -2561,6 +2551,12 @@ Z3_ast optimize_z3_query(Z3_ast e)
                 e = optimize_z3_query(e);
                 Z3_ast zero = smt_new_const(0, SIZE(op2) - 8);
                 e = Z3_mk_concat(ctx, zero, e);
+                return optimize_z3_query(e);
+            } else if (value == 0xfffffffffffffff8) {
+                e = Z3_mk_extract(ctx, 63, 3, op1);
+                e = optimize_z3_query(e);
+                Z3_ast zero = smt_new_const(0, 3);
+                e = Z3_mk_concat(ctx, e, zero);
                 return optimize_z3_query(e);
             } else if (value == 0xfffffffffffffff0) {
                 e = Z3_mk_extract(ctx, 63, 4, op1);
@@ -2774,8 +2770,11 @@ Z3_ast optimize_z3_query(Z3_ast e)
         Z3_ast op1 = ARG1(e);
         Z3_ast op2 = ARG2(e);
 
-        if (is_const(op2, &value)
-                && OP(op1) == Z3_OP_CONCAT) {
+        if (is_const(op2, &value)) {
+
+            if (value == 0) {
+                return op1;
+            }
 
             Z3_ast msb = Z3_mk_extract(ctx, SIZE(op1) - 1, SIZE(op1) - 1, op1);
             msb = optimize_z3_query(msb);
@@ -4204,9 +4203,26 @@ static void smt_branch_query(Query* q)
             Z3_ast         fuzzy_query = Z3_mk_and(smt_solver.ctx, 2, args);
             const uint8_t* proof;
             size_t         proof_size;
+
+            // fuzzy_query = Z3_simplify(smt_solver.ctx, fuzzy_query);
+
             // print_z3_ast(fuzzy_query);
             // print_z3_ast(z3_neg_query);
-            SAYF("Running a query...\n");
+            // print_z3_ast(Z3_simplify(smt_solver.ctx, z3_neg_query));
+#if 0
+            if (GET_QUERY_IDX(q) == 8816) {
+                if (cached_solver == NULL) {
+                    cached_solver = smt_new_solver();
+                }
+                Z3_solver solver = cached_solver;
+                Z3_solver_assert(
+                        smt_solver.ctx, solver,
+                        fuzzy_query);
+                smt_dump_solver(solver, GET_QUERY_IDX(q));
+                Z3_solver_reset(smt_solver.ctx, solver);
+            }
+#endif
+            printf("Running a query...\n");
             conc_eval_time  = 0;
             conc_eval_count = 0;
             struct timespec start, end;
@@ -4226,6 +4242,8 @@ static void smt_branch_query(Query* q)
                 unsat_count += 1;
                 printf("UNSAT: sum=%lu count=%lu\n", unsat_time, unsat_count);
             }
+            printf(" [INFO] Branch interesting: addr=0x%lx taken=%u sat=%d\n",
+                q->address, (uint16_t) q->args64, r);
 #else
             if (cached_solver == NULL) {
                 cached_solver = smt_new_solver();
@@ -4449,6 +4467,7 @@ uint64_t conc_query_eval_value(Z3_context ctx, Z3_ast query, uint64_t* data,
     smt_dump_solver(solver, 0);
     smt_del_solver(solver);
 #endif
+    // printf("conc eval new:\n");
     uint64_t r = Z3_custom_eval(smt_solver.ctx, query, data, symbols_sizes,
                                 n_data_bytes);
     // printf("conc eval new: %lu\n", r);
@@ -4841,10 +4860,11 @@ static void smt_slice_query(Query* q)
 
             z3_ast_exprs[GET_QUERY_IDX(q)] = c;
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
-        }
+
 #if USE_FUZZY_SOLVER
-        z3fuzz_notify_constraint(&smt_solver.fuzzy_ctx, c);
+            z3fuzz_notify_constraint(&smt_solver.fuzzy_ctx, c);
 #endif
+        }
 
         g_hash_table_destroy(conc_addrs);
         return;
