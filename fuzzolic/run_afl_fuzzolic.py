@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python3 -u
 
 import os
 import sys
@@ -48,14 +48,14 @@ if not os.path.exists(input_dir):
     sys.exit(1)
 
 if os.path.exists(run_dir):
-    if os.path.exists(run_dir + '/.fuzzolic_workdir'):
+    if os.path.exists(run_dir + '/.fuzzolic'):
         shutil.rmtree(run_dir)
     else:
         print("Unsafe to remove %s. Do it manually." % run_dir)
         sys.exit(1)
 
 os.system("mkdir %s" % run_dir)
-os.system("touch %s/%s " % (run_dir, '.fuzzolic_workdir'))
+os.system("touch %s/%s " % (run_dir, '.fuzzolic'))
 
 p_children = []
 signal.signal(signal.SIGINT, handler)
