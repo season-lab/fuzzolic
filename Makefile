@@ -33,7 +33,7 @@ mystrcmp: clean-work-dir kill-solver
 	./utils/print_test_cases.py workdir/tests
 
 configure:
-	cd tracer && ./configure --prefix=`pwd`/../build --target-list=i386-linux-user,x86_64-linux-user
+	cd tracer && ./configure --target-list=i386-linux-user,x86_64-linux-user # --disable-werror
 
 clean-work-dir:
 	rm -rf workdir
