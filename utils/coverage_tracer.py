@@ -147,6 +147,12 @@ print("\n\nTotal number of basic blocks: %d" % file_lines_count(coverage_log_pat
 print("Total number of edges: %d" % file_lines_count(coverage_log_edges_path))
 print("Total number of processed testcases: %d\n" % testcase_count)
 
+if "LOGFILE" in os.environ:
+    logfile = os.environ["LOGFILE"]
+    with open(logfile, "w") as fp:
+        s = "%s\t%s\t%s" % (file_lines_count(coverage_log_path), file_lines_count(coverage_log_edges_path), testcase_count)
+        fp.write(s)
+
 # if os.path.exists(workdir + '/.fuzzolic_workdir'):
 #    shutil.rmtree(workdir)
 # print(coverage_bitmap_path)
