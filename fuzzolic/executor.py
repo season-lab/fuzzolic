@@ -279,9 +279,11 @@ class Executor(object):
             returncode_str = "(SIGSEGV)" if p_tracer.returncode == -11 else ""
             print("ERROR: tracer has returned code %d %s" %
                   (p_tracer.returncode, returncode_str))
+
+        if p_tracer.returncode == -11:
             if self.debug != 'no_solver' and self.debug != 'coverage':
                 p_solver.send_signal(signal.SIGINT)
-                time.sleep(2)
+                time.sleep(15)
                 p_solver.send_signal(signal.SIGKILL)
 
         if self.debug != 'no_solver' and self.debug != 'coverage':
@@ -392,6 +394,8 @@ class Executor(object):
             waiting_rounds = 0
             while len(queued_inputs) == 0:
                 waiting_rounds += 1
+                if waiting_rounds > 0 and waiting_rounds % 300 == 0:
+                    print("Waiting for a new input from AFL (%s secs)\n" % (waiting_rounds * 0.1))
                 time.sleep(0.1)
                 queued_inputs = self.__import_from_afl()
 
