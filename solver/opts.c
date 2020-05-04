@@ -48,4 +48,28 @@ void parse_opts(int argc, char* argv[], Config* config)
                argv[0]);
         exit(1);
     }
+
+    char * var = getenv("EXPR_POOL_SHM_KEY");
+    printf("%s\n", var);
+    if (var) {
+        config->expr_pool_shm_key = (uintptr_t)strtoull(var, NULL, 16);
+        assert(config->expr_pool_shm_key != ULLONG_MAX);
+    }
+    assert(config->expr_pool_shm_key != 0 && "Missing EXPR_POOL_SHM_KEY");
+
+    var = getenv("QUERY_SHM_KEY");
+    if (var) {
+        config->query_shm_key = (uintptr_t)strtoull(var, NULL, 16);
+        assert(config->query_shm_key != ULLONG_MAX);
+    }
+    assert(config->query_shm_key != 0 && "Missing QUERY_SHM_KEY");
+
+#if BRANCH_COVERAGE == FUZZOLIC
+    var = getenv("BITMAP_SHM_KEY");
+    if (var) {
+        s_config->bitmap_shm_key = (uintptr_t)strtoull(var, NULL, 16);
+        assert(s_config->bitmap_shm_key != ULLONG_MAX);
+    }
+    assert(s_config->bitmap_shm_key != 0 && "Missing BITMAP_SHM_KEY");
+#endif
 }

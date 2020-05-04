@@ -13,6 +13,7 @@ import re
 import shutil
 import functools
 import tempfile
+import random
 
 import minimizer_qsym
 import minimizer
@@ -143,6 +144,11 @@ class Executor(object):
         if self.debug == 'coverage':
             env['COVERAGE_TRACER'] = self.output_dir + '/fuzzolic-bitmap'
             env['COVERAGE_TRACER_LOG'] = self.output_dir + '/fuzzolic-coverage.out'
+
+        # generate random shm keys
+        env['EXPR_POOL_SHM_KEY'] = hex(random.getrandbits(64))
+        env['QUERY_SHM_KEY'] = hex(random.getrandbits(64))
+        env['BITMAP_SHM_KEY'] = hex(random.getrandbits(64))
 
         self.__check_shutdown_flag()
 
@@ -469,7 +475,7 @@ class Executor(object):
             start = time.time()
             self.fuzz_one(testcase, target)
             end = time.time()
-            print("Run took %s secs" % (end-start))
+            print("Run took %s secs" % round(end-start, 1))
             if self.debug:
                 return
             self.__check_shutdown_flag()

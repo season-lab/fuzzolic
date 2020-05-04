@@ -75,6 +75,12 @@ typedef struct Config {
     const char* branch_bitmap_path;
     const char* context_bitmap_path;
     const char* memory_bitmap_path;
+    //
+    uint64_t    expr_pool_shm_key;
+    uint64_t    query_shm_key;
+#if BRANCH_COVERAGE == FUZZOLIC
+    uint64_t    bitmap_shm_key;
+#endif
 } Config;
 
 // opts.c

@@ -5322,20 +5322,20 @@ int main(int argc, char* argv[])
     printf("Allocating %lu MB for query queue\n", (sizeof(Expr*) * EXPR_QUERY_CAPACITY) / (1024 * 1024));
 #endif
 
-    expr_pool_shm_id = shmget(EXPR_POOL_SHM_KEY, // IPC_PRIVATE,
+    expr_pool_shm_id = shmget(config.expr_pool_shm_key, // IPC_PRIVATE,
                               sizeof(Expr) * EXPR_POOL_CAPACITY,
                               IPC_CREAT | 0666); /*| IPC_EXCL */
     if (expr_pool_shm_id < 0)
         PFATAL("shmget() failed");
 
-    query_shm_id = shmget(QUERY_SHM_KEY, // IPC_PRIVATE,
+    query_shm_id = shmget(config.query_shm_key, // IPC_PRIVATE,
                           sizeof(Query) * EXPR_QUERY_CAPACITY,
                           IPC_CREAT | 0666); /*| IPC_EXCL */
     if (query_shm_id < 0)
         PFATAL("shmget() failed");
 
 #if BRANCH_COVERAGE == FUZZOLIC
-    bitmap_shm_id = shmget(BITMAP_SHM_KEY, // IPC_PRIVATE,
+    bitmap_shm_id = shmget(config.bitmap_shm_key, // IPC_PRIVATE,
                            sizeof(uint8_t) * BRANCH_BITMAP_SIZE,
                            IPC_CREAT | 0666); /*| IPC_EXCL */
     if (bitmap_shm_id < 0)
