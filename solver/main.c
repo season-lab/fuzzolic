@@ -15,7 +15,7 @@
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
-#define USE_FUZZY_SOLVER             1
+#define USE_FUZZY_SOLVER             0
 #define OPTIMISTIC_SOLVING           0
 #define MEMORY_SLICE_REASONING       0
 #define ADDRESS_REASONING            0
@@ -1191,8 +1191,18 @@ void smt_bv_resize(Z3_ast* a, Z3_ast* b, ssize_t bytes_size)
 
     Z3_sort a_sort = Z3_get_sort(smt_solver.ctx, *a);
     Z3_sort b_sort = Z3_get_sort(smt_solver.ctx, *b);
-    size_t  a_size = Z3_get_bv_sort_size(smt_solver.ctx, a_sort);
-    size_t  b_size = Z3_get_bv_sort_size(smt_solver.ctx, b_sort);
+    size_t a_size;
+    if (Z3_get_sort_kind(smt_solver.ctx, a_sort) == Z3_BOOL_SORT) {
+        a_size = 1;
+    } else {
+        a_size = Z3_get_bv_sort_size(smt_solver.ctx, a_sort);
+    }
+    size_t b_size;
+    if (Z3_get_sort_kind(smt_solver.ctx, b_sort) == Z3_BOOL_SORT) {
+        b_size = 1;
+    } else {
+        b_size = Z3_get_bv_sort_size(smt_solver.ctx, b_sort);
+    }
     if (a_size == b_size && (bytes_size == 0 || (bytes_size * 8) == a_size)) {
         return;
     }
@@ -1511,11 +1521,11 @@ static int debug_translation = 0;
 Z3_ast optimize_z3_query(Z3_ast e)
 {
 #if 0
-    // if (debug_translation) {
+    if (debug_translation) {
     printf("\nTransformation on: ");
     print_z3_ast_internal(e, 0, 0);
     printf("\n");
-    //}
+    }
 #endif
 
     Z3_context  ctx  = smt_solver.ctx;
@@ -2285,6 +2295,7 @@ Z3_ast optimize_z3_query(Z3_ast e)
         if (OP(op1) == Z3_OP_EXTRACT && is_zero_const(ARG1(op1))) {
             return op2;
         }
+        //
         if (is_zero_const(op2)) {
             return op1;
         }
@@ -3575,8 +3586,14 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             printf("EXTRACT + ZEXT\n");
             smt_print_ast_sort(op1);
 #endif
-            Z3_sort sort = Z3_get_sort(smt_solver.ctx, op1);
-            size_t  size = Z3_get_bv_sort_size(smt_solver.ctx, sort);
+            size_t  size;
+            if (IS_BOOL(op1)) {
+                op1 = smt_to_bv(op1);
+                size = 8;
+            } else {
+                Z3_sort sort = Z3_get_sort(smt_solver.ctx, op1);
+                size = Z3_get_bv_sort_size(smt_solver.ctx, sort);
+            }
             if (size >= n) {
                 if (size > n) {
                     op1 = Z3_mk_extract(smt_solver.ctx, n - 1, 0, op1);
@@ -4009,7 +4026,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
     }
 #endif
 
-#if 1
+#if 0
     // printf("\nOPT CHECK BEFORE\n");
     Z3_ast orig_r = r;
 #endif
@@ -4021,7 +4038,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
     // printf("END opkind: %s\n", opkind_to_str(query->opkind));
 
 #if 0
-    if (r != orig_r) {
+    if (r != orig_r) { // && debug_translation
 #if 0
         if (SIZE(r) != SIZE(orig_r)) {
             printf("OPT CHECK: size=%u size=%u\n", SIZE(orig_r), SIZE(r));
@@ -4079,7 +4096,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
 
 #if 1
     if (debug_translation) {
-        printf("POST OPTIMIZE\n");
+        printf("POST OPTIMIZE %s\n", opkind_to_str(query->opkind));
         print_z3_ast(r);
     }
 #endif
@@ -4123,7 +4140,7 @@ static void smt_branch_query(Query* q)
 #endif
 
 #if 0
-    if (GET_QUERY_IDX(q) >= 275) {
+    if (GET_QUERY_IDX(q) >= 13668) {
         debug_translation = 1;
     }
 #endif
