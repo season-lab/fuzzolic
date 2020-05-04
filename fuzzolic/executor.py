@@ -306,14 +306,14 @@ class Executor(object):
 
         # parse tracer logs for known errors/warnings
         if not self.debug:
-            with open(p_tracer_log_name, 'r') as log:
+            with open(p_tracer_log_name, 'r', encoding="utf8", errors='ignore') as log:
                 for line in log:
                     #if re.search('Helper', line):
                     if 'Unhandled TCG instruction' in line or 'Helper ' in line:
                         if line not in self.__warning_log:
                             self.__warning_log.add("[tracer warning]: %s" % line)
 
-            with open(p_solver_log_name, 'r') as log:
+            with open(p_solver_log_name, 'r', encoding="utf8", errors='ignore') as log:
                 for line in log:
                     if 'PROGRAM ABORT' in line:
                         if line not in self.__warning_log:
