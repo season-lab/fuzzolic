@@ -4315,7 +4315,7 @@ static void smt_branch_query(Query* q)
                 q->address, (uint16_t) q->args64, is_sat);
 
 #endif
-#if 1
+#if 0
             if (q->address == 0x40013b38da) {
                 smt_dump_solver(solver, GET_QUERY_IDX(q));
             }
@@ -4323,14 +4323,6 @@ static void smt_branch_query(Query* q)
 
             // smt_del_solver(solver);
             Z3_solver_reset(smt_solver.ctx, solver);
-
-            if (OP(z3_neg_query) == Z3_OP_TRUE) {
-                print_z3_ast(z3_neg_query);
-                print_z3_ast(z3_query);
-                print_expr(q->query);
-                ABORT();
-            }
-
 #endif
         } else {
 #if 1
@@ -5413,6 +5405,22 @@ int main(int argc, char* argv[])
                 save_bitmaps();
                 exit(0);
             }
+
+            if (config.timeout > 0) {
+                uint64_t total_solving_time = smt_solver.unsat_time +
+                                                smt_solver.sat_time +
+                                                smt_solver.unknown_time;
+                if ((total_solving_time / 1000) > config.timeout) {
+                    SAYF("\n\nSolving time exceded budget time. Exiting...\n");
+
+                    printf("Translation time: %lu usecs\n",
+                        smt_solver.translation_time);
+
+                    save_bitmaps();
+                    exit(0);
+                }
+            }
+
 #if 0
             SAYF("Got a query... %p\n", next_query);
 #endif

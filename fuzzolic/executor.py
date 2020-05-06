@@ -130,10 +130,12 @@ class Executor(object):
         self.__check_shutdown_flag()
 
         run_dir, run_id = self.__get_run_dir()
-        print('\nRunning using testcase: %s' % testcase)
-        print('Running directory: %s' % run_dir)
 
         os.system("cp " + testcase + " " + run_dir)
+        testcase = run_dir + "/" + os.path.basename(testcase)
+
+        print('\nRunning using testcase: %s' % testcase)
+        print('Running directory: %s' % run_dir)
 
         env = os.environ.copy()
         for c in self.config:
@@ -255,7 +257,8 @@ class Executor(object):
                     p_tracer.stdin.write(f.read())
                     p_tracer.stdin.close()
         else:
-            gdb_cmd = 'run -d in_asm,op,op_opt,out_asm -symbolic ' + self.binary + ' ' + ' '.join(args)
+            # -d in_asm,op,op_opt,out_asm
+            gdb_cmd = 'run -symbolic ' + self.binary + ' ' + ' '.join(args)
             if self.testcase_from_stdin:
                 gdb_cmd += ' < ' + testcase
             gdb_cmd += "\n"

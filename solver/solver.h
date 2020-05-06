@@ -81,6 +81,8 @@ typedef struct Config {
 #if BRANCH_COVERAGE == FUZZOLIC
     uint64_t    bitmap_shm_key;
 #endif
+    //
+    uint64_t    timeout;
 } Config;
 
 // opts.c
