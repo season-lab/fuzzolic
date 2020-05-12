@@ -1,7 +1,11 @@
 COUNT=3850
 
-all: build-tracer build-solver kill-solver clean-work-dir
+all: build clean-work-dir
 	./fuzzolic/fuzzolic.py -o workdir -i tests/simple_if_0.dat tests/driver simple_if
+	./utils/print_test_cases.py workdir/tests
+
+fuzzy: build clean-work-dir
+	./fuzzolic/fuzzolic.py -f -o workdir -i tests/simple_if_0.dat tests/driver simple_if
 	./utils/print_test_cases.py workdir/tests
 
 simpleif: build-tracer build-solver kill-solver clean-work-dir
