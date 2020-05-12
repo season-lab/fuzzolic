@@ -19,7 +19,8 @@ import minimizer_qsym
 import minimizer
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-SOLVER_BIN = SCRIPT_DIR + '/../solver/solver'
+SOLVER_SMT_BIN = SCRIPT_DIR + '/../solver/solver-smt'
+SOLVER_FUZZY_BIN = SCRIPT_DIR + '/../solver/solver-fuzzy'
 TRACER_BIN = SCRIPT_DIR + '/../tracer/x86_64-linux-user/qemu-x86_64'
 AFL_PATH = SCRIPT_DIR + '/../../AFL/'
 
@@ -29,7 +30,7 @@ SHUTDOWN = False
 
 class Executor(object):
 
-    def __init__(self, binary, input, output_dir, binary_args, debug=None, afl=None):
+    def __init__(self, binary, input, output_dir, binary_args, debug=None, afl=None, timeout=0, fuzzy=False):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
@@ -63,6 +64,8 @@ class Executor(object):
 
         self.debug = debug
         self.tick_count = 0
+        self.timeout = timeout
+        self.fuzzy = fuzzy
 
         self.__load_config()
         self.__warning_log = set()
@@ -125,6 +128,14 @@ class Executor(object):
 
         return run_dir, run_id
 
+    def get_solver_bin(self):
+        if self.fuzzy:
+            print("Using fuzzy solver")
+            return SOLVER_FUZZY_BIN
+        else:
+            print("Using smt solver")
+            return SOLVER_SMT_BIN
+
     def fuzz_one(self, testcase, target):
 
         self.__check_shutdown_flag()
@@ -151,7 +162,9 @@ class Executor(object):
         env['EXPR_POOL_SHM_KEY'] = hex(random.getrandbits(64))
         env['QUERY_SHM_KEY'] = hex(random.getrandbits(64))
         env['BITMAP_SHM_KEY'] = hex(random.getrandbits(64))
-        # env['SOLVER_TIMEOUT'] = "90000"
+        if self.timeout > 0:
+            print("Setting solving timeout: %s" % self.timeout)
+            env['SOLVER_TIMEOUT'] = str(self.timeout)
 
         self.__check_shutdown_flag()
 
@@ -167,7 +180,7 @@ class Executor(object):
         if self.debug != 'no_solver' and self.debug != 'coverage':
             p_solver_args = []
             p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
-            p_solver_args += [SOLVER_BIN]
+            p_solver_args += [self.get_solver_bin()]
             p_solver_args += ['-i', testcase]
             p_solver_args += ['-t', self.__get_testcases_dir()]
             p_solver_args += ['-o', run_dir]

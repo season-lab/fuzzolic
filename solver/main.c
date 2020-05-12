@@ -15,10 +15,13 @@
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
-#define USE_FUZZY_SOLVER             1
 #define OPTIMISTIC_SOLVING           0
 #define MEMORY_SLICE_REASONING       0
 #define ADDRESS_REASONING            0
+
+#ifndef USE_FUZZY_SOLVER
+#define USE_FUZZY_SOLVER             0
+#endif
 
 static int expr_pool_shm_id = -1;
 Expr*      pool;
@@ -5406,7 +5409,7 @@ int main(int argc, char* argv[])
                                                 smt_solver.sat_time +
                                                 smt_solver.unknown_time;
                 total_solving_time /= 1000;
-		// printf("solving time: %lu timeout: %lu \n", total_solving_time, config.timeout);
+		        // printf("solving time: %lu timeout: %lu \n", total_solving_time, config.timeout);
                 if (total_solving_time > config.timeout) {
                     SAYF("\n\nSolving time exceded budget time. Exiting...\n");
 

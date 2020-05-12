@@ -34,6 +34,10 @@ def main():
         '-d', '--debug', choices=['coverage', 'gdb', 'trace', 'out', 'no_solver'], help='enable debug mode')
     parser.add_argument(
         '-a', '--afl', help='path to afl workdir')
+    parser.add_argument(
+        '-t', '--timeout', type=int, help='set timeout on the solving time (ms)')
+    parser.add_argument(
+        '-f', '--fuzzy', action='store_true', help='use fuzzy solver')
 
     # required args
     parser.add_argument(
@@ -75,11 +79,15 @@ def main():
 
     binary_args = args.args
     debug = args.debug
+    fuzzy = args.fuzzy
+    timeout = args.timeout
+    if timeout is None:
+        timeout = 0
 
     signal.signal(signal.SIGINT, handler)
 
     fuzzolic_executor = executor.Executor(
-        binary, input, output_dir, binary_args, debug, afl)
+        binary, input, output_dir, binary_args, debug, afl, timeout, fuzzy)
     fuzzolic_executor.run()
 
 
