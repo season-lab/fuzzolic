@@ -82,8 +82,14 @@ fuzzy_args = []
 if "FUZZY_SOLVER" in os.environ:
     fuzzy_args.append("-f")
 
+timeout_args = []
+if "SOLVING_TIMEOUT" in os.environ:
+    timeout_args.append("-t")
+    timeout_args.append(os.environ["SOLVING_TIMEOUT"])
+
 fuzzolic_args  = [ FUZZOLIC_BIN ]
 fuzzolic_args += fuzzy_args
+fuzzolic_args += timeout_args
 fuzzolic_args += [ '-a', run_dir + '/afl-slave/', '-i', run_dir + '/afl-slave/queue/', '-o', run_dir + '/fuzzolic', '--'] + program_args
 fuzzolic = subprocess.Popen(fuzzolic_args, stdout=None, stderr=None)
 p_children.append(fuzzolic)
