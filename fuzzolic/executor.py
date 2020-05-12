@@ -130,10 +130,10 @@ class Executor(object):
 
     def get_solver_bin(self):
         if self.fuzzy:
-            print("Using fuzzy solver")
+            # print("Using fuzzy solver")
             return SOLVER_FUZZY_BIN
         else:
-            print("Using smt solver")
+            # print("Using smt solver")
             return SOLVER_SMT_BIN
 
     def fuzz_one(self, testcase, target):
@@ -163,7 +163,7 @@ class Executor(object):
         env['QUERY_SHM_KEY'] = hex(random.getrandbits(64))
         env['BITMAP_SHM_KEY'] = hex(random.getrandbits(64))
         if self.timeout > 0:
-            print("Setting solving timeout: %s" % self.timeout)
+            # print("Setting solving timeout: %s" % self.timeout)
             env['SOLVER_TIMEOUT'] = str(self.timeout)
 
         self.__check_shutdown_flag()
