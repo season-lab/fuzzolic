@@ -78,7 +78,13 @@ if not debug:
     # wait for afl slave to create the bitmap
     time.sleep(20) #
 
-fuzzolic_args = [ FUZZOLIC_BIN, '-a', run_dir + '/afl-slave/', '-i', run_dir + '/afl-slave/queue/', '-o', run_dir + '/fuzzolic', '--'] + program_args
+fuzzy_args = []
+if "FUZZY_SOLVER" in os.environ:
+    fuzzy_args.append("-f")
+
+fuzzolic_args  = [ FUZZOLIC_BIN ]
+fuzzolic_args += fuzzy_args
+fuzzolic_args += [ '-a', run_dir + '/afl-slave/', '-i', run_dir + '/afl-slave/queue/', '-o', run_dir + '/fuzzolic', '--'] + program_args
 fuzzolic = subprocess.Popen(fuzzolic_args, stdout=None, stderr=None)
 p_children.append(fuzzolic)
 
