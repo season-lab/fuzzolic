@@ -15,7 +15,7 @@
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
-#define USE_FUZZY_SOLVER             0
+#define USE_FUZZY_SOLVER             1
 #define OPTIMISTIC_SOLVING           0
 #define MEMORY_SLICE_REASONING       0
 #define ADDRESS_REASONING            0
@@ -5410,7 +5410,9 @@ int main(int argc, char* argv[])
                 uint64_t total_solving_time = smt_solver.unsat_time +
                                                 smt_solver.sat_time +
                                                 smt_solver.unknown_time;
-                if ((total_solving_time / 1000) > config.timeout) {
+                total_solving_time /= 1000;
+		// printf("solving time: %lu timeout: %lu \n", total_solving_time, config.timeout);
+                if (total_solving_time > config.timeout) {
                     SAYF("\n\nSolving time exceded budget time. Exiting...\n");
 
                     printf("Translation time: %lu usecs\n",

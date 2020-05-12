@@ -75,7 +75,7 @@ void parse_opts(int argc, char* argv[], Config* config)
 
     var = getenv("SOLVER_TIMEOUT");
     if (var) {
-        config->timeout = (uintptr_t)strtoull(var, NULL, 16);
+        config->timeout = (uintptr_t)strtoull(var, NULL, 10);
         assert(config->timeout != ULLONG_MAX);
     }
 }
