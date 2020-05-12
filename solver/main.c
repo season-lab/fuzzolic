@@ -815,10 +815,18 @@ static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op,
                 }
 
                 case Z3_OP_TRUE:
-                    printf("TRUE");
+                    if (invert_op) {
+                        printf("FALSE");
+                    } else {
+                        printf("TRUE");
+                    }
                     return;
                 case Z3_OP_FALSE:
-                    printf("FALSE");
+                    if (invert_op) {
+                        printf("TRUE");
+                    } else {
+                        printf("FALSE");
+                    }
                     return;
 
                 case Z3_OP_EQ: {
@@ -1521,11 +1529,11 @@ static int debug_translation = 0;
 Z3_ast optimize_z3_query(Z3_ast e)
 {
 #if 0
-    if (debug_translation) {
+    //if (debug_translation) {
     printf("\nTransformation on: ");
     print_z3_ast_internal(e, 0, 0);
     printf("\n");
-    }
+    //}
 #endif
 
     Z3_context  ctx  = smt_solver.ctx;
@@ -1550,16 +1558,16 @@ Z3_ast optimize_z3_query(Z3_ast e)
             }
         }
         if (is_constant) {
-            // printf("CONSTANT PROPAGATION: ");
-            // print_z3_ast(e);
+            //printf("CONSTANT PROPAGATION: ");
+            //print_z3_ast(e);
             value = Z3_custom_eval(ctx, e, NULL, NULL, 0);
             if (!IS_BOOL(e)) {
                 e = smt_new_const(value, SIZE(e));
             } else {
                 e = value ? Z3_mk_true(ctx) : Z3_mk_false(ctx);
             }
-            // printf("CONSTANT PROPAGATION DONE: ");
-            // print_z3_ast(e);
+            //printf("CONSTANT PROPAGATION DONE: ");
+            //print_z3_ast(e);
             return e;
         }
     }
@@ -1567,7 +1575,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
         uint8_t is_constant = 1;
         for (size_t i = 0; i < num_operands; i++) {
             Z3_ast child = Z3_get_app_arg(ctx, APP(e), i);
-            if (!is_const(child, &value)) {
+            Z3_ast_kind kind = Z3_get_ast_kind(ctx, e);
+            if (kind != Z3_NUMERAL_AST) {
                 is_constant = 0;
                 break;
             }
@@ -1587,31 +1596,10 @@ Z3_ast optimize_z3_query(Z3_ast e)
         Z3_ast op1          = ARG1(e);
         Z3_ast op1_original = op1;
         op1                 = optimize_z3_query(op1);
-#if 0
-        // from:
-        //  X != 0
-        // to:
-        //  X > 0
-        if (OP(op1) == Z3_OP_EQ && is_zero_const(ARG2(op1))) {
-            unsigned size_op1 = SIZE(ARG1(op1));
-            Z3_ast a1 = Z3_mk_bvsge(ctx, smt_new_const(FF_MASK(size_op1 - 1), size_op1),  ARG1(op1));
-            Z3_ast b1 = Z3_mk_bvsle(ctx, smt_new_const(1, size_op1),  ARG1(op1));
-            Z3_ast a2 = Z3_mk_bvsge(ctx, smt_new_const(FF_MASK(size_op1), size_op1),  ARG1(op1));
-            Z3_ast b2 = Z3_mk_bvsle(ctx, smt_new_const(FF_MASK(size_op1 - 1) + 1, size_op1),  ARG1(op1));
-            Z3_ast args_1[2] = { a1, b1 };
-            Z3_ast a = Z3_mk_and(ctx, 2, args_1);
-            Z3_ast args_2[2] = { a2, b2 };
-            Z3_ast b = Z3_mk_and(ctx, 2, args_2);
-            Z3_ast args[2] = { a, b };
-            e = Z3_mk_or(ctx, 2, args);
-            return e;
-        }
-#endif
         if (op1_original != op1) {
-            return Z3_mk_not(ctx, op1);
-        } else {
-            return e;
+            e = Z3_mk_not(ctx, op1);
         }
+        return e;
     }
 
     // if (decl_kind == Z3_OP_EXTRACT)
@@ -4154,6 +4142,13 @@ static void smt_branch_query(Query* q)
     Z3_ast      z3_query = smt_query_to_z3_wrapper(q->query, 0, 0, &inputs);
     z3_ast_exprs[GET_QUERY_IDX(q)] = z3_query;
     // SAYF("DONE: Translating query to Z3\n");
+#if 1
+    if (OP(z3_query) == Z3_OP_FALSE) {
+        print_z3_ast(z3_query);
+        print_expr(q->query);
+        ABORT();
+    }
+#endif
 #if 0
     debug_translation = 0;
 #endif
