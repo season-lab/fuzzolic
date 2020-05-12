@@ -47,30 +47,36 @@ if not os.path.exists(input_dir):
     print("Seed directory %s does not exist." % input_dir)
     sys.exit(1)
 
-if os.path.exists(run_dir):
-    if os.path.exists(run_dir + '/.fuzzolic'):
-        shutil.rmtree(run_dir)
-    else:
-        print("Unsafe to remove %s. Do it manually." % run_dir)
-        sys.exit(1)
+debug = False
+if "DEBUG_RUN" in os.environ:
+    debug = True
 
-os.system("mkdir %s" % run_dir)
-os.system("touch %s/%s " % (run_dir, '.fuzzolic'))
+if not debug:
+    if os.path.exists(run_dir):
+        if os.path.exists(run_dir + '/.fuzzolic'):
+            shutil.rmtree(run_dir)
+        else:
+            print("Unsafe to remove %s. Do it manually." % run_dir)
+            sys.exit(1)
+
+    os.system("mkdir %s" % run_dir)
+    os.system("touch %s/%s " % (run_dir, '.fuzzolic'))
 
 p_children = []
 signal.signal(signal.SIGINT, handler)
 signal.signal(signal.SIGTERM, handler)
 
-afl_master_args = [ AFL_BIN, '-Q', '-M', 'afl-master', '-o', run_dir, '-i', input_dir] + afl_args + ['--'] + program_args
-afl_master = subprocess.Popen(afl_master_args, stdout=DEVNULL, stderr=DEVNULL)
-p_children.append(afl_master)
+if not debug:
+    afl_master_args = [ AFL_BIN, '-Q', '-M', 'afl-master', '-o', run_dir, '-i', input_dir] + afl_args + ['--'] + program_args
+    afl_master = subprocess.Popen(afl_master_args, stdout=DEVNULL, stderr=DEVNULL)
+    p_children.append(afl_master)
 
-afl_slave_args = [ AFL_BIN, '-Q', '-S', 'afl-slave', '-o', run_dir, '-i', input_dir] + afl_args + ['--'] + program_args
-afl_slave = subprocess.Popen(afl_slave_args, stdout=DEVNULL, stderr=DEVNULL)
-p_children.append(afl_slave)
+    afl_slave_args = [ AFL_BIN, '-Q', '-S', 'afl-slave', '-o', run_dir, '-i', input_dir] + afl_args + ['--'] + program_args
+    afl_slave = subprocess.Popen(afl_slave_args, stdout=DEVNULL, stderr=DEVNULL)
+    p_children.append(afl_slave)
 
-# wait for afl slave to create the bitmap
-time.sleep(30) #
+    # wait for afl slave to create the bitmap
+    time.sleep(20) #
 
 fuzzolic_args = [ FUZZOLIC_BIN, '-a', run_dir + '/afl-slave/', '-i', run_dir + '/afl-slave/queue/', '-o', run_dir + '/fuzzolic', '--'] + program_args
 fuzzolic = subprocess.Popen(fuzzolic_args, stdout=None, stderr=None)

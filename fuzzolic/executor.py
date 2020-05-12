@@ -132,7 +132,7 @@ class Executor(object):
         run_dir, run_id = self.__get_run_dir()
 
         os.system("cp " + testcase + " " + run_dir)
-        testcase = run_dir + "/" + os.path.basename(testcase)
+        #testcase = run_dir + "/" + os.path.basename(testcase)
 
         print('\nRunning using testcase: %s' % testcase)
         print('Running directory: %s' % run_dir)
@@ -151,6 +151,7 @@ class Executor(object):
         env['EXPR_POOL_SHM_KEY'] = hex(random.getrandbits(64))
         env['QUERY_SHM_KEY'] = hex(random.getrandbits(64))
         env['BITMAP_SHM_KEY'] = hex(random.getrandbits(64))
+        # env['SOLVER_TIMEOUT'] = "90000"
 
         self.__check_shutdown_flag()
 
@@ -466,6 +467,7 @@ class Executor(object):
                 files.append(path)
 
         files = list(set(files) - self.afl_processed_testcases)
+        files = sorted(files)
         return sorted(files,
                       key=functools.cmp_to_key(minimizer_qsym.testcase_compare),
                       reverse=True)

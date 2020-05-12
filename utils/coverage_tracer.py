@@ -143,6 +143,9 @@ for dir in testcase_dirs:
 
 progressBar(testcase_count, testcase_total, 80)
 
+if "DUMPFILE" in os.environ:
+    os.system("cp " + coverage_log_path + " " + os.environ["DUMPFILE"])
+
 print("\n\nTotal number of basic blocks: %d" % file_lines_count(coverage_log_path))
 print("Total number of edges: %d" % file_lines_count(coverage_log_edges_path))
 print("Total number of processed testcases: %d\n" % testcase_count)
