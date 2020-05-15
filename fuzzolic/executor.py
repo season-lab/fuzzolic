@@ -14,6 +14,7 @@ import shutil
 import functools
 import tempfile
 import random
+import ctypes
 
 import minimizer_qsym
 import minimizer
@@ -69,6 +70,8 @@ class Executor(object):
 
         self.__load_config()
         self.__warning_log = set()
+
+        self.libc = ctypes.CDLL("libc.so.6")
 
     def __load_config(self):
         config = {}
@@ -159,9 +162,9 @@ class Executor(object):
             env['COVERAGE_TRACER_LOG'] = self.output_dir + '/fuzzolic-coverage.out'
 
         # generate random shm keys
-        env['EXPR_POOL_SHM_KEY'] = hex(random.getrandbits(64))
-        env['QUERY_SHM_KEY'] = hex(random.getrandbits(64))
-        env['BITMAP_SHM_KEY'] = hex(random.getrandbits(64))
+        env['EXPR_POOL_SHM_KEY'] = hex(random.getrandbits(32))
+        env['QUERY_SHM_KEY'] = hex(random.getrandbits(32))
+        env['BITMAP_SHM_KEY'] = hex(random.getrandbits(32))
         if self.timeout > 0:
             # print("Setting solving timeout: %s" % self.timeout)
             env['SOLVER_TIMEOUT'] = str(self.timeout)
@@ -324,8 +327,22 @@ class Executor(object):
                 except subprocess.TimeoutExpired:
                     print('Solver will be killed.')
                     p_solver.send_signal(signal.SIGKILL)
+                    p_solver.wait()
 
         p_solver_log.close()
+
+        # delete shared memory (solver may have crashed)
+        IPC_RMID = 0
+        shm_keys = [ 
+            int(env['EXPR_POOL_SHM_KEY'], 16),
+            int(env['QUERY_SHM_KEY'], 16),
+            int(env['BITMAP_SHM_KEY'], 16),
+        ]
+        for shm_key in shm_keys:
+            shm_id = self.libc.shmget(ctypes.c_int(shm_key), ctypes.c_int(1), ctypes.c_int(0))
+            if shm_id > 0:
+                r = self.libc.shmctl(ctypes.c_int(shm_id), ctypes.c_int(IPC_RMID), ctypes.c_int(0))
+                print("Shared memory detach on (%s, %s): %s" % (shm_key, shm_id, r))
 
         # parse tracer logs for known errors/warnings
         if not self.debug:

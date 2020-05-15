@@ -5227,6 +5227,7 @@ static void cleanup(void)
     smt_destroy();
 
     if (expr_pool_shm_id > 0) {
+        // printf("SHM: %lu %lu\n", config.expr_pool_shm_key, expr_pool_shm_id);
         shmctl(expr_pool_shm_id, IPC_RMID, NULL);
     }
     if (query_shm_id > 0) {
@@ -5248,6 +5249,14 @@ void sig_handler(int signo)
     save_bitmaps();
     cleanup();
     exit(0);
+}
+
+void sig_segfault(int signo)
+{
+    printf("\n[SOLVER] Received SIGSEGV\n\n");
+    save_bitmaps();
+    cleanup();
+    exit(139); // SIGSEGV
 }
 
 static inline void load_initial_testcase()
@@ -5299,6 +5308,7 @@ int main(int argc, char* argv[])
 
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
+    signal(SIGSEGV, sig_segfault);
 
     smt_init();
 
