@@ -29,9 +29,14 @@ SOLVER_WAIT_TIME_AT_STARTUP = 0.0010
 SOLVER_TIMEOUT = 10
 SHUTDOWN = False
 
+
 class Executor(object):
 
-    def __init__(self, binary, input, output_dir, binary_args, debug=None, afl=None, timeout=0, fuzzy=False):
+    def __init__(self, binary, input, output_dir, binary_args,
+                 debug=None, afl=None, timeout=0, fuzzy=False,
+                 optimistic_solving=False,
+                 memory_slice_reasoning=False,
+                 address_reasoning=False):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
@@ -55,11 +60,13 @@ class Executor(object):
             if not os.path.exists(afl):
                 sys.exit('ERROR: invalid AFL workdir')
             self.afl = os.path.abspath(afl)
-            self.minimizer = minimizer_qsym.TestcaseMinimizer([binary] + binary_args, AFL_PATH, output_dir, True)
+            self.minimizer = minimizer_qsym.TestcaseMinimizer(
+                [binary] + binary_args, AFL_PATH, output_dir, True)
             # self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
         else:
             self.afl = None
-            self.minimizer = minimizer_qsym.TestcaseMinimizer([binary] + binary_args, AFL_PATH, output_dir, True)
+            self.minimizer = minimizer_qsym.TestcaseMinimizer(
+                [binary] + binary_args, AFL_PATH, output_dir, True)
             # self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
         self.afl_processed_testcases = set()
 
@@ -67,6 +74,9 @@ class Executor(object):
         self.tick_count = 0
         self.timeout = timeout
         self.fuzzy = fuzzy
+        self.optimistic_solving = optimistic_solving
+        self.memory_slice_reasoning = memory_slice_reasoning
+        self.address_reasoning = address_reasoning
 
         self.__load_config()
         self.__warning_log = set()
@@ -76,7 +86,8 @@ class Executor(object):
     def __load_config(self):
         config = {}
         if not os.path.exists(self.binary + '.fuzzolic'):
-            print('Configuration file for %s is missing. Using default configuration.' % self.binary)
+            print(
+                'Configuration file for %s is missing. Using default configuration.' % self.binary)
             config['SYMBOLIC_INJECT_INPUT_MODE'] = "FROM_FILE"
         else:
             with open(self.binary + '.fuzzolic', 'r') as cfgfile:
@@ -159,7 +170,8 @@ class Executor(object):
 
         if self.debug == 'coverage':
             env['COVERAGE_TRACER'] = self.output_dir + '/fuzzolic-bitmap'
-            env['COVERAGE_TRACER_LOG'] = self.output_dir + '/fuzzolic-coverage.out'
+            env['COVERAGE_TRACER_LOG'] = self.output_dir + \
+                '/fuzzolic-coverage.out'
 
         # generate random shm keys
         env['EXPR_POOL_SHM_KEY'] = hex(random.getrandbits(32))
@@ -191,22 +203,29 @@ class Executor(object):
             p_solver_args += ['-b', self.global_bitmap]
             #p_solver_args += ['-b', os.path.join(self.output_dir, '/afl-bitmap')]
 
+            if self.optimistic_solving:
+                p_solver_args += [ '-p' ]
+            if self.memory_slice_reasoning:
+                p_solver_args += [ '-s' ]
+            if self.address_reasoning:
+                p_solver_args += [ '-r' ]
+
             p_solver_args += ['-c', self.__get_root_dir() + '/context_bitmap']
             p_solver_args += ['-m', self.__get_root_dir() + '/memory_bitmap']
             if not gdb_solver:
                 p_solver = subprocess.Popen(p_solver_args,
-                                        stdout=p_solver_log if not self.debug else None,
-                                        stderr=subprocess.STDOUT if not self.debug else None,
-                                        cwd=run_dir,
-                                        env=env)
+                                            stdout=p_solver_log if not self.debug else None,
+                                            stderr=subprocess.STDOUT if not self.debug else None,
+                                            cwd=run_dir,
+                                            env=env)
             else:
                 p_solver = subprocess.Popen(['gdb'] + p_solver_args[0:1],
-                                        stdout=p_solver_log if not self.debug else None,
-                                        stderr=subprocess.STDOUT if not self.debug else None,
-                                        stdin=subprocess.PIPE,
-                                        cwd=run_dir,
-                                        bufsize=0,
-                                        env=env)
+                                            stdout=p_solver_log if not self.debug else None,
+                                            stderr=subprocess.STDOUT if not self.debug else None,
+                                            stdin=subprocess.PIPE,
+                                            cwd=run_dir,
+                                            bufsize=0,
+                                            env=env)
 
                 gdb_cmd = 'run ' + ' '.join(p_solver_args[1:])
                 gdb_cmd += "\n"
@@ -239,9 +258,10 @@ class Executor(object):
 
         if self.debug != 'gdb':
             p_tracer_args += ['-symbolic']
-            if False or self.debug == 'trace': # or self.debug == 'no_solver':
+            if False or self.debug == 'trace':  # or self.debug == 'no_solver':
                 p_tracer_args += ['-d']
-                p_tracer_args += ['in_asm,op,op_opt,out_asm']  # 'in_asm,op_opt,out_asm'
+                # 'in_asm,op_opt,out_asm'
+                p_tracer_args += ['in_asm,op,op_opt,out_asm']
 
         args = self.binary_args
         if not self.testcase_from_stdin:
@@ -333,31 +353,36 @@ class Executor(object):
 
         # delete shared memory (solver may have crashed)
         IPC_RMID = 0
-        shm_keys = [ 
+        shm_keys = [
             int(env['EXPR_POOL_SHM_KEY'], 16),
             int(env['QUERY_SHM_KEY'], 16),
             int(env['BITMAP_SHM_KEY'], 16),
         ]
         for shm_key in shm_keys:
-            shm_id = self.libc.shmget(ctypes.c_int(shm_key), ctypes.c_int(1), ctypes.c_int(0))
+            shm_id = self.libc.shmget(ctypes.c_int(
+                shm_key), ctypes.c_int(1), ctypes.c_int(0))
             if shm_id > 0:
-                r = self.libc.shmctl(ctypes.c_int(shm_id), ctypes.c_int(IPC_RMID), ctypes.c_int(0))
-                print("Shared memory detach on (%s, %s): %s" % (shm_key, shm_id, r))
+                r = self.libc.shmctl(ctypes.c_int(
+                    shm_id), ctypes.c_int(IPC_RMID), ctypes.c_int(0))
+                print("Shared memory detach on (%s, %s): %s" %
+                      (shm_key, shm_id, r))
 
         # parse tracer logs for known errors/warnings
         if not self.debug:
             with open(p_tracer_log_name, 'r', encoding="utf8", errors='ignore') as log:
                 for line in log:
-                    #if re.search('Helper', line):
+                    # if re.search('Helper', line):
                     if 'Unhandled TCG instruction' in line or 'Helper ' in line:
                         if line not in self.__warning_log:
-                            self.__warning_log.add("[tracer warning]: %s" % line)
+                            self.__warning_log.add(
+                                "[tracer warning]: %s" % line)
 
             with open(p_solver_log_name, 'r', encoding="utf8", errors='ignore') as log:
                 for line in log:
                     if 'PROGRAM ABORT' in line:
                         if line not in self.__warning_log:
-                            self.__warning_log.add("[solver warning]: %s" % line)
+                            self.__warning_log.add(
+                                "[solver warning]: %s" % line)
 
         # check new test cases
         files = list(filter(os.path.isfile, glob.glob(
@@ -366,9 +391,11 @@ class Executor(object):
         k = 0
         for t in files:
             if self.afl:
-                good = self.__check_testcase_afl(t, run_id, k, target, global_bitmap_pre_run)
+                good = self.__check_testcase_afl(
+                    t, run_id, k, target, global_bitmap_pre_run)
             else:
-                good = self.__check_testcase(t, run_id, k, target, global_bitmap_pre_run)
+                good = self.__check_testcase(
+                    t, run_id, k, target, global_bitmap_pre_run)
                 # good = self.__check_testcase_full(t, run_id, k, target)
             if good:
                 k += 1
@@ -406,7 +433,7 @@ class Executor(object):
         self.tick_count += 1
         return self.tick_count - 1
 
-    def __check_testcase_afl(self, t, run_id, k, target, global_bitmap_pre_run = None):
+    def __check_testcase_afl(self, t, run_id, k, target, global_bitmap_pre_run=None):
         if self.minimizer.check_testcase(t, global_bitmap_pre_run):
             # print("Importing %s" % t)
             target = os.path.basename(target)[:len("id:......")]
@@ -435,19 +462,22 @@ class Executor(object):
             while len(queued_inputs) == 0:
                 waiting_rounds += 1
                 if waiting_rounds > 0 and waiting_rounds % 300 == 0:
-                    print("Waiting for a new input from AFL (%s secs)\n" % (waiting_rounds * 0.1))
+                    print("Waiting for a new input from AFL (%s secs)\n" %
+                          (waiting_rounds * 0.1))
                 time.sleep(0.1)
                 queued_inputs = self.__import_from_afl()
 
             if waiting_rounds > 0:
-                print("\nWaited %s seconds for a new input from AFL\n" % (waiting_rounds * 0.1))
+                print("\nWaited %s seconds for a new input from AFL\n" %
+                      (waiting_rounds * 0.1))
 
             self.afl_processed_testcases.add(queued_inputs[0])
             shutil.copy2(queued_inputs[0], self.cur_input)
 
-            #if initial_run:
+            # if initial_run:
             # update bitmap
-            self.minimizer.check_testcase(self.cur_input, self.global_bitmap, True)
+            self.minimizer.check_testcase(
+                self.cur_input, self.global_bitmap, True)
 
             return self.cur_input, os.path.basename(queued_inputs[0])
 
@@ -461,14 +491,17 @@ class Executor(object):
 
                 # copy the initial seed(s) in the queue
                 if not os.path.isdir(self.input):
-                    test_case_path = self.__import_test_case(self.input, 'seed.dat')
+                    test_case_path = self.__import_test_case(
+                        self.input, 'seed.dat')
                     queued_inputs.append(test_case_path)
                 else:
                     for t in glob.glob(self.input + '/*'):
-                        test_case_path = self.__import_test_case(t, os.path.basename(t))
+                        test_case_path = self.__import_test_case(
+                            t, os.path.basename(t))
                         queued_inputs.append(test_case_path)
 
-                self.minimizer.check_testcase(queued_inputs[0], self.global_bitmap, True)
+                self.minimizer.check_testcase(
+                    queued_inputs[0], self.global_bitmap, True)
 
             elif len(queued_inputs) > 1:
                 # sort the queue
@@ -499,7 +532,8 @@ class Executor(object):
         files = list(set(files) - self.afl_processed_testcases)
         files = sorted(files)
         return sorted(files,
-                      key=functools.cmp_to_key(minimizer_qsym.testcase_compare),
+                      key=functools.cmp_to_key(
+                          minimizer_qsym.testcase_compare),
                       reverse=True)
 
     def run(self):

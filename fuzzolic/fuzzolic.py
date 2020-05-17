@@ -38,6 +38,12 @@ def main():
         '-t', '--timeout', type=int, help='set timeout on the solving time (ms)')
     parser.add_argument(
         '-f', '--fuzzy', action='store_true', help='use fuzzy solver')
+    parser.add_argument(
+        '-r', '--address-reasoning', action='store_true', help='enable address reasoning')
+    parser.add_argument(
+        '-s', '--memory-slice', action='store_true', help='enable memory slice reasoning')
+    parser.add_argument(
+        '-p', '--optimistic-solving', action='store_true', help='enable optimistic solving')
 
     # required args
     parser.add_argument(
@@ -83,11 +89,22 @@ def main():
     timeout = args.timeout
     if timeout is None:
         timeout = 0
+    optimistic_solving = args.optimistic_solving
+    if optimistic_solving is None:
+        optimistic_solving = False
+    address_reasoning = args.address_reasoning
+    if address_reasoning is None:
+        address_reasoning = False
+    memory_slice_reasoning = args.memory_slice
+    if memory_slice_reasoning is None:
+        memory_slice_reasoning = False
 
     signal.signal(signal.SIGINT, handler)
 
     fuzzolic_executor = executor.Executor(
-        binary, input, output_dir, binary_args, debug, afl, timeout, fuzzy)
+        binary, input, output_dir, binary_args, debug, afl,
+        timeout, fuzzy, optimistic_solving, memory_slice_reasoning,
+        address_reasoning)
     fuzzolic_executor.run()
 
 

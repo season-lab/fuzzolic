@@ -15,9 +15,6 @@
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
-#define OPTIMISTIC_SOLVING           0
-#define MEMORY_SLICE_REASONING       0
-#define ADDRESS_REASONING            0
 
 #ifndef USE_FUZZY_SOLVER
 #define USE_FUZZY_SOLVER             0
@@ -4257,14 +4254,14 @@ static void smt_branch_query(Query* q)
                 unsat_time += get_diff_time_microsec(&start, &end);
                 unsat_count += 1;
                 printf("UNSAT: sum=%lu count=%lu\n", unsat_time, unsat_count);
-#if OPTIMISTIC_SOLVING
-                r = z3fuzz_get_optimistic_sol(&smt_solver.fuzzy_ctx,
-                                                &proof, &proof_size);
-                if (r) {
-                    printf("Query is OPTIMISTIC-SAT\n");
-                    smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 0);
+                if (config.optimistic_solving) {
+                    r = z3fuzz_get_optimistic_sol(&smt_solver.fuzzy_ctx,
+                                                    &proof, &proof_size);
+                    if (r) {
+                        printf("Query is OPTIMISTIC-SAT\n");
+                        smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 0);
+                    }
                 }
-#endif
             }
             printf(" [INFO] Branch interesting: addr=0x%lx taken=%u sat=%d\n",
                 q->address, (uint16_t) q->args64, r);
@@ -4309,15 +4306,13 @@ static void smt_branch_query(Query* q)
 #endif
 #if 1
             int is_sat = smt_query_check(solver, GET_QUERY_IDX(q));
-#if OPTIMISTIC_SOLVING
-            if (!is_sat) {
+            if (config.optimistic_solving && !is_sat) {
                 Z3_solver_reset(smt_solver.ctx, solver);
                 Z3_solver_assert(
                     smt_solver.ctx, solver,
                     z3_neg_query);
                 smt_query_check(solver, GET_QUERY_IDX(q));
             }
-#endif
             printf(" [INFO] Branch interesting: addr=0x%lx taken=%u sat=%d\n", 
                 q->address, (uint16_t) q->args64, is_sat);
 
@@ -4816,11 +4811,9 @@ static void smt_slice_query(Query* q)
     GHashTable* conc_addrs = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs, (gpointer)addr_conc);
     int r = 0;
-#if MEMORY_SLICE_REASONING
-    if (inputs) {
+    if (config.memory_slice_reasoning && inputs) {
         r = fuzz_query_eval(inputs, z3_addr, conc_addrs, 0);
     }
-#endif
 #if 0
     GHashTable* conc_addrs2 = g_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs2, (gpointer)addr_conc);
@@ -5063,8 +5056,8 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     }
 #endif
     uintptr_t solution = (uintptr_t)q->query->op2;
-#if ADDRESS_REASONING
-    if (is_interesting_memory(solution)) {
+
+    if (config.address_reasoning && is_interesting_memory(solution)) {
 
         printf("\nQuery %s\n", opkind_to_str(opkind));
 
@@ -5117,7 +5110,6 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     } else {
         // printf("Address is not interesting. Skipping it.\n");
     }
-#endif
 
     if (opkind == SYMBOLIC_LOAD || opkind == SYMBOLIC_STORE) {
         Z3_ast c = Z3_mk_eq(smt_solver.ctx, z3_query,

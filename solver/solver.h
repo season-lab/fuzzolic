@@ -76,6 +76,10 @@ typedef struct Config {
     const char* context_bitmap_path;
     const char* memory_bitmap_path;
     //
+    uint8_t     memory_slice_reasoning;
+    uint8_t     address_reasoning;
+    uint8_t     optimistic_solving;
+    //
     uint64_t    expr_pool_shm_key;
     uint64_t    query_shm_key;
 #if BRANCH_COVERAGE == FUZZOLIC
