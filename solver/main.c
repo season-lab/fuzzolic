@@ -171,7 +171,7 @@ static void smt_init(void)
 
 #if USE_FUZZY_SOLVER
     z3fuzz_init(&smt_solver.fuzzy_ctx, smt_solver.ctx,
-                (char*)config.testcase_path, NULL, &conc_query_eval_value);
+                (char*)config.testcase_path, NULL, &conc_query_eval_value, SOLVER_TIMEOUT_MS);
 #endif
 }
 
@@ -4250,12 +4250,21 @@ static void smt_branch_query(Query* q)
                 printf("Query is SAT\n");
                 smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 0);
             } else {
-                if (conc_eval_count > 0)
+                if (conc_eval_count > 0) {
                     printf("Query is non-SAT: avg_conc_eval=%lu count=%lu\n",
                            conc_eval_time / conc_eval_count, conc_eval_count);
+                }
                 unsat_time += get_diff_time_microsec(&start, &end);
                 unsat_count += 1;
                 printf("UNSAT: sum=%lu count=%lu\n", unsat_time, unsat_count);
+#if OPTIMISTIC_SOLVING
+                r = z3fuzz_get_optimistic_sol(&smt_solver.fuzzy_ctx,
+                                                &proof, &proof_size);
+                if (r) {
+                    printf("Query is OPTIMISTIC-SAT\n");
+                    smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 0);
+                }
+#endif
             }
             printf(" [INFO] Branch interesting: addr=0x%lx taken=%u sat=%d\n",
                 q->address, (uint16_t) q->args64, r);
@@ -4369,6 +4378,9 @@ static void smt_branch_query(Query* q)
 #if 0
     if (GET_QUERY_IDX(q) == 2218)
         ABORT();
+#endif
+#if USE_FUZZY_SOLVER
+    z3fuzz_notify_constraint(&smt_solver.fuzzy_ctx, z3_query);
 #endif
 }
 

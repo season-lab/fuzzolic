@@ -14,7 +14,6 @@ simpleif: build-tracer build-solver kill-solver clean-work-dir
 
 native:
 	cat tests/simple_if_input_ko.dat | ./tracer/x86_64-linux-user/qemu-x86_64 -d in_asm,op_opt,out_asm ./tests/simple-if 2> asm_in_out.log
-	grep 'IN: foo' -A 200 asm_in_out.log | head -n 200
 
 all-concrete: clean-work-dir kill-solver
 	time -p ./fuzzolic/fuzzolic.py --debug out -o workdir -i tests/all_concrete_0.dat tests/driver all_concrete
