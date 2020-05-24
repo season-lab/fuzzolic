@@ -4301,8 +4301,8 @@ static void smt_branch_query(Query* q)
                     r = z3fuzz_get_optimistic_sol(&smt_solver.fuzzy_ctx,
                                                     &proof, &proof_size);
                     if (r) {
-                        printf("Query is OPTIMISTIC-SAT\n");
-                        smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 0);
+                        printf("Query is SAT [OPTIMISTIC]\n");
+                        smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 666);
                     }
                 }
             }
