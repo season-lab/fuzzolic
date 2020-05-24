@@ -709,7 +709,7 @@ static void inline smt_dump_solver(Z3_solver solver, size_t idx)
     fclose(fp);
 }
 
-static int smt_query_check(Z3_solver solver, size_t idx)
+static int smt_query_check(Z3_solver solver, size_t idx, uint8_t optimistic)
 {
     int             qres = 0;
     struct timespec start;
@@ -726,23 +726,23 @@ static int smt_query_check(Z3_solver solver, size_t idx)
 
     switch (res) {
         case Z3_L_FALSE:
-            printf("Query is UNSAT\n");
+            printf("Query is UNSAT%s\n", optimistic ? " [OPTIMISTIC]" : "");
             smt_solver.unsat_count += 1;
             smt_solver.unsat_time += elapsed_microsecs;
             break;
         case Z3_L_UNDEF:
-            printf("Query is UNKNOWN\n");
+            printf("Query is UNKNOWN%s\n", optimistic ? " [OPTIMISTIC]" : "");
             smt_solver.unknown_count += 1;
             smt_solver.unknown_time += elapsed_microsecs;
             break;
         case Z3_L_TRUE:
-            printf("Query is SAT\n");
+            printf("Query is SAT%s\n", optimistic ? " [OPTIMISTIC]" : "");
             smt_solver.sat_count += 1;
             smt_solver.sat_time += elapsed_microsecs;
             m = Z3_solver_get_model(smt_solver.ctx, solver);
             if (m) {
                 Z3_model_inc_ref(smt_solver.ctx, m);
-                smt_dump_solution(smt_solver.ctx, m, idx, 0);
+                smt_dump_solution(smt_solver.ctx, m, idx, optimistic ? 666 : 0);
             }
             qres = 1;
             break;
@@ -4345,13 +4345,13 @@ static void smt_branch_query(Query* q)
             int is_sat = smt_run_from_string(solver, GET_QUERY_IDX(q));
 #endif
 #if 1
-            int is_sat = smt_query_check(solver, GET_QUERY_IDX(q));
+            int is_sat = smt_query_check(solver, GET_QUERY_IDX(q), 0);
             if (config.optimistic_solving && !is_sat) {
                 Z3_solver_reset(smt_solver.ctx, solver);
                 Z3_solver_assert(
                     smt_solver.ctx, solver,
                     z3_neg_query);
-                smt_query_check(solver, GET_QUERY_IDX(q));
+                smt_query_check(solver, GET_QUERY_IDX(q), 1);
             }
             printf(" [INFO] Branch interesting: addr=0x%lx taken=%u sat=%d\n", 
                 q->address, (uint16_t) q->args64, is_sat);
@@ -5353,7 +5353,7 @@ static void run_query_from_file(const char* path)
         Z3_solver_assert(smt_solver.ctx, solver,
                          Z3_ast_vector_get(smt_solver.ctx, ast_vector, i));
     }
-    smt_query_check(solver, 0);
+    smt_query_check(solver, 0, 0);
     smt_del_solver(solver);
 
     Z3_ast_vector_dec_ref(smt_solver.ctx, ast_vector);

@@ -13,15 +13,18 @@ ABORTING_COUNT = 0
 def handler(signo, stackframe):
     print("[FUZZOLIC] Aborting....")
     executor.SHUTDOWN = True
+    print(executor.RUNNING_PROCESSES)
     for p in executor.RUNNING_PROCESSES:
         print("[FUZZOLIC] Sending SIGINT")
         p.send_signal(signal.SIGINT)
         try:
             p.wait(2)
+            executor.RUNNING_PROCESSES.remove(p)
         except:
             print("[FUZZOLIC] Sending SIGKILL")
             p.send_signal(signal.SIGKILL)
             p.wait()
+            executor.RUNNING_PROCESSES.remove(p)
 
     global ABORTING_COUNT
     ABORTING_COUNT += 1

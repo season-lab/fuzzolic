@@ -218,7 +218,7 @@ class Executor(object):
             if self.memory_slice_reasoning:
                 p_solver_args += [ '-s' ]
             if self.address_reasoning:
-                p_solver_args += [ '-r' ]
+                p_solver_args += [ '-a' ]
 
             p_solver_args += ['-c', self.__get_root_dir() + '/context_bitmap']
             p_solver_args += ['-m', self.__get_root_dir() + '/memory_bitmap']
