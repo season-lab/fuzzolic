@@ -29,6 +29,8 @@ SOLVER_WAIT_TIME_AT_STARTUP = 0.0010
 SOLVER_TIMEOUT = 10
 SHUTDOWN = False
 
+RUNNING_PROCESSES = []
+
 
 class Executor(object):
 
@@ -36,7 +38,8 @@ class Executor(object):
                  debug=None, afl=None, timeout=0, fuzzy=False,
                  optimistic_solving=False,
                  memory_slice_reasoning=False,
-                 address_reasoning=False):
+                 address_reasoning=False,
+                 fuzz_expr=False):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
@@ -77,6 +80,7 @@ class Executor(object):
         self.optimistic_solving = optimistic_solving
         self.memory_slice_reasoning = memory_slice_reasoning
         self.address_reasoning = address_reasoning
+        self.fuzz_expr = fuzz_expr
 
         self.__load_config()
         self.__warning_log = set()
@@ -152,6 +156,7 @@ class Executor(object):
 
     def fuzz_one(self, testcase, target):
 
+        global RUNNING_PROCESSES
         self.__check_shutdown_flag()
 
         run_dir, run_id = self.__get_run_dir()
@@ -180,6 +185,11 @@ class Executor(object):
         if self.timeout > 0:
             # print("Setting solving timeout: %s" % self.timeout)
             env['SOLVER_TIMEOUT'] = str(self.timeout)
+
+        if self.fuzz_expr:
+            env['DEBUG_FUZZ_EXPR'] = "1"
+            assert('DEBUG_FUZZ_EXPR_IDX' in env)
+            assert('DEBUG_FUZZ_EXPR_VALUE' in env)
 
         self.__check_shutdown_flag()
 
@@ -218,6 +228,7 @@ class Executor(object):
                                             stderr=subprocess.STDOUT if not self.debug else None,
                                             cwd=run_dir,
                                             env=env)
+                RUNNING_PROCESSES.append(p_solver)
             else:
                 p_solver = subprocess.Popen(['gdb'] + p_solver_args[0:1],
                                             stdout=p_solver_log if not self.debug else None,
@@ -226,6 +237,8 @@ class Executor(object):
                                             cwd=run_dir,
                                             bufsize=0,
                                             env=env)
+
+                RUNNING_PROCESSES.append(p_solver)
 
                 gdb_cmd = 'run ' + ' '.join(p_solver_args[1:])
                 gdb_cmd += "\n"
@@ -257,11 +270,11 @@ class Executor(object):
         p_tracer_args += [TRACER_BIN]
 
         if self.debug != 'gdb':
-            p_tracer_args += ['-symbolic']
-            if False or self.debug == 'trace':  # or self.debug == 'no_solver':
+            p_tracer_args += ['-symbolic'] # self.fuzz_expr or 
+            if False and (self.fuzz_expr or self.debug == 'trace'):  # or self.debug == 'no_solver':
                 p_tracer_args += ['-d']
                 # 'in_asm,op_opt,out_asm'
-                p_tracer_args += ['in_asm,op,op_opt,out_asm']
+                p_tracer_args += ['in_asm,op']
 
         args = self.binary_args
         if not self.testcase_from_stdin:
@@ -276,14 +289,15 @@ class Executor(object):
         # print(p_tracer_args)
 
         p_tracer = subprocess.Popen(p_tracer_args,
-                                    stdout=p_tracer_log if not self.debug else None,
-                                    stderr=subprocess.STDOUT if not self.debug else None,
+                                    stdout=p_tracer_log if not self.debug and not self.fuzz_expr else None,
+                                    stderr=subprocess.STDOUT if not self.debug and not self.fuzz_expr else None,
                                     stdin=subprocess.PIPE if self.testcase_from_stdin or self.debug == 'gdb' else None,
                                     cwd=run_dir,
                                     env=env,
                                     bufsize=0 if self.debug == 'gdb' else -1,
                                     #universal_newlines=True if self.debug == 'gdb' else False
                                     )
+        RUNNING_PROCESSES.append(p_tracer)
 
         # print("Tracer started")
 
@@ -310,6 +324,8 @@ class Executor(object):
             p_tracer.stdin.close()
 
         p_tracer.wait()
+        if p_tracer in RUNNING_PROCESSES:
+            RUNNING_PROCESSES.remove(p_tracer)
         # print("Tracer completed")
         p_tracer_log.close()
 
@@ -328,9 +344,18 @@ class Executor(object):
 
         if p_tracer.returncode == -11:
             if self.debug != 'no_solver' and self.debug != 'coverage':
-                p_solver.send_signal(signal.SIGINT)
-                time.sleep(15)
-                p_solver.send_signal(signal.SIGKILL)
+                # p_solver.send_signal(signal.SIGINT)
+                # try:
+                #     p_solver.wait(15)
+                # except:
+                #    p_solver.send_signal(signal.SIGKILL)
+                p_solver.send_signal(signal.SIGUSR1)
+
+        if self.fuzz_expr:
+            p_solver.send_signal(signal.SIGINT)
+            time.sleep(1)
+            p_solver.send_signal(signal.SIGKILL)
+            sys.exit(p_tracer.returncode)
 
         if self.debug != 'no_solver' and self.debug != 'coverage':
             while not SHUTDOWN:
@@ -345,9 +370,12 @@ class Executor(object):
                 try:
                     p_solver.wait(SOLVER_TIMEOUT)
                 except subprocess.TimeoutExpired:
-                    print('Solver will be killed.')
+                    print('[FUZZOLIC] Solver will be killed.')
                     p_solver.send_signal(signal.SIGKILL)
                     p_solver.wait()
+
+        if p_solver in RUNNING_PROCESSES:
+            RUNNING_PROCESSES.remove(p_solver)
 
         p_solver_log.close()
 
@@ -399,6 +427,8 @@ class Executor(object):
                 # good = self.__check_testcase_full(t, run_id, k, target)
             if good:
                 k += 1
+            else:
+                os.unlink(t)
 
         os.unlink(global_bitmap_pre_run)
 
@@ -545,7 +575,7 @@ class Executor(object):
             self.fuzz_one(testcase, target)
             end = time.time()
             print("Run took %s secs" % round(end-start, 1))
-            if self.debug:
+            if self.debug or self.fuzz_expr:
                 return
             self.__check_shutdown_flag()
             testcase, target = self.__pick_testcase()

@@ -16,10 +16,14 @@
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_MS            10000
 
+#define DEBUG_FUZZ_EXPR              0
+#define DEBUG_EXPR_OPT               0
+
 #ifndef USE_FUZZY_SOLVER
 #define USE_FUZZY_SOLVER             0
 #endif
 
+static int go_signal = 0;
 static int expr_pool_shm_id = -1;
 Expr*      pool;
 
@@ -80,6 +84,24 @@ typedef struct {
 } Testcase;
 
 static Testcase testcase;
+
+#define APP(e)    ((Z3_app)e)
+#define N_ARGS(e) Z3_get_app_num_args(smt_solver.ctx, APP(e))
+#define ARG1(e)   Z3_get_app_arg(smt_solver.ctx, APP(e), 0)
+#define ARG2(e)   Z3_get_app_arg(smt_solver.ctx, APP(e), 1)
+#define ARG3(e)   Z3_get_app_arg(smt_solver.ctx, APP(e), 2)
+#define ARG(e, i) Z3_get_app_arg(smt_solver.ctx, APP(e), i)
+#define PARAM1(e)                                                              \
+    Z3_get_decl_int_parameter(smt_solver.ctx,                                  \
+                              Z3_get_app_decl(smt_solver.ctx, APP(e)), 0)
+#define PARAM2(e)                                                              \
+    Z3_get_decl_int_parameter(smt_solver.ctx,                                  \
+                              Z3_get_app_decl(smt_solver.ctx, APP(e)), 1)
+#define OP(e) get_op(APP(e))
+#define SIZE(e)                                                                \
+    Z3_get_bv_sort_size(smt_solver.ctx, Z3_get_sort(smt_solver.ctx, e))
+#define IS_BOOL(e) \
+    (Z3_get_sort_kind(smt_solver.ctx, Z3_get_sort(smt_solver.ctx, e)) == Z3_BOOL_SORT)
 
 Config config = {0};
 
@@ -172,26 +194,34 @@ static void smt_init(void)
 #endif
 }
 
+static Z3_solver cached_solver = NULL;
 static inline Z3_solver smt_new_solver()
 {
+    if (cached_solver) {
+        return cached_solver;
+    }
 #if 1
-    Z3_solver solver = Z3_mk_solver(smt_solver.ctx);
+    cached_solver = Z3_mk_solver(smt_solver.ctx);
 #else
     Z3_solver solver = Z3_mk_simple_solver(smt_solver.ctx);
 #endif
-    Z3_solver_inc_ref(smt_solver.ctx, solver);
+    Z3_solver_inc_ref(smt_solver.ctx, cached_solver);
 #if 1
     Z3_symbol timeout = Z3_mk_string_symbol(smt_solver.ctx, "timeout");
     Z3_params params  = Z3_mk_params(smt_solver.ctx);
     Z3_params_set_uint(smt_solver.ctx, params, timeout, SOLVER_TIMEOUT_MS);
-    Z3_solver_set_params(smt_solver.ctx, solver, params);
+    Z3_solver_set_params(smt_solver.ctx, cached_solver, params);
 #endif
-    return solver;
+    return cached_solver;
 }
 
 static inline void smt_del_solver(Z3_solver solver)
 {
+#if 1
+    Z3_solver_reset(smt_solver.ctx, solver);
+#else
     Z3_solver_dec_ref(smt_solver.ctx, solver);
+#endif
 }
 
 static inline void smt_destroy(void)
@@ -338,10 +368,17 @@ static inline void add_deps_to_solver(GHashTable* inputs, Z3_solver solver)
         size_t      input_idx = (size_t)key;
         Dependency* dep       = dependency_graph[input_idx];
 
+        // printf("Input: %lu\n", input_idx);
+
         if (!dep) {
             continue;
         }
-
+#if 0
+        g_hash_table_iter_init(&iter2, dep->inputs);
+        while (g_hash_table_iter_next(&iter2, &key, &value)) {
+            printf("Input 2: %lu\n", key);
+        }
+#endif
         g_hash_table_iter_init(&iter2, dep->exprs);
         while (g_hash_table_iter_next(&iter2, &key, &value)) {
             // ToDo: can we remove this check?
@@ -632,6 +669,32 @@ static void inline smt_dump_solver_to_file(Z3_solver solver, char * path)
     fwrite(s_query, strlen(s_query), 1, fp);
     fclose(fp);
 }
+
+#if DEBUG_FUZZ_EXPR
+static void inline smt_dump_debug_query(Z3_solver pi,
+                    Z3_ast expr, uint64_t idx)
+{
+    Z3_string s_query = Z3_solver_to_string(smt_solver.ctx, pi);
+    char      test_case_name[128];
+    int       n = snprintf(test_case_name, sizeof(test_case_name),
+                     "debug_%lu.pi", idx);
+    assert(n > 0 && n < sizeof(test_case_name) && "test case name too long");
+    FILE* fp = fopen(test_case_name, "w");
+    fwrite(s_query, strlen(s_query), 1, fp);
+    fclose(fp);
+    //
+    Z3_solver_reset(smt_solver.ctx, pi);
+    expr = Z3_mk_eq(smt_solver.ctx, expr, smt_new_const(0, SIZE(expr)));
+    Z3_solver_assert(smt_solver.ctx, pi, expr);
+    s_query = Z3_solver_to_string(smt_solver.ctx, pi);
+    n = snprintf(test_case_name, sizeof(test_case_name),
+                     "debug_%lu.expr", idx);
+    assert(n > 0 && n < sizeof(test_case_name) && "test case name too long");
+    fp = fopen(test_case_name, "w");
+    fwrite(s_query, strlen(s_query), 1, fp);
+    fclose(fp);
+}
+#endif
 
 static void inline smt_dump_solver(Z3_solver solver, size_t idx)
 {
@@ -1122,24 +1185,6 @@ Z3_ast smt_to_bv_n(Z3_ast e, size_t width) // cast boolean to a bitvector
         return e;
     }
 }
-
-#define APP(e)    ((Z3_app)e)
-#define N_ARGS(e) Z3_get_app_num_args(smt_solver.ctx, APP(e))
-#define ARG1(e)   Z3_get_app_arg(smt_solver.ctx, APP(e), 0)
-#define ARG2(e)   Z3_get_app_arg(smt_solver.ctx, APP(e), 1)
-#define ARG3(e)   Z3_get_app_arg(smt_solver.ctx, APP(e), 2)
-#define ARG(e, i) Z3_get_app_arg(smt_solver.ctx, APP(e), i)
-#define PARAM1(e)                                                              \
-    Z3_get_decl_int_parameter(smt_solver.ctx,                                  \
-                              Z3_get_app_decl(smt_solver.ctx, APP(e)), 0)
-#define PARAM2(e)                                                              \
-    Z3_get_decl_int_parameter(smt_solver.ctx,                                  \
-                              Z3_get_app_decl(smt_solver.ctx, APP(e)), 1)
-#define OP(e) get_op(APP(e))
-#define SIZE(e)                                                                \
-    Z3_get_bv_sort_size(smt_solver.ctx, Z3_get_sort(smt_solver.ctx, e))
-#define IS_BOOL(e) \
-    (Z3_get_sort_kind(smt_solver.ctx, Z3_get_sort(smt_solver.ctx, e)) == Z3_BOOL_SORT)
 
 static inline uint8_t is_zero_const(Z3_ast e)
 {
@@ -4014,7 +4059,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
     }
 #endif
 
-#if 0
+#if DEBUG_EXPR_OPT
     // printf("\nOPT CHECK BEFORE\n");
     Z3_ast orig_r = r;
 #endif
@@ -4025,7 +4070,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
     // smt_print_ast_sort(r);
     // printf("END opkind: %s\n", opkind_to_str(query->opkind));
 
-#if 0
+#if DEBUG_EXPR_OPT
     if (r != orig_r) { // && debug_translation
 #if 0
         if (SIZE(r) != SIZE(orig_r)) {
@@ -4118,8 +4163,6 @@ static void smt_stats(Z3_solver solver)
                (smt_solver.unknown_time / smt_solver.unknown_count));
     }
 }
-
-static Z3_solver cached_solver = NULL;
 
 static void smt_branch_query(Query* q)
 {
@@ -4266,10 +4309,7 @@ static void smt_branch_query(Query* q)
             printf(" [INFO] Branch interesting: addr=0x%lx taken=%u sat=%d\n",
                 q->address, (uint16_t) q->args64, r);
 #else
-            if (cached_solver == NULL) {
-                cached_solver = smt_new_solver();
-            }
-            Z3_solver solver = cached_solver;
+            Z3_solver solver = smt_new_solver();
 #if 0
             if (GET_QUERY_IDX(q) == 275) {
                 // print_expr(q->query);
@@ -4323,11 +4363,10 @@ static void smt_branch_query(Query* q)
             }
 #endif
 
-            // smt_del_solver(solver);
-            Z3_solver_reset(smt_solver.ctx, solver);
+            smt_del_solver(solver);
 #endif
         } else {
-#if 1
+#if 0
             printf("Branch (addr=%lx id=%lu) is not interesting. Skipping it.\n", 
                     q->address, GET_QUERY_IDX(q));
 #endif
@@ -4985,7 +5024,8 @@ static void smt_slice_query(Query* q)
                           v);
 #endif
 
-    g_hash_table_add(inputs, (gpointer)s_load_id);
+    g_hash_table_add(inputs, (gpointer)scale_sload_index(s_load_id));
+    g_hash_table_add(inputs, (gpointer)scale_sload_index(s_load_id) + 1);
     z3_ast_exprs[GET_QUERY_IDX(q)] = e;
     update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
 
@@ -5177,6 +5217,16 @@ static void smt_consistency_expr(Query* q)
         print_expr(e);
         ABORT();
     }
+
+#if DEBUG_FUZZ_EXPR
+    if (inputs) {
+        printf("Dumping query for debug fuzz expr\n");
+        Z3_solver solver = smt_new_solver();
+        add_deps_to_solver(inputs, solver);
+        smt_dump_debug_query(solver, z3_e, GET_QUERY_IDX(q));
+        smt_del_solver(solver);
+    }
+#endif
 }
 
 static void smt_query(Query* q)
@@ -5249,7 +5299,7 @@ static void cleanup(void)
 
 void sig_handler(int signo)
 {
-    printf("\n[SOLVER] Received SIGINT\n\n");
+    printf("[SOLVER] Received SIGINT\n\n");
     save_bitmaps();
     cleanup();
     exit(0);
@@ -5261,6 +5311,12 @@ void sig_segfault(int signo)
     save_bitmaps();
     cleanup();
     exit(139); // SIGSEGV
+}
+
+void sig_usr1(int signo)
+{
+    printf("\n[SOLVER] Received SIGUSR1\n\n");
+    go_signal = 1;
 }
 
 static inline void load_initial_testcase()
@@ -5313,6 +5369,7 @@ int main(int argc, char* argv[])
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
     signal(SIGSEGV, sig_segfault);
+    signal(SIGUSR1, sig_usr1);
 
     smt_init();
 
@@ -5389,7 +5446,9 @@ int main(int argc, char* argv[])
 
     // wait tracer to finish its job
     while (1) {
-        if (next_query[0].query != (void*)SHM_DONE) {
+        if (go_signal) {
+            break;
+        } else if (next_query[0].query != (void*)SHM_DONE) {
             nanosleep(&polling_time, NULL);
         } else {
             // printf("Tracer has finished\n");
@@ -5406,7 +5465,12 @@ int main(int argc, char* argv[])
 
     while (1) {
         if (next_query[0].query == NULL) {
+#if 0
             nanosleep(&polling_time, NULL);
+#else
+            // tracer may have crashed
+            break;
+#endif
         } else {
             if (next_query[0].query == FINAL_QUERY) {
                 SAYF("\n\nReached final query. Exiting...\n");

@@ -13,6 +13,15 @@ ABORTING_COUNT = 0
 def handler(signo, stackframe):
     print("[FUZZOLIC] Aborting....")
     executor.SHUTDOWN = True
+    for p in executor.RUNNING_PROCESSES:
+        print("[FUZZOLIC] Sending SIGINT")
+        p.send_signal(signal.SIGINT)
+        try:
+            p.wait(2)
+        except:
+            print("[FUZZOLIC] Sending SIGKILL")
+            p.send_signal(signal.SIGKILL)
+            p.wait()
 
     global ABORTING_COUNT
     ABORTING_COUNT += 1
@@ -44,6 +53,8 @@ def main():
         '-s', '--memory-slice', action='store_true', help='enable memory slice reasoning')
     parser.add_argument(
         '-p', '--optimistic-solving', action='store_true', help='enable optimistic solving')
+    parser.add_argument(
+        '--fuzz-expr', action='store_true', help='enable fuzz expression (debug)')
 
     # required args
     parser.add_argument(
@@ -98,13 +109,16 @@ def main():
     memory_slice_reasoning = args.memory_slice
     if memory_slice_reasoning is None:
         memory_slice_reasoning = False
+    fuzz_expr = args.fuzz_expr
+    if fuzz_expr is None:
+        fuzz_expr = False
 
     signal.signal(signal.SIGINT, handler)
 
     fuzzolic_executor = executor.Executor(
         binary, input, output_dir, binary_args, debug, afl,
         timeout, fuzzy, optimistic_solving, memory_slice_reasoning,
-        address_reasoning)
+        address_reasoning, fuzz_expr)
     fuzzolic_executor.run()
 
 
