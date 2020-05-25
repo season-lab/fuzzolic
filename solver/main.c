@@ -4005,6 +4005,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
         // x86 specific
         case RCL:
         case CMP_EQ:
+        case CMP_GT:
+        case CMP_GE:
+        case CMP_LT:
+        case CMP_LE:
         case PMOVMSKB:
         case MIN:
         case MAX:

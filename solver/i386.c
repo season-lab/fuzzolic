@@ -794,7 +794,12 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
     GHashTable* op2_inputs = NULL;
     switch (query->opkind) {
 
-        case CMP_EQ: {
+        case CMP_EQ: 
+        case CMP_GT:
+        case CMP_GE:
+        case CMP_LT:
+        case CMP_LE:
+        {
             size_t slice = (uintptr_t)query->op3;
             assert(slice <= sizeof(uintptr_t));
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, slice,
@@ -802,16 +807,34 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, slice,
                                   &op2_inputs);
 #if VERBOSE
-            printf("CMP_EQ\n");
+            printf("%s\n", opkind_to_str(query->opkind));
             smt_print_ast_sort(op1);
             smt_print_ast_sort(op2);
             if (op1) print_z3_ast(op1);
             if (op2) print_z3_ast(op2);
 #endif
-            r            = Z3_mk_eq(ctx, op1, op2);
+            switch (query->opkind) {
+                case CMP_EQ:
+                    r            = Z3_mk_eq(ctx, op1, op2);
+                    break;
+                case CMP_GT:
+                    r            = Z3_mk_bvsgt(ctx, op1, op2);
+                    break;
+                case CMP_GE:
+                    r            = Z3_mk_bvsge(ctx, op1, op2);
+                    break;
+                case CMP_LT:
+                    r            = Z3_mk_bvslt(ctx, op1, op2);
+                    break;
+                case CMP_LE:
+                    r            = Z3_mk_bvsle(ctx, op1, op2);
+                    break;
+                default:
+                    ABORT();
+            }
+            r            = optimize_z3_query(r);
             Z3_ast ones  = smt_new_const(FF_MASK(slice * 8), slice * 8);
             Z3_ast zeros = smt_new_const(0, slice * 8);
-            r            = optimize_z3_query(r);
             r            = Z3_mk_ite(ctx, r, ones, zeros);
             break;
         }
