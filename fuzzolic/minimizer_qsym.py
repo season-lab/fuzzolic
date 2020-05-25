@@ -103,9 +103,12 @@ class TestcaseMinimizer(object):
                "--"
         ] + self.cmd
 
+        env = os.environ.copy()
+        # env["AFL_INST_LIBS"] = "1"
+
         cmd, stdin = fix_at_file(cmd, testcase)
         with open(os.devnull, "wb") as devnull:
-            proc = sp.Popen(cmd, stdin=sp.PIPE, stdout=devnull, stderr=devnull)
+            proc = sp.Popen(cmd, stdin=sp.PIPE, stdout=devnull, stderr=devnull, env=env)
             proc.communicate(stdin)
 
         this_bitmap = read_bitmap_file(self.temp_file)

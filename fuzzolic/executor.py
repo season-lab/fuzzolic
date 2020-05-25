@@ -65,12 +65,12 @@ class Executor(object):
             self.afl = os.path.abspath(afl)
             self.minimizer = minimizer_qsym.TestcaseMinimizer(
                 [binary] + binary_args, AFL_PATH, output_dir, True)
-            # self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
+            #  self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
         else:
             self.afl = None
-            self.minimizer = minimizer_qsym.TestcaseMinimizer(
-                [binary] + binary_args, AFL_PATH, output_dir, True)
-            # self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
+            #self.minimizer = minimizer_qsym.TestcaseMinimizer(
+            #    [binary] + binary_args, AFL_PATH, output_dir, True)
+            self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
         self.afl_processed_testcases = set()
 
         self.debug = debug
@@ -428,12 +428,12 @@ class Executor(object):
             if good:
                 k += 1
             else:
-                os.unlink(t)
+                if self.afl:
+                    os.unlink(t)
 
         os.unlink(global_bitmap_pre_run)
 
     def __check_testcase(self, t, run_id, k, target, global_bitmap_pre_run):
-
         if self.minimizer.check_testcase(t, global_bitmap_pre_run):
             self.__import_test_case(
                 t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')

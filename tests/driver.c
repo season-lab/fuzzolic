@@ -14,6 +14,9 @@ int switchf(int v);
 // symbolic load loop
 int atoi_check(const char* s);
 
+// slice
+int symbolic_index(unsigned char index);
+
 // all flags add
 int addq(uint64_t);
 int addl(uint32_t);
@@ -80,6 +83,11 @@ Testcase tests[] = {
      .f          = F(atoi_check),
      .input_type = BUFFER,
      .input_size = 128},
+    //
+    {.name       = "symbolic_index",
+     .f          = F(symbolic_index),
+     .input_mode = FIXED_SIZE,
+     .input_size = 1},
     //
     {.name       = "addq",
      .f          = F(addq),
