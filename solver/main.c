@@ -73,7 +73,7 @@ static Dependency* dependency_graph[MAX_INPUT_SIZE * 2] = {0};
 
 static GHashTable* concretized_bytes                           = NULL;
 static uint8_t     concretized_sloads[MAX_INPUTS_EXPRS]        = {0};
-static uint64_t    concretized_sloads_values[MAX_INPUTS_EXPRS] = {0};
+static Z3_ast      concretized_iloads[MAX_INPUTS_EXPRS]        = {0};
 static GSList*     sloads_exprs                                = NULL;
 
 typedef struct {
@@ -100,6 +100,9 @@ static Testcase testcase;
 #define PARAM2(e)                                                              \
     Z3_get_decl_int_parameter(smt_solver.ctx,                                  \
                               Z3_get_app_decl(smt_solver.ctx, APP(e)), 1)
+#define PARAM(e, i)                                                            \
+    Z3_get_decl_int_parameter(smt_solver.ctx,                                  \
+                              Z3_get_app_decl(smt_solver.ctx, APP(e)), i)
 #define OP(e) get_op(APP(e))
 #define SIZE(e)                                                                \
     Z3_get_bv_sort_size(smt_solver.ctx, Z3_get_sort(smt_solver.ctx, e))
@@ -1575,6 +1578,348 @@ static inline uint8_t get_shifted_bytes(Z3_ast e, Z3_ast* bytes, int n)
 }
 
 static int debug_translation = 0;
+#if 0
+uint64_t pattern_sdiv_64_675[] = { 'a', 64, 1066, 'a', 64, 1059, 'p', 127, 'p', 64, 'a', 128, 1030, 'a', 128, 1057, 'p', 64, 'a', 64, 1056,  'c', 0x0,'i', 'a', 128, 1057, 'p', 64,  'c', 0x1845c8a0ce512957, 'c', 0x6, };
+
+typedef enum {
+    UDIV,
+    SDIV,
+} pattern_type_t;
+
+typedef struct {
+    uint64_t* pattern;
+    size_t pattern_size;
+    pattern_type_t type;
+    uint64_t value;
+    size_t value_size;
+} pattern_t;
+
+pattern_t patterns[] = {
+    {
+        .pattern = pattern_sdiv_64_675,
+        .pattern_size = sizeof(pattern_sdiv_64_675) / sizeof(uint64_t),
+        .type = SDIV,
+        .value = 675,
+        .value_size = 64
+    }
+};
+
+int match_pattern(Z3_ast e, uint64_t* pattern, int* pos, int len, Z3_ast* input) {
+
+    if (*pos == len) return 1;
+
+    uint64_t value;
+    Z3_context  ctx  = smt_solver.ctx;
+    Z3_ast_kind kind = Z3_get_ast_kind(ctx, e);
+
+    // printf("Matching pattern at %d\n", *pos);
+    // print_z3_ast(e);
+
+    switch(pattern[*pos]) {
+
+        case 'a': {
+            if (len - *pos < 3) {
+                // printf("Failed pattern at %d: not enough data\n", *pos);
+                return 0;
+            }
+            *pos = *pos + 1;
+            int size = IS_BOOL(e) ? 1 : SIZE(e);
+            if (pattern[*pos] != size) {
+                // printf("Failed pattern at %d: different size (expected=%lu, actual=%d)\n", *pos, pattern[*pos], size);
+                return 0;
+            }
+            *pos = *pos + 1;
+            Z3_decl_kind decl_kind = OP(e);
+            if (pattern[*pos] != decl_kind) {
+                // printf("Failed pattern at %d: different kind\n", *pos);
+                return 0;
+            }
+            *pos = *pos + 1;
+            int param_index = 0;
+            while (pattern[*pos] == 'p') {
+                if (PARAM(e, param_index) != pattern[*pos + 1]) {
+                    // printf("Failed pattern at %d: different params\n", *pos);
+                    return 0;
+                }
+                *pos = *pos + 2;
+                param_index += 1;
+            }
+            unsigned num_operands = N_ARGS(e);
+            for (size_t i = 0; i < num_operands; i++) {
+                int r = match_pattern(ARG(e, i), pattern, pos, len, input);
+                if (!r) {
+                    return 0;
+                }
+            }
+            return 1;
+            break;
+        }
+
+        case 'c': {
+            if (len - *pos < 2) {
+                return 0;
+            }
+            if (is_const(e, &value) && value == pattern[*pos+1]) {
+                *pos = *pos + 2;
+                return 1;
+            } else {
+                return 0;
+            }
+        }
+
+        case 'i': {
+            *pos = *pos + 1;
+            *input = e;
+            return 1;
+            break;
+        }
+
+        default:
+            return 0;
+    }
+
+    return 0;
+}
+#endif
+#if 0
+Z3_ast optimize_z3_query_division(Z3_ast e)
+{
+#if 0
+    printf("\nTransformation on: ");
+    print_z3_ast_internal(e, 0, 0);
+    printf("\n");
+#endif
+
+    Z3_context  ctx  = smt_solver.ctx;
+
+    for (size_t i = 0; i < sizeof(patterns) / sizeof(pattern_t); i++) {
+        Z3_ast pattern_input = NULL;
+        int pos = 0, len = patterns[i].pattern_size;
+        if (match_pattern(e, patterns[i].pattern, &pos, len, &pattern_input)
+                && pos == len && pattern_input) {
+            if (patterns[i].type == SDIV) {
+                size_t original_size = SIZE(e);
+                if (SIZE(pattern_input) < patterns[i].value_size) {
+                    pattern_input = Z3_mk_concat(ctx, smt_new_const(0, patterns[i].value_size - SIZE(pattern_input)), pattern_input);
+                }
+                e = Z3_mk_bvsdiv(ctx, pattern_input, smt_new_const(patterns[i].value, patterns[i].value_size));
+                if (SIZE(e) < original_size) {
+                    e = Z3_mk_concat(ctx, smt_new_const(0, original_size - SIZE(e)), e);
+                }
+                ABORT();
+                return e;
+            }
+            ABORT();
+        }
+    }
+
+    Z3_ast_kind kind = Z3_get_ast_kind(ctx, e);
+    if (kind != Z3_APP_AST) {
+        return e;
+    }
+
+    uint64_t value;
+    Z3_decl_kind decl_kind    = OP(e);
+    if (decl_kind == Z3_OP_CONCAT
+            && is_const(ARG1(e), &value)
+            && value == 0) {
+
+        // 32 bit unsigned division by 3
+        if (OP(ARG2(e)) == Z3_OP_EXTRACT
+                && PARAM1(ARG2(e)) == 63 && PARAM2(ARG2(e)) == 33
+                && OP(ARG1(ARG2(e))) == Z3_OP_BMUL
+                && is_const(ARG1(ARG1(ARG2(e))), &value)
+                && value == 0xaaaaaaab
+                && OP(ARG2(ARG1(ARG2(e)))) == Z3_OP_CONCAT) {
+
+            Z3_ast a = ARG2(ARG2(ARG1(ARG2(e))));
+            Z3_ast b = smt_new_const(3, 32);
+            e = Z3_mk_bvudiv(ctx, a, b);
+            e = Z3_mk_concat(ctx, smt_new_const(0, 32), e);
+            // print_z3_ast(e);
+            return e;
+        }
+
+        // 32 bit unsigned division by 5
+        if (OP(ARG2(e)) == Z3_OP_EXTRACT
+                && PARAM1(ARG2(e)) == 63 && PARAM2(ARG2(e)) == 34
+                && OP(ARG1(ARG2(e))) == Z3_OP_BMUL
+                && is_const(ARG1(ARG1(ARG2(e))), &value)
+                && value == 0xcccccccd
+                && OP(ARG2(ARG1(ARG2(e)))) == Z3_OP_CONCAT) {
+
+            Z3_ast a = ARG2(ARG2(ARG1(ARG2(e))));
+            Z3_ast b = smt_new_const(5, 32);
+            e = Z3_mk_bvudiv(ctx, a, b);
+            e = Z3_mk_concat(ctx, smt_new_const(0, 32), e);
+            // print_z3_ast(e);
+            return e;
+        }
+
+        // 64 bit unsigned division by 3
+        if (SIZE(ARG1(e)) == 1
+                && OP(ARG2(e)) == Z3_OP_EXTRACT
+                && PARAM1(ARG2(e)) == 127 && PARAM2(ARG2(e)) == 65
+                && OP(ARG1(ARG2(e))) == Z3_OP_BMUL
+                && OP(ARG2(ARG1(ARG2(e)))) == Z3_OP_CONCAT
+                && is_const(ARG2(ARG2(ARG1(ARG2(e)))), &value)
+                && value == 0xaaaaaaaaaaaaaaab
+                && is_zero_const(ARG1(ARG2(ARG1(ARG2(e)))))
+                && OP(ARG1(ARG1(ARG2(e)))) == Z3_OP_CONCAT
+                && is_zero_const(ARG1(ARG1(ARG1(ARG2(e)))))
+                ) {
+
+            Z3_ast a = ARG2(ARG1(ARG1(ARG2(e))));
+            if (SIZE(a) < 64) {
+                a = Z3_mk_concat(ctx, smt_new_const(0, 64 - SIZE(a)), a);
+            }
+            Z3_ast b = smt_new_const(3, 64);
+            e = Z3_mk_bvudiv(ctx, a, b);
+            // print_z3_ast(e);
+            return e;
+        }
+
+        // 64 bit unsigned division by 5
+        if (SIZE(ARG1(e)) == 2
+                && OP(ARG2(e)) == Z3_OP_EXTRACT
+                && PARAM1(ARG2(e)) == 127 && PARAM2(ARG2(e)) == 66
+                && OP(ARG1(ARG2(e))) == Z3_OP_BMUL
+                && OP(ARG2(ARG1(ARG2(e)))) == Z3_OP_CONCAT
+                && is_const(ARG2(ARG2(ARG1(ARG2(e)))), &value)
+                && value == 0xcccccccccccccccd
+                && is_zero_const(ARG1(ARG2(ARG1(ARG2(e)))))
+                && OP(ARG1(ARG1(ARG2(e)))) == Z3_OP_CONCAT
+                && is_zero_const(ARG1(ARG1(ARG1(ARG2(e)))))
+                ) {
+
+            Z3_ast a = ARG2(ARG1(ARG1(ARG2(e))));
+            if (SIZE(a) < 64) {
+                a = Z3_mk_concat(ctx, smt_new_const(0, 64 - SIZE(a)), a);
+            }
+            Z3_ast b = smt_new_const(5, 64);
+            e = Z3_mk_bvudiv(ctx, a, b);
+            // print_z3_ast(e);
+            return e;
+        }
+
+    } else if (decl_kind == Z3_OP_BSUB) {
+
+        Z3_ast op1 = ARG1(e);
+        Z3_ast op2 = ARG2(e);
+
+        // 32 bit integer division by 3
+        if (SIZE(e) == 32
+                && OP(op1) == Z3_OP_EXTRACT
+                && OP(ARG1(op1)) == Z3_OP_BMUL
+                && OP(ARG2(ARG1(op1))) == Z3_OP_SIGN_EXT
+                && OP(op2) == Z3_OP_EXTRACT
+                && OP(ARG1(op2)) == Z3_OP_BASHR
+                && is_const(ARG2(ARG1(op2)), &value)
+                && value == 31) {
+
+            uint64_t div_consts[] = {
+                0x55555556,
+            };
+
+            uint64_t div_values[] = {
+                3,
+            };
+
+            for (size_t i = 0; i < sizeof(div_consts) / sizeof(div_values); i++) {
+                if (is_const(ARG1(ARG1(op1)), &value)
+                        && value == div_consts[i]) {
+                    print_z3_ast(e);
+                    Z3_ast a = ARG1(ARG2(ARG1(op1)));
+                    Z3_ast b = smt_new_const(div_values[i], 32);
+                    e = Z3_mk_bvsdiv(ctx, a, b);
+                    // print_z3_ast(e);
+                    return e;
+                }
+            }
+        }
+
+        // 32 bit integer division by 5
+        if (SIZE(e) == 32
+                && OP(op1) == Z3_OP_EXTRACT
+                && OP(ARG1(op1)) == Z3_OP_BASHR
+                && OP(ARG1(ARG1(op1))) == Z3_OP_SIGN_EXT
+                && OP(ARG1(ARG1(ARG1(op1)))) == Z3_OP_EXTRACT
+                && OP(ARG1(ARG1(ARG1(ARG1(op1))))) == Z3_OP_BMUL
+                && OP(ARG2(ARG1(ARG1(ARG1(ARG1(op1)))))) == Z3_OP_SIGN_EXT
+                && OP(op2) == Z3_OP_EXTRACT
+                && OP(ARG1(op2)) == Z3_OP_BASHR
+                && is_const(ARG2(ARG1(op2)), &value)
+                && value == 31
+                ) {
+
+            uint64_t div_consts[] = {
+                0x66666667,
+            };
+
+            uint64_t div_values[] = {
+                5,
+            };
+
+            for (size_t i = 0; i < sizeof(div_consts) / sizeof(div_values); i++) {
+                if (is_const(ARG1(ARG1(ARG1(ARG1(ARG1(op1))))), &value)
+                        && value == div_consts[i]) {
+                    Z3_ast a = ARG1(ARG2(ARG1(ARG1(ARG1(ARG1(op1))))));
+                    Z3_ast b = smt_new_const(div_values[i], 32);
+                    e = Z3_mk_bvsdiv(ctx, a, b);
+                    // print_z3_ast(e);
+                    return e;
+                }
+            }
+        }
+
+    } else if (decl_kind == Z3_OP_EXTRACT) {
+
+        Z3_ast op1 = ARG1(e);
+
+        // 64 bit signed division by 3
+        if (PARAM1(e) == 127 && PARAM2(e) == 64
+                && OP(ARG1(e)) == Z3_OP_BMUL
+                && OP(ARG2(ARG1(e))) == Z3_OP_SIGN_EXT
+                && is_const(ARG1(ARG2(ARG1(e))), &value)
+                && value == 0x5555555555555556
+                ) {
+
+            Z3_ast a = ARG1(ARG1(ARG1(e)));
+            Z3_ast b = smt_new_const(3, 64);
+            e = Z3_mk_bvsdiv(ctx, a, b);
+            // print_z3_ast(e);
+            return e;
+        }
+
+    } else if (decl_kind == Z3_OP_BASHR) {
+
+        Z3_ast op1 = ARG1(e);
+        Z3_ast op2 = ARG2(e);
+
+        // 64 bit signed division by 5
+        if (is_const(op2, &value) 
+                && value == 1
+                && OP(op1) == Z3_OP_EXTRACT
+                && PARAM1(op1) == 127
+                && PARAM2(op1) == 64
+                && OP(ARG1(op1)) == Z3_OP_BMUL
+                && OP(ARG2(ARG1(op1))) == Z3_OP_SIGN_EXT
+                && is_const(ARG1(ARG2(ARG1(op1))), &value)
+                && value == 0x6666666666666667
+                ) {
+
+            Z3_ast a = ARG1(ARG1(ARG1(op1)));
+            Z3_ast b = smt_new_const(5, 64);
+            e = Z3_mk_bvsdiv(ctx, a, b);
+            // print_z3_ast(e);
+            return e;
+        }
+
+    }
+
+    return e;
+}
+#endif
 
 Z3_ast optimize_z3_query(Z3_ast e)
 {
@@ -2146,6 +2491,7 @@ Z3_ast optimize_z3_query(Z3_ast e)
             } else {
                 Z3_ast a =
                     Z3_mk_sign_ext(ctx, n_signed - n_zero, ARG1(ARG1(op1)));
+                a = optimize_z3_query(a);
                 Z3_ast b = ARG2(ARG2(op1));
                 e        = Z3_mk_bvsdiv(ctx, a, b);
                 e        = Z3_mk_extract(ctx, high, low, e);
@@ -3140,6 +3486,10 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             uintptr_t n_bytes = CONST(query->op2);
             if (concretized_sloads[id]) {
                 r = smt_new_const(CONST(query->op3), 8 * n_bytes);
+            } else if (concretized_iloads[id]) {
+                // should be in the cache!
+                printf("Expr ID: %lu\n", GET_EXPR_IDX(query));
+                ABORT();
             } else {
                 r          = smt_new_symbol_int(id, 8 * n_bytes, query);
                 op1_inputs = g_hash_table_new(NULL, NULL);
@@ -3761,7 +4111,9 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                 op2 = Z3_mk_extract(smt_solver.ctx, s * 8 - 1, 0, op2);
                 op2 = optimize_z3_query(op2);
                 op1 = Z3_mk_sign_ext(smt_solver.ctx, 64 - (s * 8), op1);
+                op1 = optimize_z3_query(op1);
                 op2 = Z3_mk_sign_ext(smt_solver.ctx, 64 - (s * 8), op2);
+                op2 = optimize_z3_query(op2);
             } else {
                 op1 = Z3_mk_sign_ext(smt_solver.ctx, 64, op1);
                 op2 = Z3_mk_sign_ext(smt_solver.ctx, 64, op2);
@@ -4105,7 +4457,13 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
         print_z3_ast(r);
     }
 #endif
-
+#if 0
+    int r_size = IS_BOOL(r) ? 1 : SIZE(r);
+    r = optimize_z3_query_division(r);
+    if (!IS_BOOL(r) && SIZE(r) != r_size) {
+        ABORT();
+    }
+#endif
     ce         = malloc(sizeof(CachedExpr));
     ce->expr   = r;
     *inputs    = merge_inputs(op1_inputs, op2_inputs);
@@ -4134,6 +4492,59 @@ static void smt_stats(Z3_solver solver)
         printf("UNKNOWN queries: count=%lu avg=%lu\n", smt_solver.unknown_count,
                (smt_solver.unknown_time / smt_solver.unknown_count));
     }
+}
+
+int generate_matching_pattern(Z3_ast e)
+{
+    uint64_t value;
+    Z3_context  ctx  = smt_solver.ctx;
+    Z3_ast_kind kind = Z3_get_ast_kind(ctx, e);
+    if (kind != Z3_APP_AST) {
+        if (is_const(e, &value)) {
+            printf(" 'c', 0x%lx,", value);
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+
+    Z3_decl_kind decl_kind    = OP(e);
+    unsigned     num_operands = N_ARGS(e);
+
+    if (decl_kind == Z3_OP_CONCAT) {
+        for (size_t i = 0; i < num_operands; i++) {
+            Z3_ast child = ARG(e, i);
+            Z3_ast_kind child_kind = Z3_get_ast_kind(ctx, child);
+            if (child_kind == Z3_APP_AST && OP(child) == Z3_OP_UNINTERPRETED) {
+                printf("'i', ");
+                return 1;
+            }
+        }
+    }
+
+    printf("'a', %d, %d, ", IS_BOOL(e) ? 1 : SIZE(e), decl_kind);
+
+    switch(decl_kind) {
+        case Z3_OP_EXTRACT:
+            printf("'p', %d, ", PARAM1(e));
+            printf("'p', %d, ", PARAM2(e));
+            break;
+        case Z3_OP_ZERO_EXT:
+        case Z3_OP_SIGN_EXT:
+            printf("'p', %d, ", PARAM1(e));
+            break;
+        default:
+            break;
+    }
+
+    for (size_t i = 0; i < num_operands; i++) {
+        int r = generate_matching_pattern(ARG(e, i));
+        if (!r) {
+            return 0;
+        }
+    }
+
+    return 1;
 }
 
 static void smt_branch_query(Query* q)
@@ -4187,7 +4598,20 @@ static void smt_branch_query(Query* q)
     SAYF("%s", z3_query_str);
 #endif
 #if 0
+    // if (GET_QUERY_IDX(q) == 54) {
     print_z3_ast(z3_neg_query);
+    // ABORT();
+    // }
+#endif
+
+#if 0
+    print_z3_ast(ARG1(ARG1(z3_query)));
+    printf("uint64_t pattern[]= { ");
+    int r = generate_matching_pattern(ARG1(ARG1(z3_query)));
+    printf(" };\n");
+    if (!r) {
+        printf("Pattern is INVALID\n");
+    }
 #endif
 
     uint8_t has_real_inputs = 0;
@@ -4721,7 +5145,16 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
             values_count = sizeof(full_values) / sizeof(uint8_t);
         }
 
+        // printf("Fuzzing input byte: %lu attempts=%lu\n", index, values_count);
+
+        size_t success = 0;
         for (ssize_t i = 0; i < values_count; i++) {
+
+            // printf("attempt=%lu count=%lu success=%lu\n", i, values_count, success);
+            if (values_count > 16 && i > 3 && success == 0) {
+                // printf("Bail out\n");
+                break;
+            }
 
             // printf("Testing input[%lu] = %u\n", index, values[i]);
 
@@ -4736,6 +5169,8 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
                                    symbols_sizes, symbols_count);
                 if (g_hash_table_contains(solutions, (gpointer)solution) !=
                     TRUE) {
+
+                    success += 1;
 #if 0
                     printf("Found a valid solution %lx using fuzz value %u at "
                            "index %ld\n",
@@ -4817,6 +5252,37 @@ static uintptr_t get_value_from_slice_array(Expr** slices_addrs,
     return 0;
 }
 
+static Z3_ast get_input_from_slice_array(uintptr_t addr, size_t size,
+                                            uintptr_t start, uintptr_t end,
+                                            uintptr_t offset,
+                                            GHashTable* slice_inputs,
+                                            uint8_t* out_of_bounds)
+{
+    if (addr < start || addr > end) {
+        printf("ERROR: out of bounds input slice access: addr=%lx\n", addr);
+        *out_of_bounds = 1;
+        return NULL;
+    }
+
+    uintptr_t index = (addr - start) + offset;
+    *out_of_bounds = 0;
+    Z3_ast z3_expr = NULL;
+    for (size_t i = 0; i < size; i++) {
+        g_hash_table_add(slice_inputs, (gpointer)(index + i));
+        Z3_ast byte = input_exprs[index + i];
+        if (byte == NULL) {
+            byte = smt_new_symbol_int(index + i, 8, NULL);
+            input_exprs[index + i] = byte;
+        }
+        if (z3_expr == NULL) {
+            z3_expr = byte;
+        } else {
+            z3_expr = Z3_mk_concat(smt_solver.ctx, z3_expr, byte);
+        }
+    }
+    return z3_expr;
+}
+
 static void smt_slice_query(Query* q)
 {
     Expr*     addr_expr = q->query->op1;
@@ -4829,12 +5295,25 @@ static void smt_slice_query(Query* q)
     assert(CONST(s_load->op1) == s_load_id);
     uintptr_t s_load_size = CONST(s_load->op2);
     assert(s_load_size > 0);
-    uintptr_t s_load_value = CONST(s_load->op3);
 
-    printf("\nSlice access: id=%lu load_id=%lu (%lu) conc_addr=0x%lx size=%lu "
-           "value=0x%lx.\n",
-           GET_QUERY_IDX(q), s_load_id, scale_sload_index(s_load_id), addr_conc,
-           s_load_size, s_load_value);
+    uintptr_t s_load_value = 0;
+    uintptr_t s_load_input_offset = 0;
+
+    if (q->query->opkind == MEMORY_SLICE_ACCESS) {
+        s_load_value = CONST(s_load->op3);
+        printf("\nSlice access: id=%lu load_id=%lu (%lu) conc_addr=0x%lx size=%lu "
+            "value=0x%lx.\n",
+            GET_QUERY_IDX(q), s_load_id, scale_sload_index(s_load_id), addr_conc,
+            s_load_size, s_load_value);
+    } else if (q->query->opkind == MEMORY_INPUT_SLICE_ACCESS) {
+        // printf("Expr ID: %lu\n", GET_EXPR_IDX(s_load));
+        s_load_input_offset = CONST(s_load->op3);
+        printf("\nSlice input access: id=%lu load_id=%lu (%lu) conc_addr=0x%lx size=%lu input_offset=%lu.\n",
+            GET_QUERY_IDX(q), s_load_id, scale_sload_index(s_load_id), addr_conc,
+            s_load_size, s_load_input_offset);
+    } else {
+        ABORT();
+    }
 #if 0
     if (GET_QUERY_IDX(q) == 448) {
         debug_translation = 1;
@@ -4865,32 +5344,44 @@ static void smt_slice_query(Query* q)
     }
 #endif
 
+    uintptr_t slice_start = 0, slice_end = 0;
+    uintptr_t offset_start = 0;
+
     // recover slice pointers
     size_t slices_count                     = 0;
     Expr*  slices_addrs[MAX_NUM_SLICES + 1] = {0};
     Expr*  slice                            = (q->query + 2);
-    while (slice->opkind == MEMORY_SLICE) {
-        assert(CONST(slice->op2) == s_load_id);
-        slices_addrs[slices_count] = slice->op1;
-        slices_count += 1;
-        // printf("Slice at %p.\n", slice->op1);
-        assert(slices_count <= MAX_NUM_SLICES);
-        slice += 1;
-    }
-    assert(slices_count > 0);
 
-    uintptr_t slice_start = 0, slice_end = 0;
-    if (config.address_reasoning) {
-        for (size_t i = 0; i < slices_count; i++) {
-            uintptr_t ss = CONST(slices_addrs[i]->op1);
-            uintptr_t se = CONST(slices_addrs[i]->op1) + SLICE_SIZE - s_load_size;
-            if (slice_start == 0 || slice_start > ss) {
-                slice_start = ss;
-            }
-            if (slice_end == 0 || slice_end < se) {
-                slice_end = se;
+    if (q->query->opkind == MEMORY_SLICE_ACCESS) {
+        while (slice->opkind == MEMORY_SLICE) {
+            assert(CONST(slice->op2) == s_load_id);
+            slices_addrs[slices_count] = slice->op1;
+            slices_count += 1;
+            // printf("Slice at %p.\n", slice->op1);
+            assert(slices_count <= MAX_NUM_SLICES);
+            slice += 1;
+        }
+        assert(slices_count > 0);
+
+        if (config.address_reasoning) {
+            for (size_t i = 0; i < slices_count; i++) {
+                uintptr_t ss = CONST(slices_addrs[i]->op1);
+                uintptr_t se = CONST(slices_addrs[i]->op1) + SLICE_SIZE - s_load_size;
+                if (slice_start == 0 || slice_start > ss) {
+                    slice_start = ss;
+                }
+                if (slice_end == 0 || slice_end < se) {
+                    slice_end = se;
+                }
             }
         }
+
+    } else if (q->query->opkind == MEMORY_INPUT_SLICE_ACCESS) {
+        Expr* input_slice = (q->query + 2);
+        assert(input_slice->opkind == INPUT_SLICE);
+        slice_start = CONST(input_slice->op1);
+        slice_end = CONST(input_slice->op2);
+        offset_start = CONST(input_slice->op3);
     }
 
     GHashTable* conc_addrs = g_hash_table_new(NULL, NULL);
@@ -4920,12 +5411,25 @@ static void smt_slice_query(Query* q)
 #endif
 
     if (!r) {
-        // print_z3_ast(z3_addr);
         printf("Slice access has a single value. Concretizing it.\n");
-        concretized_sloads[scale_sload_index(s_load_id)] = 1;
+        g_hash_table_remove(z3_expr_cache, (gpointer)s_load);
+        if (q->query->opkind == MEMORY_SLICE_ACCESS) {
+            concretized_sloads[scale_sload_index(s_load_id)] = 1;
+        } else {
+            uint8_t out_of_bounds;
+            GHashTable* slice_inputs = g_hash_table_new(NULL, NULL);
+            Z3_ast z3_expr = get_input_from_slice_array(addr_conc, s_load_size,
+                                            slice_start, slice_end, offset_start,
+                                            slice_inputs, &out_of_bounds);
+            assert(out_of_bounds == 0);
+            CachedExpr* ce  = malloc(sizeof(CachedExpr));
+            ce->expr   = z3_expr;
+            ce->inputs = slice_inputs;
+            g_hash_table_insert(z3_expr_cache, (gpointer) s_load, (gpointer)ce);
+            concretized_iloads[scale_sload_index(s_load_id)] = z3_expr;
+        }
         // printf("Setting sloads_exprs for %lu (%lu)\n", s_load_id,
         // scale_sload_index(s_load_id));
-        g_hash_table_remove(z3_expr_cache, (gpointer)s_load);
 #if 0
 #if USE_FUZZY_SOLVER
         // printf("Assignment: %lu\n", scale_sload_index(s_load_id));
@@ -4956,10 +5460,12 @@ static void smt_slice_query(Query* q)
         }
 #endif
 
+#if DEBUG_EXPR_OPT
         uintptr_t sol_addr = 0;
         if (is_const(z3_addr, &sol_addr) && sol_addr != addr_conc) {
             ABORT();
         }
+#endif
 
         // concretize the address
         if (inputs) {
@@ -4984,12 +5490,20 @@ static void smt_slice_query(Query* q)
     printf("Slice access has multiple values: %d\n",
            g_hash_table_size(conc_addrs));
 
-    // printf("S1\n");
-
     Z3_ast s = z3_new_symbol_int(scale_sload_index(s_load_id) + 1,
                                  sizeof(uintptr_t) * 8);
 
-    Z3_ast v = smt_new_const(s_load_value, s_load_size * 8);
+    Z3_ast v = NULL;
+    uint8_t is_out_of_slice_bounds;
+    if (q->query->opkind == MEMORY_SLICE_ACCESS) {
+        v = smt_new_const(s_load_value, s_load_size * 8);
+    } else {
+        v = get_input_from_slice_array(addr_conc, s_load_size,
+                                        slice_start, slice_end, offset_start,
+                                        inputs, &is_out_of_slice_bounds);
+        // printf("addr=%lx start=%lx end=%lx\n", addr_conc, slice_start, slice_end);
+        assert(is_out_of_slice_bounds == 0);
+    }
 
     Z3_ast* or_args = malloc(sizeof(Z3_ast) * g_hash_table_size(conc_addrs));
     size_t  k       = 0;
@@ -5006,18 +5520,25 @@ static void smt_slice_query(Query* q)
             continue; // initial value of v
         }
 
-        uint8_t   is_out_of_slice_bounds;
-        uintptr_t conc_value =
-            get_value_from_slice_array(slices_addrs, slices_count, addr,
-                                       s_load_size, &is_out_of_slice_bounds);
-
-        if (is_out_of_slice_bounds) {
-            continue;
+        Z3_ast v1 = NULL;
+        if (q->query->opkind == MEMORY_SLICE_ACCESS) {
+            uintptr_t conc_value = get_value_from_slice_array(slices_addrs,
+                                        slices_count, addr, s_load_size,
+                                        &is_out_of_slice_bounds);
+            if (is_out_of_slice_bounds) {
+                continue;
+            }
+            v1 = smt_new_const(conc_value, s_load_size * 8);
+        } else {
+            v1 = get_input_from_slice_array(addr, s_load_size,
+                                        slice_start, slice_end, offset_start,
+                                        inputs, &is_out_of_slice_bounds);
+            if (is_out_of_slice_bounds) {
+                continue;
+            }
         }
 
         fetched_slice_values += 1;
-
-        Z3_ast v1 = smt_new_const(conc_value, s_load_size * 8);
         Z3_ast c  = Z3_mk_eq(smt_solver.ctx, s,
                             smt_new_const(addr, sizeof(uintptr_t) * 8));
         c         = optimize_z3_query(c);
@@ -5035,7 +5556,9 @@ static void smt_slice_query(Query* q)
     e             = Z3_mk_and(smt_solver.ctx, 3, args);
 
     free(or_args);
-
+#if 0
+    print_z3_ast(e);
+#endif
     // printf("Setting sloads_exprs for %lu\n", scale_sload_index(s_load_id));
 
     symbols_sizes[scale_sload_index(s_load_id) + 1] = sizeof(uintptr_t) * 8;
@@ -5136,8 +5659,6 @@ static void smt_expr_query(Query* q, OPKIND opkind)
     uintptr_t solution = (uintptr_t)q->query->op2;
 
     if (config.address_reasoning && is_interesting_memory(solution)) {
-
-        printf("\nQuery %s\n", opkind_to_str(opkind));
 
 #if 0 // Using SMT Solver:
         int       count    = 0;
@@ -5284,6 +5805,7 @@ static void smt_query(Query* q)
             smt_expr_query(q, q->query->opkind);
             break;
         case MEMORY_SLICE_ACCESS:
+        case MEMORY_INPUT_SLICE_ACCESS:
             // printf("\nSymbolic SLICE access %lu\n", GET_QUERY_IDX(q));
             smt_slice_query(q);
             break;
@@ -5424,11 +5946,15 @@ int main(int argc, char* argv[])
     printf("Allocating %lu MB for query queue\n", (sizeof(Expr*) * EXPR_QUERY_CAPACITY) / (1024 * 1024));
 #endif
 
+    printf("[SOLVER] Creating shared memory #1 (key=%lu)...\n", config.expr_pool_shm_key);
+
     expr_pool_shm_id = shmget(config.expr_pool_shm_key, // IPC_PRIVATE,
                               sizeof(Expr) * EXPR_POOL_CAPACITY,
                               IPC_CREAT | 0666); /*| IPC_EXCL */
     if (expr_pool_shm_id < 0)
         PFATAL("shmget() failed");
+
+    printf("[SOLVER] Creating shared memory #2 (key=%lu)...\n", config.query_shm_key);
 
     query_shm_id = shmget(config.query_shm_key, // IPC_PRIVATE,
                           sizeof(Query) * EXPR_QUERY_CAPACITY,
@@ -5461,6 +5987,8 @@ int main(int argc, char* argv[])
     if (!next_query)
         PFATAL("shmat() failed");
 
+    printf("[SOLVER] Attached to shared memories...\n");
+
     next_query[0].query = 0;
 
 #if BRANCH_COVERAGE == FUZZOLIC
@@ -5484,6 +6012,8 @@ int main(int argc, char* argv[])
     struct timespec polling_time;
     polling_time.tv_sec  = EXPR_QUEUE_POLLING_TIME_SECS;
     polling_time.tv_nsec = EXPR_QUEUE_POLLING_TIME_NS;
+
+    printf("[SOLVER] Waiting for the tracer...\n");
 
     // wait tracer to finish its job
     while (1) {

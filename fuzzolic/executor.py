@@ -263,7 +263,8 @@ class Executor(object):
 
         p_tracer_args = []
         if self.debug != 'gdb':
-            p_tracer_args += ['stdbuf', '-o0']  # No buffering on stdout
+            # p_tracer_args += ['stdbuf', '-o0']  # No buffering on stdout
+            pass
         else:
             p_tracer_args += ['gdb']
 
@@ -299,7 +300,7 @@ class Executor(object):
                                     )
         RUNNING_PROCESSES.append(p_tracer)
 
-        # print("Tracer started")
+        print("Tracer started")
 
         # emit testcate on stdin
         if self.debug != 'gdb':
@@ -374,8 +375,9 @@ class Executor(object):
                     p_solver.send_signal(signal.SIGKILL)
                     p_solver.wait()
 
-        if p_solver in RUNNING_PROCESSES:
-            RUNNING_PROCESSES.remove(p_solver)
+        if self.debug != 'no_solver' and self.debug != 'coverage':
+            if p_solver in RUNNING_PROCESSES:
+                RUNNING_PROCESSES.remove(p_solver)
 
         p_solver_log.close()
 

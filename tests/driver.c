@@ -7,6 +7,7 @@ int simple_if(uint32_t);
 int nested_if(uint32_t input);
 int mystrcmp(const char* s1);
 int all_concrete(uint32_t input);
+int div3(int32_t input);
 
 // jump table
 int switchf(int v);
@@ -16,6 +17,7 @@ int atoi_check(const char* s);
 
 // slice
 int symbolic_index(unsigned char index);
+int symbolic_read(unsigned char* buffer);
 
 // all flags add
 int addq(uint64_t);
@@ -49,7 +51,7 @@ typedef struct Testcase {
 
 #define F(x) ((int (*)(uintptr_t))x)
 
-#define MAX_INPUT_SIZE 256
+#define MAX_INPUT_SIZE 512
 uint8_t data[MAX_INPUT_SIZE] = {0};
 
 Testcase tests[] = {
@@ -72,6 +74,11 @@ Testcase tests[] = {
      .input_type = VAR,
      .input_mode = FIXED_SIZE,
      .input_size = 4},
+    {.name       = "div3",
+     .f          = F(div3),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 4},
     //
     {.name       = "switch",
      .f          = F(switchf),
@@ -88,6 +95,11 @@ Testcase tests[] = {
      .f          = F(symbolic_index),
      .input_mode = FIXED_SIZE,
      .input_size = 1},
+    //
+    {.name       = "symbolic_read",
+     .f          = F(symbolic_read),
+     .input_type = BUFFER,
+     .input_size = 256},
     //
     {.name       = "addq",
      .f          = F(addq),

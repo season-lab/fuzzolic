@@ -110,15 +110,16 @@ class TestcaseMinimizer(object):
 
             self.run(args, env, testcase, arg_input_idx)
 
+            initial_delta_coverage = delta_coverage
             delta_coverage = file_lines_count(coverage_log_path)
             if delta_coverage == 0:
                 if not no_msg:
-                    print("[=] Discarding %s" % os.path.basename(testcase))
+                    print("[=] Discarding %s (+%s, +0)" % (os.path.basename(testcase), initial_delta_coverage))
                 is_interesting = False
             else:
                 if not no_msg:
-                    print("[+] Keeping %s (+%s)" %
-                          (os.path.basename(testcase), delta_coverage))
+                    print("[+] Keeping %s (+%s, +%s)" %
+                          (os.path.basename(testcase), initial_delta_coverage, delta_coverage))
                 is_interesting = True
 
                 # update global bitmap
