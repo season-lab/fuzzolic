@@ -24,6 +24,7 @@
 #define DEBUG_FUZZ_EXPR 0
 #define DEBUG_EXPR_OPT  0
 #define DISABLE_SMT     0
+#define ASAN_GLIB       0
 
 #ifndef USE_FUZZY_SOLVER
 #define USE_FUZZY_SOLVER 0
@@ -186,6 +187,32 @@ void print_trace(void)
     free(strings);
 }
 
+#if ASAN_GLIB
+GHashTable* allocated_ht = NULL;
+GHashTable* f_hash_table_new(GHashFunc hash_func,
+                             GEqualFunc key_equal_func)
+{
+    GHashTable* ht = g_hash_table_new(NULL, NULL);
+    void* marker = malloc(8);
+    g_hash_table_insert(allocated_ht, ht, marker);
+    return ht;
+}
+
+void f_hash_table_destroy(GHashTable* hash_table)
+{
+    void* marker = g_hash_table_lookup(allocated_ht, hash_table);
+    assert(marker);
+    g_hash_table_destroy(hash_table);
+    free(marker);
+    g_hash_table_remove(allocated_ht, hash_table);
+}
+#else
+
+#define f_hash_table_new g_hash_table_new
+#define f_hash_table_destroy g_hash_table_destroy
+
+#endif
+
 static void smt_init(void)
 {
     Z3_config cfg  = Z3_mk_config();
@@ -197,7 +224,11 @@ static void smt_init(void)
     sprintf(ts, "%u", SOLVER_TIMEOUT_MS);
     Z3_global_param_set("timeout", ts);
 #endif
-    z3_expr_cache = g_hash_table_new(NULL, NULL);
+
+#if ASAN_GLIB
+    allocated_ht = g_hash_table_new(NULL, NULL);
+#endif
+    z3_expr_cache = f_hash_table_new(NULL, NULL);
 
 #if USE_FUZZY_SOLVER || ADDRESS_REASONING == FUZZ_GD
     z3fuzz_init(&smt_solver.fuzzy_ctx, smt_solver.ctx,
@@ -244,7 +275,57 @@ static inline void smt_destroy(void)
     if (smt_solver.ctx) {
         Z3_del_context(smt_solver.ctx);
     }
-    g_hash_table_destroy(z3_expr_cache);
+#if ASAN_GLIB
+    GHashTableIter iter;
+    gpointer       key, value;
+    //
+    GHashTable* inputs_ht = f_hash_table_new(NULL, NULL);
+    g_hash_table_iter_init(&iter, z3_expr_cache);
+    while (g_hash_table_iter_next(&iter, &key, &value)) {
+        CachedExpr* ce = (CachedExpr*) value;
+        if (ce->inputs) {
+            g_hash_table_add(inputs_ht, ce->inputs);
+        }
+        free(value);
+    }
+    f_hash_table_destroy(z3_expr_cache);
+    //
+    GHashTable* to_remove = f_hash_table_new(NULL, NULL);
+    for (size_t i = 0; i < MAX_INPUT_SIZE * 2; i++) {
+        Dependency* dep = dependency_graph[i];
+        if (dep == NULL) continue;
+        g_hash_table_add(to_remove, dep);
+        dependency_graph[i] = NULL;
+    }
+    g_hash_table_iter_init(&iter, to_remove);
+    while (g_hash_table_iter_next(&iter, &key, &value)) {
+        Dependency* dep = (Dependency*) key;
+        assert(dep->exprs);
+        f_hash_table_destroy(dep->exprs);
+        if (!g_hash_table_contains(inputs_ht, dep->inputs)) {
+            assert(dep->inputs);
+            f_hash_table_destroy(dep->inputs);
+        }
+        free(dep);
+    }
+    f_hash_table_destroy(to_remove);
+    //
+    g_hash_table_iter_init(&iter, inputs_ht);
+    while (g_hash_table_iter_next(&iter, &key, &value)) {
+        f_hash_table_destroy(key);
+    }
+    f_hash_table_destroy(inputs_ht);
+    //
+    assert(concretized_bytes);
+    f_hash_table_destroy(concretized_bytes);
+    //
+    g_hash_table_iter_init(&iter, allocated_ht);
+    while (g_hash_table_iter_next(&iter, &key, &value)) {
+        printf("MARKER %p was not deallocated\n", value);
+    }
+    //
+    g_hash_table_destroy(allocated_ht);
+#endif
 }
 
 void print_z3_original(Z3_ast e)
@@ -262,7 +343,7 @@ static inline void update_and_add_deps_to_solver(GHashTable* inputs,
     gpointer       key, value;
     gboolean       res;
 
-    GHashTable* to_be_deallocated = g_hash_table_new(NULL, NULL);
+    GHashTable* to_be_deallocated = f_hash_table_new(NULL, NULL);
     Dependency* current           = NULL;
 
     g_hash_table_iter_init(&iter, inputs);
@@ -279,8 +360,8 @@ static inline void update_and_add_deps_to_solver(GHashTable* inputs,
                 current = dep;
             } else {
                 current         = malloc(sizeof(Dependency));
-                current->inputs = g_hash_table_new(NULL, NULL);
-                current->exprs  = g_hash_table_new(NULL, NULL);
+                current->inputs = f_hash_table_new(NULL, NULL);
+                current->exprs  = f_hash_table_new(NULL, NULL);
                 res             = g_hash_table_add(current->inputs, key);
                 assert(res == TRUE);
             }
@@ -360,11 +441,11 @@ static inline void update_and_add_deps_to_solver(GHashTable* inputs,
     g_hash_table_iter_init(&iter, to_be_deallocated);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
         Dependency* dep = (Dependency*)key;
-        g_hash_table_destroy(dep->inputs);
-        g_hash_table_destroy(dep->exprs);
+        f_hash_table_destroy(dep->inputs);
+        f_hash_table_destroy(dep->exprs);
         free(dep);
     }
-    g_hash_table_destroy(to_be_deallocated);
+    f_hash_table_destroy(to_be_deallocated);
 }
 
 static inline void add_deps_to_solver(GHashTable* inputs, Z3_solver solver)
@@ -373,7 +454,7 @@ static inline void add_deps_to_solver(GHashTable* inputs, Z3_solver solver)
     gpointer       key, value;
     gboolean       res;
 
-    GHashTable* added_exprs = g_hash_table_new(NULL, NULL);
+    GHashTable* added_exprs = f_hash_table_new(NULL, NULL);
 
     g_hash_table_iter_init(&iter, inputs);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
@@ -404,7 +485,7 @@ static inline void add_deps_to_solver(GHashTable* inputs, Z3_solver solver)
         }
     }
 
-    g_hash_table_destroy(added_exprs);
+    f_hash_table_destroy(added_exprs);
 }
 
 static inline Z3_ast get_deps(GHashTable* inputs)
@@ -416,7 +497,7 @@ static inline Z3_ast get_deps(GHashTable* inputs)
     gpointer       key, value;
     gboolean       res;
 
-    GHashTable* added_exprs = g_hash_table_new(NULL, NULL);
+    GHashTable* added_exprs = f_hash_table_new(NULL, NULL);
 #if 0
     GHashTable* added_inputs = g_hash_table_new(NULL, NULL);
 #endif
@@ -464,7 +545,7 @@ static inline Z3_ast get_deps(GHashTable* inputs)
 
     g_hash_table_destroy(added_inputs);
 #endif
-    g_hash_table_destroy(added_exprs);
+    f_hash_table_destroy(added_exprs);
     return r;
 }
 
@@ -1045,6 +1126,12 @@ static void print_z3_ast_internal(Z3_ast e, uint8_t invert_op,
                     // return;
                 }
             }
+            break;
+        }
+
+        default: {
+            print_z3_original(e);
+            ABORT();
         }
     }
 
@@ -3427,11 +3514,9 @@ GHashTable* merge_inputs(GHashTable* a, GHashTable* b)
         return b;
     if (b == NULL)
         return a;
-    GHashTable* merged = g_hash_table_new(NULL, NULL);
 
     GHashTableIter iter;
     gpointer       key, value;
-
     if (g_hash_table_size(a) == g_hash_table_size(b)) {
         int different = 0;
         g_hash_table_iter_init(&iter, b);
@@ -3446,6 +3531,7 @@ GHashTable* merge_inputs(GHashTable* a, GHashTable* b)
         }
     }
 
+    GHashTable* merged = f_hash_table_new(NULL, NULL);
     g_hash_table_iter_init(&iter, a);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
         g_hash_table_add(merged, (gpointer)key);
@@ -3493,7 +3579,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
     unsigned    n          = 0;
     switch (query->opkind) {
         case RESERVED:
-            ABORT("Invalid opkind (RESERVER). There is a bug somewhere :(");
+            ABORT("Invalid opkind (RESERVED). There is a bug somewhere :(");
         case IS_SYMBOLIC:;
             uintptr_t id = CONST(query->op1);
             if (id >= testcase.size) {
@@ -3501,6 +3587,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             }
             uintptr_t n_bytes = CONST(query->op2);
             if (concretized_sloads[id]) {
+                printf("Slice input %lu is concretized\n", id);
                 r = smt_new_const(CONST(query->op3), 8 * n_bytes);
             } else if (concretized_iloads[id]) {
                 // should be in the cache!
@@ -3508,7 +3595,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                 ABORT();
             } else {
                 r          = smt_new_symbol_int(id, 8 * n_bytes, query);
-                op1_inputs = g_hash_table_new(NULL, NULL);
+                op1_inputs = f_hash_table_new(NULL, NULL);
                 g_hash_table_add(op1_inputs, (gpointer)id);
             }
             break;
@@ -4484,6 +4571,9 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
     ce->expr   = r;
     *inputs    = merge_inputs(op1_inputs, op2_inputs);
     ce->inputs = *inputs;
+    if (g_hash_table_contains(z3_expr_cache, (gpointer)query)) {
+        ABORT();
+    }
     g_hash_table_insert(z3_expr_cache, (gpointer)query, (gpointer)ce);
     return r;
 }
@@ -4568,7 +4658,6 @@ static void smt_branch_query(Query* q)
 #if 0
     smt_stats(smt_solver.solver);
 #endif
-
 #if 0
     if (GET_QUERY_IDX(q) >= 13668) {
         debug_translation = 1;
@@ -4659,6 +4748,18 @@ static void smt_branch_query(Query* q)
         if (is_interesting_branch(q->args16.index, q->args16.count,
                                   q->args16.index_inv, q->args16.count_inv)) {
 #endif
+
+#if USE_FUZZY_SOLVER && 0
+            memory_impact_stats_t fuzzy_stats;
+            z3fuzz_get_mem_stats(&smt_solver.fuzzy_ctx, &fuzzy_stats);
+            printf("univocally_defined_size=%lu\n", fuzzy_stats.univocally_defined_size);
+            printf("ast_info_cache_size=%lu\n", fuzzy_stats.ast_info_cache_size);
+            printf("conflicting_ast_size=%lu\n", fuzzy_stats.conflicting_ast_size);
+            printf("group_intervals_size=%lu\n", fuzzy_stats.group_intervals_size);
+            printf("index_to_group_intervals_size=%lu\n", fuzzy_stats.index_to_group_intervals_size);
+            printf("n_assignments=%lu\n", fuzzy_stats.n_assignments);
+#endif
+
             printf("\nBranch at 0x%lx (id=%lu, taken=%u)\n", q->address,
                    GET_QUERY_IDX(q), (uint16_t)q->args64);
 #if USE_FUZZY_SOLVER
@@ -5481,7 +5582,7 @@ static void smt_slice_query(Query* q)
         }
     }
 
-    GHashTable* conc_addrs = g_hash_table_new(NULL, NULL);
+    GHashTable* conc_addrs = f_hash_table_new(NULL, NULL);
     g_hash_table_add(conc_addrs, (gpointer)addr_conc);
     int r = 0;
     if (inputs && (config.memory_slice_reasoning || config.address_reasoning)) {
@@ -5519,12 +5620,15 @@ static void smt_slice_query(Query* q)
 
     if (!r) {
         printf("Slice access has a single value. Concretizing it.\n");
+        CachedExpr* ce = g_hash_table_lookup(z3_expr_cache, (gpointer)s_load);
+        f_hash_table_destroy(ce->inputs);
+        free(ce);
         g_hash_table_remove(z3_expr_cache, (gpointer)s_load);
         if (q->query->opkind == MEMORY_SLICE_ACCESS) {
             concretized_sloads[scale_sload_index(s_load_id)] = 1;
         } else {
             uint8_t out_of_bounds;
-            GHashTable* slice_inputs = g_hash_table_new(NULL, NULL);
+            GHashTable* slice_inputs = f_hash_table_new(NULL, NULL);
             Z3_ast z3_expr = get_input_from_slice_array(addr_conc, s_load_size,
                                             slice_start, slice_end, offset_start,
                                             slice_inputs, &out_of_bounds);
@@ -5588,7 +5692,7 @@ static void smt_slice_query(Query* q)
 #endif
         }
 
-        g_hash_table_destroy(conc_addrs);
+        f_hash_table_destroy(conc_addrs);
         return;
     }
 #if 0
@@ -5596,11 +5700,11 @@ static void smt_slice_query(Query* q)
 #endif
     printf("Slice access has multiple values: %d\n",
            g_hash_table_size(conc_addrs));
-
+#if 0
     if (r > 0) {
         ABORT();
     }
-
+#endif
     Z3_ast s = z3_new_symbol_int(scale_sload_index(s_load_id) + 1,
                                  sizeof(uintptr_t) * 8);
 
@@ -5705,7 +5809,7 @@ static void smt_slice_query(Query* q)
     z3_ast_exprs[GET_QUERY_IDX(q)] = e;
     update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
 
-    g_hash_table_destroy(conc_addrs);
+    f_hash_table_destroy(conc_addrs);
 }
 
 static void smt_expr_query(Query* q, OPKIND opkind)
@@ -5793,7 +5897,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
 #else // Fuzzing:
 
 #if ADDRESS_REASONING == FUZZ_GD
-        GHashTable* solutions = g_hash_table_new(NULL, NULL);
+        GHashTable* solutions = f_hash_table_new(NULL, NULL);
         g_hash_table_add(solutions, (gpointer) solution);
         gd_solution_info_t info = {
             .set = solutions,
@@ -5807,13 +5911,13 @@ static void smt_expr_query(Query* q, OPKIND opkind)
         z3fuzz_find_all_values_gd(&smt_solver.fuzzy_ctx, z3_query, deps, 1, &gd_solution);
         gd_solution_info = NULL;
 #else
-        GHashTable* solutions = g_hash_table_new(NULL, NULL);
+        GHashTable* solutions = f_hash_table_new(NULL, NULL);
         g_hash_table_add(solutions, (gpointer)solution);
         int r = fuzz_query_eval(inputs, z3_query, solutions, GET_QUERY_IDX(q), 0, 0);
         int n_solutions = g_hash_table_size(solutions);
         printf("Found %d solution for %s expr.\n", n_solutions - 1,
                opkind_to_str(opkind));
-        g_hash_table_destroy(solutions);
+        f_hash_table_destroy(solutions);
 #endif
 
 #endif
@@ -6045,7 +6149,7 @@ int main(int argc, char* argv[])
 
     smt_init();
 
-    concretized_bytes = g_hash_table_new(NULL, NULL);
+    concretized_bytes = f_hash_table_new(NULL, NULL);
 
 #if 0
     run_query_from_file("/home/ercoppa/Desktop/code/fuzzolic/test_case_31.query");
@@ -6192,7 +6296,7 @@ int main(int argc, char* argv[])
             smt_query(&next_query[0]);
             next_query++;
 #if 0
-            if (GET_QUERY_IDX(next_query) > 5) {
+            if (GET_QUERY_IDX(next_query) > 1000) {
                 printf("Exiting...\n");
                 save_bitmaps();
                 exit(0);

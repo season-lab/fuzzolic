@@ -779,12 +779,6 @@ extern GHashTable* z3_expr_cache;
 Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
                             size_t width, GHashTable** inputs)
 {
-    CachedExpr* ce = g_hash_table_lookup(z3_expr_cache, (gpointer)query);
-    if (ce) {
-        *inputs = ce->inputs;
-        return ce->expr;
-    }
-
     assert(!is_const && "is_const is true in a i386 query");
 
     Z3_ast      r          = NULL;
@@ -969,11 +963,7 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
             ABORT("Unknown expr i386 opkind: %u", query->opkind);
     }
 
-    ce         = malloc(sizeof(CachedExpr));
-    ce->expr   = r;
-    *inputs    = merge_inputs(op1_inputs, op2_inputs);
-    ce->inputs = *inputs;
-    g_hash_table_insert(z3_expr_cache, (gpointer)query, (gpointer)ce);
+    *inputs = merge_inputs(op1_inputs, op2_inputs);
     return r;
 }
 #undef VERBOSE

@@ -1,0 +1,3 @@
+all:
+	clang -o solver-smt main.c i386.c branch_coverage.c opts.c xxHash/xxhash.c -DUSE_FUZZY_SOLVER=0 -lz3 `pkg-config --cflags glib-2.0` `pkg-config --libs glib-2.0` -lz3 -L./z3/lib/ -O0 -g -fsanitize=address -fno-omit-frame-pointer -fPIC fuzzy-sat/libZ3Fuzzy.a
+	clang -o solver-fuzzy main.c i386.c branch_coverage.c opts.c xxHash/xxhash.c -DUSE_FUZZY_SOLVER=1 -lz3 `pkg-config --cflags glib-2.0` `pkg-config --libs glib-2.0` -lz3 -L./z3/lib/ -O0 -g -fsanitize=address -fno-omit-frame-pointer -fPIC fuzzy-sat/libZ3Fuzzy.a
