@@ -11,7 +11,7 @@ import json
 import shutil
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-AFL_DIR = SCRIPT_DIR + '/../../AFL/'
+AFL_DIR = SCRIPT_DIR + '/../../AFLplusplus/'
 AFL_BIN = AFL_DIR + '/afl-fuzz'
 FUZZOLIC_BIN = SCRIPT_DIR + '/fuzzolic.py'
 DEVNULL = open(os.devnull, 'w')
