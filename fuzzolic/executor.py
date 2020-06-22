@@ -484,7 +484,7 @@ class Executor(object):
 
     @property
     def cur_input(self):
-        return self.__get_root_dir() + '/curr.y4m'
+        return self.__get_root_dir() + '/.cur_input'
 
     def __pick_testcase(self, initial_run=False):
 
