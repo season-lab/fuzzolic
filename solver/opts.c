@@ -81,7 +81,7 @@ void parse_opts(int argc, char* argv[], Config* config)
     var = getenv("BITMAP_SHM_KEY");
     if (var) {
         config->bitmap_shm_key = (uintptr_t)strtoull(var, NULL, 16);
-        assert(s_config->bitmap_shm_key != ULLONG_MAX);
+        assert(config->bitmap_shm_key != ULLONG_MAX);
     }
     assert(config->bitmap_shm_key != 0 && "Missing BITMAP_SHM_KEY");
 #endif

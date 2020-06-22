@@ -66,3 +66,6 @@ clean-shared:
 
 print-tests:
 	python utils/print_test_cases.py workdir/tests
+
+lodepng:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/lodepng/seeds/not_kitty.png -- ../fuzzolic-evaluation/benchmarks/lodepng/lodepng_decode_cg_nocksm @@

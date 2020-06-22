@@ -23,7 +23,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 SOLVER_SMT_BIN = SCRIPT_DIR + '/../solver/solver-smt'
 SOLVER_FUZZY_BIN = SCRIPT_DIR + '/../solver/solver-fuzzy'
 TRACER_BIN = SCRIPT_DIR + '/../tracer/x86_64-linux-user/qemu-x86_64'
-AFL_PATH = SCRIPT_DIR + '/../../AFL/'
+AFL_PATH = SCRIPT_DIR + '/../../AFLplusplus/'
 
 SOLVER_WAIT_TIME_AT_STARTUP = 0.0010
 SOLVER_TIMEOUT = 10
@@ -272,10 +272,10 @@ class Executor(object):
 
         if self.debug != 'gdb':
             p_tracer_args += ['-symbolic'] # self.fuzz_expr or 
-            if False and (self.fuzz_expr or self.debug == 'trace'):  # or self.debug == 'no_solver':
+            if False or (self.fuzz_expr or self.debug == 'trace'):  # or self.debug == 'no_solver':
                 p_tracer_args += ['-d']
                 # 'in_asm,op_opt,out_asm'
-                p_tracer_args += ['in_asm,op']
+                p_tracer_args += ['in_asm,op,op_opt']
 
         args = self.binary_args
         if not self.testcase_from_stdin:
@@ -484,7 +484,7 @@ class Executor(object):
 
     @property
     def cur_input(self):
-        return self.__get_root_dir() + '/.input'
+        return self.__get_root_dir() + '/curr.y4m'
 
     def __pick_testcase(self, initial_run=False):
 

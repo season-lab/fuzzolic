@@ -788,7 +788,7 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
     GHashTable* op2_inputs = NULL;
     switch (query->opkind) {
 
-        case CMP_EQ: 
+        case CMP_EQ:
         case CMP_GT:
         case CMP_GE:
         case CMP_LT:
@@ -915,8 +915,9 @@ Z3_ast smt_query_i386_to_z3(Z3_context ctx, Expr* query, uintptr_t is_const,
         case EFLAGS_ALL_SBBW:
         case EFLAGS_ALL_SBBL:
         case EFLAGS_ALL_SBBQ:
-            r = eflags_all_ternary(ctx, query, (uintptr_t)query->op3,
-                                   &op1_inputs);
+            r = eflags_all_ternary(ctx, query,
+                                    get_opkind_width(query->opkind),
+                                    &op1_inputs);
             break;
         case EFLAGS_ALL_ADCX:
         case EFLAGS_ALL_ADOX:

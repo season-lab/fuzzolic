@@ -13,7 +13,7 @@ ABORTING_COUNT = 0
 def handler(signo, stackframe):
     print("[FUZZOLIC] Aborting....")
     executor.SHUTDOWN = True
-    print(executor.RUNNING_PROCESSES)
+    # print(executor.RUNNING_PROCESSES)
     for p in executor.RUNNING_PROCESSES:
         print("[FUZZOLIC] Sending SIGINT")
         p.send_signal(signal.SIGINT)
@@ -23,13 +23,16 @@ def handler(signo, stackframe):
         except:
             print("[FUZZOLIC] Sending SIGKILL")
             p.send_signal(signal.SIGKILL)
-            p.wait()
             executor.RUNNING_PROCESSES.remove(p)
+            p.wait()
+
+    # if len(executor.RUNNING_PROCESSES) == 0:
+    #    sys.exit(1)
 
     global ABORTING_COUNT
     ABORTING_COUNT += 1
-    # if ABORTING_COUNT >= 3:
-    #    sys.exit("Killing fuzzolic without cleanup. Not good.")
+    if ABORTING_COUNT >= 3:
+       sys.exit("Killing fuzzolic without cleanup. Not good.")
 
 
 def main():
