@@ -15,6 +15,7 @@ import functools
 import tempfile
 import random
 import ctypes
+import resource
 
 import minimizer_qsym
 import minimizer
@@ -31,6 +32,8 @@ SHUTDOWN = False
 
 RUNNING_PROCESSES = []
 
+def setlimits():
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 class Executor(object):
 
@@ -227,6 +230,7 @@ class Executor(object):
                                             stdout=p_solver_log if not self.debug else None,
                                             stderr=subprocess.STDOUT if not self.debug else None,
                                             cwd=run_dir,
+                                            preexec_fn=setlimits,
                                             env=env)
                 RUNNING_PROCESSES.append(p_solver)
             else:
@@ -295,6 +299,7 @@ class Executor(object):
                                     stdin=subprocess.PIPE if self.testcase_from_stdin or self.debug == 'gdb' else None,
                                     cwd=run_dir,
                                     env=env,
+                                    preexec_fn=setlimits,
                                     bufsize=0 if self.debug == 'gdb' else -1,
                                     #universal_newlines=True if self.debug == 'gdb' else False
                                     )
