@@ -42,7 +42,8 @@ class Executor(object):
                  optimistic_solving=False,
                  memory_slice_reasoning=False,
                  address_reasoning=False,
-                 fuzz_expr=False):
+                 fuzz_expr=False,
+                 input_fixed_name=None):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
@@ -84,6 +85,7 @@ class Executor(object):
         self.memory_slice_reasoning = memory_slice_reasoning
         self.address_reasoning = address_reasoning
         self.fuzz_expr = fuzz_expr
+        self.input_fixed_name = input_fixed_name
 
         self.__load_config()
         self.__warning_log = set()
@@ -294,8 +296,10 @@ class Executor(object):
         # print(p_tracer_args)
 
         p_tracer = subprocess.Popen(p_tracer_args,
-                                    stdout=p_tracer_log if not self.debug and not self.fuzz_expr else None,
-                                    stderr=subprocess.STDOUT if not self.debug and not self.fuzz_expr else None,
+                                    # stdout=p_tracer_log if not self.debug and not self.fuzz_expr else None,
+                                    # stderr=subprocess.STDOUT if not self.debug and not self.fuzz_expr else None,
+                                    stdout=subprocess.DEVNULL if not self.debug and not self.fuzz_expr else None,
+                                    stderr=p_tracer_log if not self.debug and not self.fuzz_expr else None,
                                     stdin=subprocess.PIPE if self.testcase_from_stdin or self.debug == 'gdb' else None,
                                     cwd=run_dir,
                                     env=env,
@@ -305,7 +309,8 @@ class Executor(object):
                                     )
         RUNNING_PROCESSES.append(p_tracer)
 
-        print("Tracer started")
+        print()
+        # print("Tracer started")
 
         # emit testcate on stdin
         if self.debug != 'gdb':
@@ -489,7 +494,10 @@ class Executor(object):
 
     @property
     def cur_input(self):
-        return self.__get_root_dir() + '/.cur_input'
+        if self.input_fixed_name:
+            return self.__get_root_dir() + '/' + self.input_fixed_name
+        else:
+            return self.__get_root_dir() + '/.cur_input'
 
     def __pick_testcase(self, initial_run=False):
 

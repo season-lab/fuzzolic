@@ -67,6 +67,8 @@ def main():
     parser.add_argument(
         '-p', '--optimistic-solving', action='store_true', help='enable optimistic solving')
     parser.add_argument(
+        '-n', '--input-fixed-name', help='Input name to use for input files')
+    parser.add_argument(
         '--fuzz-expr', action='store_true', help='enable fuzz expression (debug)')
 
     # required args
@@ -125,13 +127,14 @@ def main():
     fuzz_expr = args.fuzz_expr
     if fuzz_expr is None:
         fuzz_expr = False
+    input_fixed_name = args.input_fixed_name
 
     signal.signal(signal.SIGINT, handler)
 
     fuzzolic_executor = executor.Executor(
         binary, input, output_dir, binary_args, debug, afl,
         timeout, fuzzy, optimistic_solving, memory_slice_reasoning,
-        address_reasoning, fuzz_expr)
+        address_reasoning, fuzz_expr, input_fixed_name)
     fuzzolic_executor.run()
 
 
