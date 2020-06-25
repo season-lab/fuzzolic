@@ -17,13 +17,20 @@ def handler(signo, stackframe):
     for p in executor.RUNNING_PROCESSES:
         print("[FUZZOLIC] Sending SIGINT")
         p.send_signal(signal.SIGINT)
+        p.send_signal(signal.SIGUSR2)
         try:
             p.wait(2)
-            executor.RUNNING_PROCESSES.remove(p)
+            try:
+                executor.RUNNING_PROCESSES.remove(p)
+            except:
+                pass
         except:
             print("[FUZZOLIC] Sending SIGKILL")
             p.send_signal(signal.SIGKILL)
-            executor.RUNNING_PROCESSES.remove(p)
+            try:
+                executor.RUNNING_PROCESSES.remove(p)
+            except:
+                pass
             p.wait()
 
     # if len(executor.RUNNING_PROCESSES) == 0:

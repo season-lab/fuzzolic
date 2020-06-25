@@ -59,7 +59,8 @@ int  is_interesting_branch(uintptr_t pc, uintptr_t taken);
 int is_interesting_branch(uint16_t idx,
                             uint16_t local_count_idx,
                             uint16_t idx_inv,
-                            uint16_t local_count_idx_inv);
+                            uint16_t local_count_idx_inv,
+                            uintptr_t addr);
 #endif
 int  is_interesting_memory(uintptr_t addr);
 void load_bitmaps();

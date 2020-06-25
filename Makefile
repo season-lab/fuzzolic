@@ -69,3 +69,6 @@ print-tests:
 
 lodepng:
 	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/lodepng/seeds/not_kitty.png -- ../fuzzolic-evaluation/benchmarks/lodepng/lodepng_decode_cg_nocksm @@
+
+lodepng-fuzzy:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/lodepng/seeds/not_kitty.png -f -- ../fuzzolic-evaluation/benchmarks/lodepng/lodepng_decode_cg_nocksm @@
