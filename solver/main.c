@@ -4819,15 +4819,15 @@ static void smt_branch_query(Query* q)
 
     if (has_real_inputs) {
 #if BRANCH_COVERAGE == QSYM
-        if (is_interesting_branch(q->address, q->args8.arg0)) {
+        int is_interesting = is_interesting_branch(q->address, q->args8.arg0);
 #elif BRANCH_COVERAGE == AFL
-        if (is_interesting_branch(q->address, q->args64)) {
+        int is_interesting = is_interesting_branch(q->address, q->args64);
 #elif BRANCH_COVERAGE == FUZZOLIC
         int is_interesting = is_interesting_branch(q->args16.index, q->args16.count,
                                   q->args16.index_inv, q->args16.count_inv,
                                   q->address);
-        if (is_interesting) {
 #endif
+        if (is_interesting) {
 
 #if USE_FUZZY_SOLVER && 0
             memory_impact_stats_t fuzzy_stats;
