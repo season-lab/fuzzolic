@@ -4830,10 +4830,7 @@ static inline int smt_check_z3(Query* q, Z3_ast z3_neg_query, GHashTable* inputs
 #if !DISABLE_SMT
     printf("Running a query with Z3...\n");
     int is_sat = smt_query_check(solver, GET_QUERY_IDX(q), 0);
-    if (is_sat) {
-        ABORT();
-    }
-    if (mode == 1 && !is_sat) {
+    if (mode && !is_sat) {
         Z3_solver_reset(smt_solver.ctx, solver);
         Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
         is_sat = smt_query_check(solver, GET_QUERY_IDX(q), 1);
