@@ -14,7 +14,7 @@
 
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
-#define SOLVER_TIMEOUT_MS            1000
+#define SOLVER_TIMEOUT_MS            10000
 
 #define SMT_SOLVE_ALL               1
 #define FUZZ_INTERESTING            2
@@ -4955,11 +4955,13 @@ static void smt_branch_query(Query* q)
             }
 #if USE_FUZZY_SOLVER
             else {
-                // smt_check_fuzzy(q, z3_neg_query, inputs, config.optimistic_solving);
+                smt_check_fuzzy(q, z3_neg_query, inputs, config.optimistic_solving);
+#if 0
                 int is_sat = smt_check_fuzzy(q, z3_neg_query, inputs, 0);
                 if (!is_sat) {
                     smt_check_z3(q, z3_neg_query, inputs, 2);
                 }
+#endif
             }
 #endif
         } else {
