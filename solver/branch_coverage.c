@@ -10,6 +10,8 @@ static uint8_t branch_neg_bitmap[BRANCH_BITMAP_SIZE] = {0};
 static uint8_t context_bitmap[BRANCH_BITMAP_SIZE]    = {0};
 #endif
 
+static uint8_t branch_alt_bitmap[BRANCH_BITMAP_SIZE]    = {0};
+
 #if 0
 static uint8_t memory_bitmap[BRANCH_BITMAP_SIZE] = {0};
 #endif
@@ -63,6 +65,10 @@ static inline void load_bitmap(const char* path, uint8_t* data, size_t size)
 void load_bitmaps()
 {
     load_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
+    if (config.branch_alt_bitmap_path) {
+        load_bitmap(config.branch_bitmap_path, branch_alt_bitmap, BRANCH_BITMAP_SIZE);
+    }
+
 #if BRANCH_COVERAGE == QSYM
     load_bitmap(config.context_bitmap_path, context_bitmap, BRANCH_BITMAP_SIZE);
 #endif
@@ -82,6 +88,9 @@ static inline void save_bitmap(const char* path, uint8_t* data, size_t size)
 void save_bitmaps()
 {
     save_bitmap(config.branch_bitmap_path, branch_bitmap, BRANCH_BITMAP_SIZE);
+    if (config.branch_alt_bitmap_path) {
+        save_bitmap(config.branch_bitmap_path, branch_alt_bitmap, BRANCH_BITMAP_SIZE);
+    }
 #if BRANCH_COVERAGE == QSYM
     save_bitmap(config.context_bitmap_path, context_bitmap, BRANCH_BITMAP_SIZE);
 #endif
@@ -142,7 +151,7 @@ static inline int is_interesting_context(uintptr_t h, uint8_t bits)
 #endif
 
 // same as QSYM
-int is_interesting_branch(uintptr_t pc, uintptr_t taken)
+int is_interesting_branch(uintptr_t pc, uintptr_t taken, uint8_t is_lib)
 {
     uintptr_t h   = hash_pc(pc, taken);
     uintptr_t idx = get_index(h);
@@ -158,22 +167,36 @@ int is_interesting_branch(uintptr_t pc, uintptr_t taken)
 
         uintptr_t inv_h   = hash_pc(pc, !taken);
         uintptr_t inv_idx = get_index(inv_h);
-
+#if 0
+        if (!is_lib && branch_bitmap[idx] == 0) {
+            ret = 2;
+        } else {
+            ret = 1;
+        }
+#else
+        ret = 1;
+#endif
         branch_bitmap[idx] |= branch_neg_bitmap[idx];
 
-        // mark the inverse case, because it's already covered by current
-        // testcase
         branch_neg_bitmap[inv_idx]++;
 
         branch_bitmap[inv_idx] |= branch_neg_bitmap[inv_idx];
         // save_bitmaps();
 
         branch_neg_bitmap[inv_idx]--;
-        ret = 1;
+
 #if CONTEXT_SENSITIVITY
     } else if (new_context) {
+#if 0
         printf("Branch is interesting due to context\n");
+        if (!is_lib) {
+            ret = 2;
+        } else {
+            ret = 1;
+        }
+#else
         ret = 1;
+#endif
         // save_bitmaps();
 #endif
     } else {
@@ -227,9 +250,10 @@ int is_interesting_branch(uint16_t idx, uint16_t count, uint16_t idx_inv,
     if ((normalized_hit_count | branch_bitmap[idx]) != branch_bitmap[idx]) {
 
         printf("marking branch at %lx (%u) as interesting: normalized_hit_count=%u count=%u branch_bitmap=%u branch_bitmap_inv=%u inv_idx=%u\n", addr, idx, normalized_hit_count, count + 1, branch_bitmap[idx], branch_bitmap[idx_inv], idx_inv);
-        assert(branch_bitmap[idx_inv]);
 
-        if (normalized_hit_count > branch_bitmap[idx]) {
+        // if (normalized_hit_count > branch_bitmap[idx]) {
+        //if (branch_bitmap[idx] == 0) {
+        if (addr < 0x10000000 && branch_bitmap[idx] == 0) {
             last_branch_is_interesting = 2;
         } else {
             last_branch_is_interesting = 1;
@@ -237,13 +261,12 @@ int is_interesting_branch(uint16_t idx, uint16_t count, uint16_t idx_inv,
 
         // update bitmap symbolic edges
         branch_bitmap[idx] |= normalized_hit_count;
-#if 0   // this is done by the minimizer/tracer
-        // the inverse branch is taken by the current testcase
+
         // normalize hit count during the run
         normalized_hit_count = count_class_binary[count_inv + 1];
         // update bitmap symbolic edges
         branch_bitmap[idx_inv] |= normalized_hit_count;
-#endif
+
     } else {
         last_branch_is_interesting = 0;
     }

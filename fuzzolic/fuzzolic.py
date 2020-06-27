@@ -61,6 +61,8 @@ def main():
     parser.add_argument(
         '-f', '--fuzzy', action='store_true', help='use fuzzy solver')
     parser.add_argument(
+        '-m', '--mixed', action='store_true', help='use fuzzy solver, then Z3 when empty queue')
+    parser.add_argument(
         '-r', '--address-reasoning', action='store_true', help='enable address reasoning')
     parser.add_argument(
         '-s', '--memory-slice', action='store_true', help='enable memory slice reasoning')
@@ -111,7 +113,13 @@ def main():
 
     binary_args = args.args
     debug = args.debug
+
     fuzzy = args.fuzzy
+    use_smt_if_empty = False
+    if args.mixed:
+        fuzzy = True
+        use_smt_if_empty = True
+
     timeout = args.timeout
     if timeout is None:
         timeout = 0
@@ -134,7 +142,7 @@ def main():
     fuzzolic_executor = executor.Executor(
         binary, input, output_dir, binary_args, debug, afl,
         timeout, fuzzy, optimistic_solving, memory_slice_reasoning,
-        address_reasoning, fuzz_expr, input_fixed_name)
+        address_reasoning, fuzz_expr, input_fixed_name, use_smt_if_empty)
     fuzzolic_executor.run()
 
 

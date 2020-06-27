@@ -91,4 +91,9 @@ void parse_opts(int argc, char* argv[], Config* config)
         config->timeout = (uintptr_t)strtoull(var, NULL, 10);
         assert(config->timeout != ULLONG_MAX);
     }
+
+    var = getenv("BITMAP_ALT");
+    if (var) {
+        config->branch_alt_bitmap_path = var;
+    }
 }

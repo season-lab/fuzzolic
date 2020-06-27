@@ -10,6 +10,7 @@ import subprocess as sp
 import tempfile
 import copy
 import struct
+import hashlib
 
 # status for TestCaseMinimizer
 NEW = 0
@@ -19,6 +20,16 @@ CRASH = 2
 TIMEOUT = 5 * 1000
 MAP_SIZE = 65536
 AT_FILE = "@@"
+
+def get_hash(file):
+    with open(file, "rb") as f:
+        file_hash = hashlib.blake2b()
+        chunk = f.read(8192)
+        while chunk:
+            file_hash.update(chunk)
+            chunk = f.read(8192)
+        return file_hash.hexdigest()
+    return None
 
 def get_score(testcase):
     # New coverage is the best
@@ -76,6 +87,7 @@ class TestcaseMinimizer(object):
         self.map_size = map_size
         self.bitmap = self.initialize_bitmap(self.bitmap_file, map_size)
         self.crash_bitmap = self.initialize_bitmap(self.crash_bitmap_file, map_size)
+        self.hash_files = set()
 
     def initialize_bitmap(self, filename, map_size):
         if os.path.exists(filename):
@@ -88,6 +100,17 @@ class TestcaseMinimizer(object):
         return bitmap
 
     def check_testcase(self, testcase, global_bitmap_pre_run=None, no_msg=False):
+
+        """
+        hash = get_hash(testcase)
+        assert hash is not None
+        print("Hash is %s"  % hash)
+        if hash in self.hash_files:
+            print("Duplicate testcase")
+            return False
+        self.hash_files.add(hash)
+        """
+
         cmd = [self.showmap,
                "-t",
                str(TIMEOUT),

@@ -43,7 +43,8 @@ class Executor(object):
                  memory_slice_reasoning=False,
                  address_reasoning=False,
                  fuzz_expr=False,
-                 input_fixed_name=None):
+                 input_fixed_name=None,
+                 use_smt_if_empty=False):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
@@ -61,7 +62,12 @@ class Executor(object):
         self.input = os.path.abspath(input)
 
         self.global_bitmap = self.__get_root_dir() + '/branch_bitmap'
-        os.system("touch " + self.global_bitmap)
+        if False and os.path.exists(self.__get_root_dir() + '/../branch_bitmap'):
+            os.system("cp " + self.__get_root_dir() + '/../branch_bitmap'  + " "+ self.global_bitmap)
+            # os.system("cp " + self.__get_root_dir() + '/../context_bitmap'  + " " + self.__get_root_dir() + '/context_bitmap')
+            print("Importing from parent")
+        else:
+            os.system("touch " + self.global_bitmap)
 
         if afl:
             if not os.path.exists(afl):
@@ -72,10 +78,12 @@ class Executor(object):
             #  self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
         else:
             self.afl = None
-            #self.minimizer = minimizer_qsym.TestcaseMinimizer(
-            #    [binary] + binary_args, AFL_PATH, output_dir, True)
-            self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
+            self.minimizer = minimizer_qsym.TestcaseMinimizer(
+                [binary] + binary_args, AFL_PATH, output_dir, True)
+            # self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
+
         self.afl_processed_testcases = set()
+        self.afl_alt_processed_testcases = set()
 
         self.debug = debug
         self.tick_count = 0
@@ -91,6 +99,14 @@ class Executor(object):
         self.__warning_log = set()
 
         self.libc = ctypes.CDLL("libc.so.6")
+
+        self.use_smt_if_empty = False
+        if self.fuzzy and use_smt_if_empty:
+            self.use_smt_if_empty = True
+            self.global_alt_bitmap = self.__get_root_dir() + '/branch_alt_bitmap'
+            os.system("touch " + self.global_alt_bitmap)
+        else:
+            self.global_alt_bitmap = None
 
     def __load_config(self):
         config = {}
@@ -151,15 +167,15 @@ class Executor(object):
 
         return run_dir, run_id
 
-    def get_solver_bin(self):
-        if self.fuzzy:
-            # print("Using fuzzy solver")
+    def get_solver_bin(self, force_smt=False):
+        if self.fuzzy and not force_smt:
+            print("Using fuzzy solver")
             return SOLVER_FUZZY_BIN
         else:
-            # print("Using smt solver")
+            print("Using smt solver")
             return SOLVER_SMT_BIN
 
-    def fuzz_one(self, testcase, target):
+    def fuzz_one(self, testcase, target, force_smt=False):
 
         global RUNNING_PROCESSES
         self.__check_shutdown_flag()
@@ -210,12 +226,23 @@ class Executor(object):
         if self.debug != 'no_solver' and self.debug != 'coverage':
             p_solver_args = []
             p_solver_args += ['stdbuf', '-o0']  # No buffering on stdout
-            p_solver_args += [self.get_solver_bin()]
+            p_solver_args += [self.get_solver_bin(force_smt)]
             p_solver_args += ['-i', testcase]
             p_solver_args += ['-t', self.__get_testcases_dir()]
             p_solver_args += ['-o', run_dir]
 
-            p_solver_args += ['-b', self.global_bitmap]
+            if not force_smt:
+                p_solver_args += ['-b', self.global_bitmap]
+                if self.use_smt_if_empty:
+                    env['BITMAP_ALT'] = str(self.global_alt_bitmap)
+            else:
+                p_solver_args += ['-b', self.global_alt_bitmap]
+                if self.use_smt_if_empty:
+                    env['BITMAP_ALT'] = str(self.global_bitmap)
+
+            p_solver_args += ['-c', self.__get_root_dir() + '/context_bitmap']
+            p_solver_args += ['-m', self.__get_root_dir() + '/memory_bitmap']
+
             #p_solver_args += ['-b', os.path.join(self.output_dir, '/afl-bitmap')]
 
             if self.optimistic_solving:
@@ -225,8 +252,6 @@ class Executor(object):
             if self.address_reasoning:
                 p_solver_args += [ '-a' ]
 
-            p_solver_args += ['-c', self.__get_root_dir() + '/context_bitmap']
-            p_solver_args += ['-m', self.__get_root_dir() + '/memory_bitmap']
             if not gdb_solver:
                 p_solver = subprocess.Popen(p_solver_args,
                                             stdout=p_solver_log if not self.debug else None,
@@ -281,7 +306,7 @@ class Executor(object):
             if False or (self.fuzz_expr or self.debug == 'trace'):  # or self.debug == 'no_solver':
                 p_tracer_args += ['-d']
                 # 'in_asm,op_opt,out_asm'
-                p_tracer_args += ['in_asm,op,op_opt']
+                p_tracer_args += ['in_asm,op']
 
         args = self.binary_args
         if not self.testcase_from_stdin:
@@ -309,7 +334,7 @@ class Executor(object):
                                     )
         RUNNING_PROCESSES.append(p_tracer)
 
-        print()
+        # print()
         # print("Tracer started")
 
         # emit testcate on stdin
@@ -353,14 +378,8 @@ class Executor(object):
             print("ERROR: tracer has returned code %d %s" %
                   (p_tracer.returncode, returncode_str))
 
-        if p_tracer.returncode == -11:
-            if self.debug != 'no_solver' and self.debug != 'coverage':
-                # p_solver.send_signal(signal.SIGINT)
-                # try:
-                #     p_solver.wait(15)
-                # except:
-                #    p_solver.send_signal(signal.SIGKILL)
-                p_solver.send_signal(signal.SIGUSR1)
+        if self.debug != 'no_solver' and self.debug != 'coverage':
+            p_solver.send_signal(signal.SIGUSR1)
 
         if self.fuzz_expr:
             p_solver.send_signal(signal.SIGINT)
@@ -499,10 +518,13 @@ class Executor(object):
         else:
             return self.__get_root_dir() + '/.cur_input'
 
-    def __pick_testcase(self, initial_run=False):
+    def __pick_testcase(self, initial_run=False, force_smt=False):
 
         if self.afl:
-            queued_inputs = self.__import_from_afl()
+            queued_inputs = self.__import_from_afl(force_smt)
+            if len(queued_inputs) == 0 and self.use_smt_if_empty and not force_smt and self.fuzzy:
+                return self.__pick_testcase(initial_run, force_smt=True)
+
             waiting_rounds = 0
             while len(queued_inputs) == 0:
                 waiting_rounds += 1
@@ -516,6 +538,8 @@ class Executor(object):
                 print("\nWaited %s seconds for a new input from AFL\n" %
                       (waiting_rounds * 0.1))
 
+            if force_smt:
+                self.afl_alt_processed_testcases.add(queued_inputs[0])
             self.afl_processed_testcases.add(queued_inputs[0])
             shutil.copy2(queued_inputs[0], self.cur_input)
 
@@ -524,7 +548,7 @@ class Executor(object):
             self.minimizer.check_testcase(
                 self.cur_input, self.global_bitmap, True)
 
-            return self.cur_input, os.path.basename(queued_inputs[0])
+            return self.cur_input, os.path.basename(queued_inputs[0]), force_smt
 
         else:
             queued_inputs = list(
@@ -557,13 +581,13 @@ class Executor(object):
             # remove from the queue
             os.unlink(queued_inputs[0])
 
-            return self.cur_input, os.path.basename(queued_inputs[0])
+            return self.cur_input, os.path.basename(queued_inputs[0]), False
 
     def __check_shutdown_flag(self):
         if SHUTDOWN:
             sys.exit("Forcefully terminating...")
 
-    def __import_from_afl(self):
+    def __import_from_afl(self, force_smt=False):
         if not self.afl:
             return []
 
@@ -574,7 +598,10 @@ class Executor(object):
             if os.path.isfile(path):
                 files.append(path)
 
-        files = list(set(files) - self.afl_processed_testcases)
+        if force_smt:
+            files = list(set(files) - self.afl_alt_processed_testcases)
+        else:
+            files = list(set(files) - self.afl_processed_testcases)
         files = sorted(files)
         return sorted(files,
                       key=functools.cmp_to_key(
@@ -584,7 +611,7 @@ class Executor(object):
     def run(self):
 
         self.__check_shutdown_flag()
-        testcase, target = self.__pick_testcase(True)
+        testcase, target, force_smt = self.__pick_testcase(True)
         while testcase:
             start = time.time()
             self.fuzz_one(testcase, target)
@@ -593,7 +620,7 @@ class Executor(object):
             if self.debug or self.fuzz_expr:
                 return
             self.__check_shutdown_flag()
-            testcase, target = self.__pick_testcase()
+            testcase, target, force_smt = self.__pick_testcase()
             self.__check_shutdown_flag()
 
         print("[FUZZOLIC] no more testcase. Finishing.")

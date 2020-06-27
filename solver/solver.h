@@ -54,7 +54,7 @@ extern uint8_t* branch_bitmap;
 #define CONTEXT_SENSITIVITY 1
 
 #if BRANCH_COVERAGE == QSYM || BRANCH_COVERAGE == AFL
-int  is_interesting_branch(uintptr_t pc, uintptr_t taken);
+int  is_interesting_branch(uintptr_t pc, uintptr_t taken, uint8_t is_lib);
 #elif BRANCH_COVERAGE == FUZZOLIC
 int is_interesting_branch(uint16_t idx,
                             uint16_t local_count_idx,
@@ -74,6 +74,7 @@ typedef struct Config {
     const char* output_dir;
     //
     const char* branch_bitmap_path;
+    const char* branch_alt_bitmap_path;
     const char* context_bitmap_path;
     const char* memory_bitmap_path;
     //
