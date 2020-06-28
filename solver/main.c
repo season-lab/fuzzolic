@@ -3887,7 +3887,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
                                   &op2_inputs);
             assert(query->op3 == 0);
-            smt_bv_resize(&op1, &op2, 0);
+            smt_bv_resize(&op1, &op2, (ssize_t)query->op3);
 #if VERBOSE
             printf("XOR\n");
             smt_print_ast_sort(op1);

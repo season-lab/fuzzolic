@@ -167,7 +167,7 @@ int is_interesting_branch(uintptr_t pc, uintptr_t taken, uint8_t is_lib)
 
         uintptr_t inv_h   = hash_pc(pc, !taken);
         uintptr_t inv_idx = get_index(inv_h);
-#if 1
+#if 0
         if (!is_lib && branch_bitmap[idx] == 0) {
             ret = 2;
         } else {
@@ -188,7 +188,7 @@ int is_interesting_branch(uintptr_t pc, uintptr_t taken, uint8_t is_lib)
 #if CONTEXT_SENSITIVITY
     } else if (new_context) {
         // printf("Branch is interesting due to context\n");
-#if 1
+#if 0
         if (!is_lib) {
             ret = 2;
         } else {
