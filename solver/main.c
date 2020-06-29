@@ -5980,7 +5980,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
 
     if (config.address_reasoning 
             && is_interesting_memory(solution) 
-            && count_addr_testcase < 500) {
+            && count_addr_testcase < 1000) {
 
 #if 0 // Using SMT Solver:
         int       count    = 0;
