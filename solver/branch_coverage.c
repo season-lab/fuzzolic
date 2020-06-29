@@ -17,6 +17,7 @@ static uint8_t memory_bitmap[BRANCH_BITMAP_SIZE] = {0};
 #endif
 
 static uintptr_t last_branch_hash           = 0;
+static uintptr_t last_branch_inv_idx        = 0;
 static int       last_branch_is_interesting = 0;
 
 #define IS_POWER_OF_TWO(x) ((x & (x - 1)) == 0)
@@ -151,7 +152,7 @@ static inline int is_interesting_context(uintptr_t h, uint8_t bits)
 #endif
 
 // same as QSYM
-#if 1
+#if 0
 int is_interesting_branch(uintptr_t pc, uintptr_t taken, uint8_t is_lib)
 {
     uintptr_t h   = hash_pc(pc, taken);
@@ -230,17 +231,10 @@ int is_interesting_branch(uintptr_t pc, uintptr_t taken, uint8_t is_lib)
     branch_neg_bitmap[inv_idx]++;
 
     if ((branch_neg_bitmap[inv_idx] | branch_bitmap[inv_idx]) != branch_bitmap[inv_idx]) {
-
         ret = 1;
-#ifndef USE_FUZZY_SOLVER
-        branch_bitmap[inv_idx] |= branch_neg_bitmap[inv_idx];
-#endif
-
 #if CONTEXT_SENSITIVITY
     } else if (new_context) {
-        // printf("Branch is interesting due to context\n");
         ret = 1;
-        // save_bitmaps();
 #endif
     } else {
         ret = 0;
@@ -248,11 +242,19 @@ int is_interesting_branch(uintptr_t pc, uintptr_t taken, uint8_t is_lib)
 
     branch_neg_bitmap[inv_idx]--;
 
+    last_branch_inv_idx        = inv_idx;
     last_branch_hash           = h;
     last_branch_is_interesting = ret;
     return ret;
 }
 #endif
+
+void mark_sat_branch()
+{
+    branch_neg_bitmap[last_branch_inv_idx]++;
+    branch_bitmap[last_branch_inv_idx] |= branch_neg_bitmap[last_branch_inv_idx];
+    branch_neg_bitmap[last_branch_inv_idx]--;
+}
 
 #elif BRANCH_COVERAGE == AFL
 int is_interesting_branch(uintptr_t prev_loc, uintptr_t cur_loc)

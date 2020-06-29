@@ -4792,6 +4792,7 @@ static inline int smt_check_fuzzy(Query* q, Z3_ast z3_neg_query, GHashTable* inp
         printf("Query is SAT\n");
         smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 0);
         is_sat = 1;
+        mark_sat_branch();
     } else {
         if (conc_eval_count > 0) {
             printf("Query is non-SAT: avg_conc_eval=%lu count=%lu\n",

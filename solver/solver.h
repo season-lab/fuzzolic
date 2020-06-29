@@ -55,6 +55,7 @@ extern uint8_t* branch_bitmap;
 
 #if BRANCH_COVERAGE == QSYM || BRANCH_COVERAGE == AFL
 int  is_interesting_branch(uintptr_t pc, uintptr_t taken, uint8_t is_lib);
+void mark_sat_branch();
 #elif BRANCH_COVERAGE == FUZZOLIC
 int is_interesting_branch(uint16_t idx,
                             uint16_t local_count_idx,
