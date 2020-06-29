@@ -84,6 +84,7 @@ class Executor(object):
 
         self.afl_processed_testcases = set()
         self.afl_alt_processed_testcases = set()
+        self.timeout_testcases = set()
 
         self.debug = debug
         self.tick_count = 0
@@ -139,6 +140,12 @@ class Executor(object):
 
     def __get_testcases_dir(self):
         testcases_dir = self.__get_root_dir() + '/tests'
+        if not os.path.exists(testcases_dir):
+            os.system('mkdir ' + testcases_dir)
+        return testcases_dir
+
+    def __get_timeout_dir(self):
+        testcases_dir = self.__get_root_dir() + '/timeout'
         if not os.path.exists(testcases_dir):
             os.system('mkdir ' + testcases_dir)
         return testcases_dir
@@ -427,7 +434,9 @@ class Executor(object):
                       (shm_key, shm_id, r))
 
         # parse tracer logs for known errors/warnings
+        input_timeout = False
         if not self.debug:
+            """
             with open(p_tracer_log_name, 'r', encoding="utf8", errors='ignore') as log:
                 for line in log:
                     # if re.search('Helper', line):
@@ -435,13 +444,20 @@ class Executor(object):
                         if line not in self.__warning_log:
                             self.__warning_log.add(
                                 "[tracer warning]: %s" % line)
-
+            """
             with open(p_solver_log_name, 'r', encoding="utf8", errors='ignore') as log:
                 for line in log:
+                    """
                     if 'PROGRAM ABORT' in line:
                         if line not in self.__warning_log:
                             self.__warning_log.add(
                                 "[solver warning]: %s" % line)
+                    """
+                    if "Solving time exceded budget" in line:
+                        input_timeout = True
+
+        if input_timeout:
+            os.system("cp " + testcase + " " + self.__get_timeout_dir() + "/" + target)
 
         # check new test cases
         files = list(filter(os.path.isfile, glob.glob(
@@ -525,6 +541,14 @@ class Executor(object):
             if len(queued_inputs) == 0 and self.use_smt_if_empty and not force_smt and self.fuzzy:
                 return self.__pick_testcase(initial_run, force_smt=True)
 
+            if len(queued_inputs) == 0 and not initial_run:
+                timeout_testcases = os.listdir(self.__get_timeout_dir())
+                timeout_testcases = set(timeout_testcases) - self.timeout_testcases
+                if len(timeout_testcases) > 0:
+                    testcase = list(timeout_testcases)[0]
+                    self.timeout_testcases.add(testcase)
+                    queued_inputs = [ self.__get_timeout_dir() + "/" + testcase ]
+
             waiting_rounds = 0
             while len(queued_inputs) == 0:
                 waiting_rounds += 1
@@ -554,9 +578,17 @@ class Executor(object):
             queued_inputs = list(
                 filter(os.path.isfile, glob.glob(self.__get_queue_dir() + "/*")))
 
+            if len(queued_inputs) == 0 and not initial_run:
+                timeout_testcases = os.listdir(self.__get_timeout_dir())
+                timeout_testcases = set(timeout_testcases) - self.timeout_testcases
+                if len(timeout_testcases) > 0:
+                    testcase = list(timeout_testcases)[0]
+                    self.timeout_testcases.add(testcase)
+                    queued_inputs = [ self.__get_timeout_dir() + "/" + testcase ]
+
             if len(queued_inputs) == 0:
                 if not initial_run:
-                    return None, None
+                    return None, None, False
 
                 # copy the initial seed(s) in the queue
                 if not os.path.isdir(self.input):

@@ -3867,6 +3867,21 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             }
 
             break;
+        case ANDC:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
+                                  &op2_inputs);
+            assert(((ssize_t)query->op3) == 0);
+            smt_bv_resize(&op1, &op2, 0);
+#if VERBOSE
+            printf("ANDC\n");
+            smt_print_ast_sort(op1);
+            smt_print_ast_sort(op2);
+#endif
+            op2 = Z3_mk_bvnot(smt_solver.ctx, op2);
+            r = Z3_mk_bvand(smt_solver.ctx, op1, op2);
+            break;
         case OR: // 12
             op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
                                   &op1_inputs);
