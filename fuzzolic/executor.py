@@ -31,9 +31,11 @@ SOLVER_TIMEOUT = 10
 SHUTDOWN = False
 
 RUNNING_PROCESSES = []
+MAX_VIRTUAL_MEMORY = 16 * 1024 * 1024 * 1024 # 16 GB
 
 def setlimits():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    resource.setrlimit(resource.RLIMIT_AS, (MAX_VIRTUAL_MEMORY, MAX_VIRTUAL_MEMORY))
 
 class Executor(object):
 
@@ -74,12 +76,12 @@ class Executor(object):
                 sys.exit('ERROR: invalid AFL workdir')
             self.afl = os.path.abspath(afl)
             self.minimizer = minimizer_qsym.TestcaseMinimizer(
-                [binary] + binary_args, AFL_PATH, output_dir, True)
+                [binary] + binary_args, AFL_PATH, output_dir, True, input_fixed_name)
             #  self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
         else:
             self.afl = None
             self.minimizer = minimizer_qsym.TestcaseMinimizer(
-                [binary] + binary_args, AFL_PATH, output_dir, True)
+                [binary] + binary_args, AFL_PATH, output_dir, True, input_fixed_name)
             # self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
 
         self.afl_processed_testcases = set()

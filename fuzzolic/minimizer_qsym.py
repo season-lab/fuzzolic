@@ -75,7 +75,7 @@ def fix_at_file(cmd, testcase):
     return cmd, stdin
 
 class TestcaseMinimizer(object):
-    def __init__(self, cmd, afl_path, out_dir, qemu_mode, map_size=MAP_SIZE):
+    def __init__(self, cmd, afl_path, out_dir, qemu_mode, fixed_name, map_size=MAP_SIZE):
         self.cmd = cmd
         self.qemu_mode = qemu_mode
         self.showmap = os.path.join(afl_path, "afl-showmap")
@@ -88,6 +88,7 @@ class TestcaseMinimizer(object):
         self.bitmap = self.initialize_bitmap(self.bitmap_file, map_size)
         self.crash_bitmap = self.initialize_bitmap(self.crash_bitmap_file, map_size)
         self.hash_files = set()
+        self.fixed_name = fixed_name
 
     def initialize_bitmap(self, filename, map_size):
         if os.path.exists(filename):
@@ -114,7 +115,7 @@ class TestcaseMinimizer(object):
         cmd = [self.showmap,
                "-t",
                str(TIMEOUT),
-               "-m", "256T", # for ffmpeg
+               "-m", "16G",
                "-b" # binary mode
         ]
 
@@ -129,10 +130,22 @@ class TestcaseMinimizer(object):
         env = os.environ.copy()
         # env["AFL_INST_LIBS"] = "1"
 
-        cmd, stdin = fix_at_file(cmd, testcase)
-        with open(os.devnull, "wb") as devnull:
-            proc = sp.Popen(cmd, stdin=sp.PIPE, stdout=devnull, stderr=devnull, env=env)
-            proc.communicate(stdin)
+        input = testcase
+        if self.fixed_name:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                new_input = "%s/%s" % (tmpdir, self.fixed_name)
+                os.system("cp %s %s" % (testcase, new_input))
+                input = new_input
+                cmd, stdin = fix_at_file(cmd, input)
+                # print(cmd)
+                with open(os.devnull, "wb") as devnull:
+                    proc = sp.Popen(cmd, stdin=sp.PIPE, stdout=devnull, stderr=devnull, env=env)
+                    proc.communicate(stdin)
+        else:
+            cmd, stdin = fix_at_file(cmd, input)
+            with open(os.devnull, "wb") as devnull:
+                proc = sp.Popen(cmd, stdin=sp.PIPE, stdout=devnull, stderr=devnull, env=env)
+                proc.communicate(stdin)
 
         this_bitmap = read_bitmap_file(self.temp_file)
         interesting = self.is_interesting_testcase(this_bitmap, proc.returncode)

@@ -76,7 +76,11 @@ if not debug:
     p_children.append(afl_slave)
 
     # wait for afl slave to create the bitmap
-    time.sleep(20) #
+    time.sleep(30) #
+
+filename = None
+if '-e' in afl_args:
+    filename = afl_args[afl_args.index('-e') + 1]
 
 fuzzolic_args  = [ FUZZOLIC_BIN ]
 if "FUZZY_SOLVER" in os.environ:
@@ -89,8 +93,9 @@ if "USE_MEMORY_SLICE" in os.environ:
     fuzzolic_args += ["-s"]
 if "SOLVING_TIMEOUT" in os.environ:
     fuzzolic_args += ["-t", os.environ["SOLVING_TIMEOUT"]]
-if "INPUT_FIXED_NAME" in os.environ:
-    fuzzolic_args += ["-n", os.environ["INPUT_FIXED_NAME"]]
+if filename:
+    fuzzolic_args += ["-n", filename]]
+
 
 fuzzolic_args += [ '-a', run_dir + '/afl-slave/', '-i', run_dir + '/afl-slave/queue/', '-o', run_dir + '/fuzzolic', '--'] + program_args
 fuzzolic = subprocess.Popen(fuzzolic_args, stdout=None, stderr=None)

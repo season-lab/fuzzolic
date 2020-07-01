@@ -72,3 +72,12 @@ lodepng:
 
 lodepng-fuzzy:
 	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/lodepng/seeds/not_kitty.png -f -- ../fuzzolic-evaluation/benchmarks/lodepng/lodepng_decode_cg_nocksm @@
+
+djpeg:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/djpeg/seeds/not_kitty.jpg -- ../fuzzolic-evaluation/benchmarks/djpeg/djpeg @@
+
+bloaty:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/bloaty/seeds/small_exec.elf -- ../fuzzolic-evaluation/benchmarks/bloaty/bloaty @@
+
+readelf:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/readelf/seeds/small_exec.elf -- ../fuzzolic-evaluation/benchmarks/readelf/readelf_nopie -a @@

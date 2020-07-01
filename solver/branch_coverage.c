@@ -152,7 +152,7 @@ static inline int is_interesting_context(uintptr_t h, uint8_t bits)
 #endif
 
 // same as QSYM
-#if 0
+#if 1
 int is_interesting_branch(uintptr_t pc, uintptr_t taken, uint8_t is_lib)
 {
     uintptr_t h   = hash_pc(pc, taken);

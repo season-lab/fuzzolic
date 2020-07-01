@@ -2131,10 +2131,12 @@ Z3_ast optimize_z3_query(Z3_ast e)
         //  op is a comparison operator
         // to:
         //  X == Y
-        if (is_zero_const(op1) && OP(op2) == Z3_OP_BSUB) {
+        if (decl_kind == Z3_OP_EQ &&
+            is_zero_const(op1) && OP(op2) == Z3_OP_BSUB) {
             e = get_make_op(decl_kind)(ctx, ARG2(op2), ARG1(op2));
             return optimize_z3_query(e);
-        } else if (is_zero_const(op2) && OP(op1) == Z3_OP_BSUB) {
+        } else if (decl_kind == Z3_OP_EQ &&
+            is_zero_const(op2) && OP(op1) == Z3_OP_BSUB) {
             e = get_make_op(decl_kind)(ctx, ARG1(op1), ARG2(op1));
             return optimize_z3_query(e);
         }
@@ -2522,6 +2524,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
             is_const(ARG2(op1), &value) &&
             value < FF_MASK(SIZE(ARG2(ARG1(op1))))) {
 
+            // printf("EXTRACT OPT E2\n");
+
             if (SIZE(ARG2(ARG1(op1))) == high + 1) {
                 Z3_ast c = smt_new_const(value, high + 1);
                 e        = Z3_mk_bvsub(ctx, ARG2(ARG1(op1)), c);
@@ -2533,6 +2537,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
             OP(ARG2(op1)) == Z3_OP_CONCAT && is_zero_const(ARG1(ARG2(op1))) &&
             is_const(ARG1(op1), &value) &&
             value < FF_MASK(SIZE(ARG2(ARG2(op1))))) {
+
+            // printf("EXTRACT OPT E3\n");
 
             if (SIZE(ARG2(ARG2(op1))) == high + 1) {
                 Z3_ast c = smt_new_const(value, high + 1);
@@ -2546,6 +2552,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
             is_const(ARG2(op1), &value) &&
             value < FF_MASK(SIZE(ARG2(ARG1(op1))))) {
 
+            // printf("EXTRACT OPT E4\n");
+
             if (SIZE(ARG2(ARG1(op1))) == high + 1) {
                 Z3_ast c = smt_new_const(value, high + 1);
                 e        = Z3_mk_bvadd(ctx, ARG2(ARG1(op1)), c);
@@ -2557,6 +2565,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
             OP(ARG2(op1)) == Z3_OP_CONCAT && is_zero_const(ARG1(ARG2(op1))) &&
             is_const(ARG1(op1), &value) &&
             value < FF_MASK(SIZE(ARG2(ARG2(op1))))) {
+
+            // printf("EXTRACT OPT E5\n");
 
             if (SIZE(ARG2(ARG2(op1))) == high + 1) {
                 Z3_ast c = smt_new_const(value, high + 1);
@@ -2576,7 +2586,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
         //   K1 = high + 1 - size(X)
         //   K2 = high + 1 - size(Y)
         if (low == 0 && N_ARGS(op1) == 2 && OP(op1) != Z3_OP_CONCAT &&
-            OP(op1) != Z3_OP_EXTRACT &&
+            OP(op1) != Z3_OP_EXTRACT && OP(op1) != Z3_OP_BASHR
+            && OP(op1) != Z3_OP_BSDIV && OP(op1) != Z3_OP_BSREM &&
             //
             ((OP(ARG1(op1)) == Z3_OP_CONCAT && N_ARGS(ARG1(op1)) == 2 &&
               is_zero_const(ARG1(ARG1(op1))) &&
@@ -2589,6 +2600,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
               is_zero_const(ARG1(ARG2(op1))) &&
               SIZE(ARG2(ARG2(op1))) <= high + 1) ||
              (is_const(ARG2(op1), &value2) && value2 <= FF_MASK(high + 1)))) {
+
+            // printf("EXTRACT OPT E6\n");
 
             Z3_ast a =
                 is_const(ARG1(op1), &value) ? ARG1(op1) : ARG2(ARG1(op1));
@@ -2617,6 +2630,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
         if (OP(op1) == Z3_OP_BSDIV && OP(ARG1(op1)) == Z3_OP_SIGN_EXT &&
             OP(ARG2(op1)) == Z3_OP_CONCAT && is_zero_const(ARG1(ARG2(op1))) &&
             high < PARAM1(ARG1(op1))) {
+
+            // printf("EXTRACT OPT E7\n");
 
             unsigned n_signed = PARAM1(ARG1(op1));
             unsigned n_zero   = SIZE(ARG1(ARG2(op1)));
@@ -2654,6 +2669,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
              OP(op1) == Z3_OP_BMUL) &&
             low == 0) {
 
+            // printf("EXTRACT OPT E8\n");
+
             Z3_ast a =
                 optimize_z3_query(Z3_mk_extract(ctx, high, 0, ARG1(op1)));
             Z3_ast b =
@@ -2670,6 +2687,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
         if (OP(op1) == Z3_OP_BAND && is_const(ARG2(op1), &value) &&
             value == 0xffffffffffffff00) {
 
+            // printf("EXTRACT OPT E9\n");
+
             if (low == 0 && high == 7) {
                 return smt_new_const(0, 8);
             }
@@ -2680,6 +2699,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
         // to:
         //  (X[high:0] & C#(high + 1))
         if (OP(op1) == Z3_OP_BAND && is_const(ARG2(op1), &value)) {
+
+            // printf("EXTRACT OPT E10\n");
 
             if (low == 0) {
                 Z3_ast c = smt_new_const(value, high + 1);
@@ -2695,6 +2716,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
         // to:
         //  (X[high:0] ^ C#(high + 1))
         if (OP(op1) == Z3_OP_BXOR && is_const(ARG2(op1), &value)) {
+
+            // printf("EXTRACT OPT E11\n");
 
             if (low == 0) {
                 Z3_ast c = smt_new_const(value, high + 1);
@@ -2712,6 +2735,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
         //  ((0#M .. X) << C#M) iff size(X) + M == high + 1
         if (OP(op1) == Z3_OP_BSHL && OP(ARG1(op1)) == Z3_OP_CONCAT &&
             is_zero_const(ARG1(ARG1(op1))) && is_const(ARG2(op1), &value)) {
+
+            // printf("EXTRACT OPT E12\n");
 
             if (low == 0 && high + 1 == SIZE(ARG2(ARG1(op1)))) {
                 Z3_ast c = smt_new_const(value, high + 1);
@@ -2738,6 +2763,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
         if (OP(op1) == Z3_OP_BLSHR && OP(ARG1(op1)) == Z3_OP_CONCAT &&
             is_const(ARG2(op1), &value) && is_zero_const(ARG1(ARG1(op1)))) {
 
+            // printf("EXTRACT OPT E13\n");
+
             if (low == 0 && high > 7 && SIZE(ARG2(ARG1(op1))) >= high + 1) {
                 Z3_ast c = smt_new_const(value, high + 1);
                 e        = Z3_mk_bvlshr(ctx, ARG2(ARG1(op1)), c);
@@ -2749,6 +2776,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
         if (low == 0 && high == 7 && OP(op1) == Z3_OP_BOR && N_ARGS(op1) == 2 &&
             OP(ARG1(op1)) == Z3_OP_BAND && is_const(ARG2(ARG1(op1)), &value) &&
             value == 0xffffffffffffff00) {
+
+            // printf("EXTRACT OPT E14\n");
 
             e = Z3_mk_extract(ctx, 7, 0, ARG2(op1));
             return optimize_z3_query(e);
@@ -2782,6 +2811,8 @@ Z3_ast optimize_z3_query(Z3_ast e)
         }
 
         if (low == 0 && OP(op1) == Z3_OP_SIGN_EXT && PARAM1(op1) == high + 1) {
+
+            // printf("EXTRACT OPT E16\n");
 
             e = ARG1(op1);
             g_hash_table_insert(z3_opt_cache, (gpointer)original_e, (gpointer)e);
@@ -4218,9 +4249,11 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                                   &op1_inputs);
             unsigned high = ((((uintptr_t)query->op2) + 1) * 8) - 1;
             unsigned low  = ((uintptr_t)query->op2) * 8;
+            op1 = smt_to_bv(op1);
 #if VERBOSE
-            printf("EXTRACT8\n");
+            printf("EXTRACT8: %u %u\n", high, low);
             smt_print_ast_sort(op1);
+            print_expr(query->op1);
 #endif
             r = Z3_mk_extract(smt_solver.ctx, high, low, op1);
             break;
@@ -4598,7 +4631,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
     // printf("END opkind: %s\n", opkind_to_str(query->opkind));
 
 #if DEBUG_EXPR_OPT
-    if (r != orig_r) { // && debug_translation
+    if (r != orig_r && debug_translation) { // && debug_translation
 #if 0
         if (SIZE(r) != SIZE(orig_r)) {
             printf("OPT CHECK: size=%u size=%u\n", SIZE(orig_r), SIZE(r));
@@ -4792,7 +4825,7 @@ static inline int smt_check_fuzzy(Query* q, Z3_ast z3_neg_query, GHashTable* inp
         printf("Query is SAT\n");
         smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 0);
         is_sat = 1;
-        mark_sat_branch();
+        // mark_sat_branch();
     } else {
         if (conc_eval_count > 0) {
             printf("Query is non-SAT: avg_conc_eval=%lu count=%lu\n",
@@ -4843,9 +4876,10 @@ static inline int smt_check_z3(Query* q, Z3_ast z3_neg_query, GHashTable* inputs
 #if 0
     int is_sat = smt_run_from_string(solver, GET_QUERY_IDX(q));
 #endif
+    int is_sat = 0;
 #if !DISABLE_SMT
     printf("Running a query with Z3...\n");
-    int is_sat = smt_query_check(solver, GET_QUERY_IDX(q), 0);
+    is_sat = smt_query_check(solver, GET_QUERY_IDX(q), 0);
     if (mode && !is_sat) {
         Z3_solver_reset(smt_solver.ctx, solver);
         Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
@@ -6079,7 +6113,7 @@ static void smt_consistency_expr(Query* q)
     uintptr_t concrete_value = CONST(q->query->op2);
     uintptr_t pc             = q->address;
 #if 0
-    if (GET_QUERY_IDX(q) >= 7914) {
+    if (GET_QUERY_IDX(q) >= 436172) {
         debug_translation = 1;
     }
 #endif
@@ -6105,7 +6139,12 @@ static void smt_consistency_expr(Query* q)
         print_expr(e);
         ABORT();
     }
-
+#if 0
+    if (GET_QUERY_IDX(q) >= 48860) {
+        print_z3_ast(z3_e);
+        print_expr(e);
+    }
+#endif
 #if DEBUG_FUZZ_EXPR
     if (inputs) {
         printf("Dumping query for debug fuzz expr\n");
