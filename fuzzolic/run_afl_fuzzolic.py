@@ -94,7 +94,7 @@ if "USE_MEMORY_SLICE" in os.environ:
 if "SOLVING_TIMEOUT" in os.environ:
     fuzzolic_args += ["-t", os.environ["SOLVING_TIMEOUT"]]
 if filename:
-    fuzzolic_args += ["-n", filename]]
+    fuzzolic_args += ["-n", filename]
 
 
 fuzzolic_args += [ '-a', run_dir + '/afl-slave/', '-i', run_dir + '/afl-slave/queue/', '-o', run_dir + '/fuzzolic', '--'] + program_args
