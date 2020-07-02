@@ -81,3 +81,6 @@ bloaty:
 
 readelf:
 	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/readelf/seeds/small_exec.elf -- ../fuzzolic-evaluation/benchmarks/readelf/readelf_nopie -a @@
+
+wavpack:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/wavpack/seeds/int32.wav -n input.wav -- ../fuzzolic-evaluation/benchmarks/wavpack/wavpack -y @@ -o /dev/shm/tmp

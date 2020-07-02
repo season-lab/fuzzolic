@@ -4282,19 +4282,19 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                                   &op2_inputs);
             op2 = smt_to_bv(op2);
             smt_bv_resize(&op1, &op2, 0);
+            uintptr_t dpos = UNPACK_0((uint64_t)query->op3);
+            uintptr_t dlen = UNPACK_1((uint64_t)query->op3);
 #if VERBOSE
-            printf("DEPOSIT\n");
+            printf("DEPOSIT: pos=%lu len=%lu\n", dpos, dlen);
             smt_print_ast_sort(op1);
             smt_print_ast_sort(op2);
 #endif
-            uintptr_t dpos = UNPACK_0((uint64_t)query->op3);
-            uintptr_t dlen = UNPACK_1((uint64_t)query->op3);
             Z3_ast    r0 =
                 Z3_mk_bvand(smt_solver.ctx, op1,
                             smt_new_const(~DEPOSIT_MASK(dpos, dlen), 64));
             Z3_ast r1 =
                 Z3_mk_bvshl(smt_solver.ctx, op2, smt_new_const(dpos, 64));
-            r1 = Z3_mk_bvand(smt_solver.ctx, op2,
+            r1 = Z3_mk_bvand(smt_solver.ctx, r1,
                              smt_new_const(DEPOSIT_MASK(dpos, dlen), 64));
             r0 = optimize_z3_query(r0);
             r1 = optimize_z3_query(r1);
