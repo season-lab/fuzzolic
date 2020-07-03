@@ -67,13 +67,15 @@ signal.signal(signal.SIGINT, handler)
 signal.signal(signal.SIGTERM, handler)
 
 if not debug:
-    afl_master_args = [ AFL_BIN, '-Q', '-M', 'afl-master', '-o', run_dir, '-i', input_dir] + afl_args + ['--'] + program_args
+    afl_master_args = [ AFL_BIN, '-c', '0', '-Q', '-M', 'afl-master', '-o', run_dir, '-i', input_dir] + afl_args + ['--'] + program_args
     afl_master = subprocess.Popen(afl_master_args, stdout=DEVNULL, stderr=DEVNULL)
     p_children.append(afl_master)
 
-    afl_slave_args = [ AFL_BIN, '-Q', '-S', 'afl-slave', '-o', run_dir, '-i', input_dir] + afl_args + ['--'] + program_args
+    afl_slave_args = [ AFL_BIN,'-Q', '-S', 'afl-slave', '-o', run_dir, '-i', input_dir] + afl_args + ['--'] + program_args
     afl_slave = subprocess.Popen(afl_slave_args, stdout=DEVNULL, stderr=DEVNULL)
     p_children.append(afl_slave)
+
+    print(' '.join(afl_slave_args))
 
     # wait for afl slave to create the bitmap
     time.sleep(30) #
