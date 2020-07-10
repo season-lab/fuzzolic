@@ -71,16 +71,34 @@ lodepng:
 	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/lodepng/seeds/not_kitty.png -- ../fuzzolic-evaluation/benchmarks/lodepng/lodepng_decode_cg_nocksm @@
 
 lodepng-fuzzy:
-	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/lodepng/seeds/not_kitty.png -f -- ../fuzzolic-evaluation/benchmarks/lodepng/lodepng_decode_cg_nocksm @@
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/lodepng/seeds/not_kitty.png -f -l -- ../fuzzolic-evaluation/benchmarks/lodepng/lodepng_decode_cg_nocksm @@
 
 djpeg:
 	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/djpeg/seeds/not_kitty.jpg -- ../fuzzolic-evaluation/benchmarks/djpeg/djpeg @@
 
+djpeg-fuzzy:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/djpeg/seeds/not_kitty.jpg -f -- ../fuzzolic-evaluation/benchmarks/djpeg/djpeg @@
+
 bloaty:
 	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/bloaty/seeds/small_exec.elf -- ../fuzzolic-evaluation/benchmarks/bloaty/bloaty @@
+
+bloaty-fuzzy:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/bloaty/seeds/small_exec.elf -f -- ../fuzzolic-evaluation/benchmarks/bloaty/bloaty @@
 
 readelf:
 	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/readelf/seeds/small_exec.elf -- ../fuzzolic-evaluation/benchmarks/readelf/readelf_nopie -a @@
 
+readelf-fuzzy:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/readelf/seeds/small_exec.elf -f  -- ../fuzzolic-evaluation/benchmarks/readelf/readelf_nopie -a @@
+
 wavpack:
 	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/wavpack/seeds/int32.wav -n input.wav -- ../fuzzolic-evaluation/benchmarks/wavpack/wavpack -y @@ -o /dev/shm/tmp
+
+wavpack-fuzzy:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/wavpack/seeds/int32.wav -n input.wav -f -- ../fuzzolic-evaluation/benchmarks/wavpack/wavpack -y @@ -o /dev/shm/tmp
+
+objdump:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/objdump/seeds/small_exec.elf -- ../fuzzolic-evaluation/benchmarks/objdump/objdump -d @@
+
+objdump-fuzzy:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/objdump/seeds/small_exec.elf -f -- ../fuzzolic-evaluation/benchmarks/objdump/objdump -d @@

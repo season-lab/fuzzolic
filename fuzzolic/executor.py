@@ -46,7 +46,8 @@ class Executor(object):
                  address_reasoning=False,
                  fuzz_expr=False,
                  input_fixed_name=None,
-                 use_smt_if_empty=False):
+                 use_smt_if_empty=False,
+                 use_symbolic_models=False):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
@@ -111,6 +112,22 @@ class Executor(object):
         else:
             self.global_alt_bitmap = None
 
+        if use_symbolic_models:
+            plt_info_file = self.__get_root_dir() + "/plt_info.txt"
+            p = subprocess.Popen(
+                                [
+                                    SCRIPT_DIR + "/find_models_addrs.py",
+                                    "-o", plt_info_file,
+                                    binary
+                                ],
+                                stderr=subprocess.DEVNULL,
+                                stdin=subprocess.DEVNULL,
+                                )
+            p.wait()
+            self.plt_info = plt_info_file
+        else:
+            self.plt_info = None
+
     def __load_config(self):
         config = {}
         if not os.path.exists(self.binary + '.fuzzolic'):
@@ -167,7 +184,7 @@ class Executor(object):
             assert(run_id >= 0)
 
         # run dir
-        run_dir = root_dir + '/fuzzolic-' + str(run_id)
+        run_dir = root_dir + '/fuzzolic-%05d' % run_id
         os.system('mkdir ' + run_dir)
 
         # increment id for the next run
@@ -328,6 +345,8 @@ class Executor(object):
             p_tracer_args += args
 
         # print(p_tracer_args)
+        if self.plt_info:
+            env["PLT_INFO_FILE"] = self.plt_info
 
         p_tracer = subprocess.Popen(p_tracer_args,
                                     # stdout=p_tracer_log if not self.debug and not self.fuzz_expr else None,
@@ -462,23 +481,39 @@ class Executor(object):
             os.system("cp " + testcase + " " + self.__get_timeout_dir() + "/" + target)
 
         # check new test cases
-        files = list(filter(os.path.isfile, glob.glob(
-            run_dir + "/test_case_*.dat")))
-        files.sort(key=lambda x: os.path.getmtime(x))
-        k = 0
-        for t in files:
-            if self.afl:
-                good = self.__check_testcase_afl(
-                    t, run_id, k, target, global_bitmap_pre_run)
-            else:
-                good = self.__check_testcase(
-                    t, run_id, k, target, global_bitmap_pre_run)
-                # good = self.__check_testcase_full(t, run_id, k, target)
-            if good:
-                k += 1
-            else:
+        if self.input_fixed_name:
+            files = list(filter(os.path.isfile, glob.glob(
+                run_dir + "/test_case_*.dat")))
+            files.sort(key=lambda x: os.path.getmtime(x))
+            k = 0
+            for t in files:
                 if self.afl:
-                    os.unlink(t)
+                    good = self.__check_testcase_afl(
+                        t, run_id, k, target, global_bitmap_pre_run)
+                else:
+                    good = self.__check_testcase(
+                        t, run_id, k, target, global_bitmap_pre_run)
+                    # good = self.__check_testcase_full(t, run_id, k, target)
+                if good:
+                    k += 1
+                else:
+                    if self.afl:
+                        os.unlink(t)
+        else:
+            r = self.minimizer.check_testcases(run_dir, global_bitmap_pre_run)
+            for t in r:
+                good = r[t]
+                if good:
+                    if self.afl:
+                        target = os.path.basename(target)[:len("id:......")]
+                        name = "id:%06d,src:%s" % (self.tick(), target)
+                        self.__import_test_case(run_dir + '/' + t, name)
+                    else:
+                        self.__import_test_case(run_dir + '/' + t, 'test_case_%03d_%03d_.dat' % (run_id, k))
+                    k += 1
+                else:
+                    if self.afl:
+                        os.unlink(run_dir + '/' + t)
 
         os.unlink(global_bitmap_pre_run)
 

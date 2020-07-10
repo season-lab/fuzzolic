@@ -11,6 +11,10 @@ import tempfile
 import copy
 import struct
 import hashlib
+import os
+import glob
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 # status for TestCaseMinimizer
 NEW = 0
@@ -79,6 +83,7 @@ class TestcaseMinimizer(object):
         self.cmd = cmd
         self.qemu_mode = qemu_mode
         self.showmap = os.path.join(afl_path, "afl-showmap")
+        self.showmap_fork = os.path.join(SCRIPT_DIR, "../utils/afl-showmap")
         self.bitmap_file = os.path.join(out_dir, "afl-bitmap")
         self.crash_bitmap_file = os.path.join(out_dir, "afl-crash-bitmap")
         _, self.temp_file = tempfile.mkstemp(dir=out_dir)
@@ -99,6 +104,47 @@ class TestcaseMinimizer(object):
             print("Initializing bitmap for minimizer")
             bitmap = [0] * map_size
         return bitmap
+
+    def check_testcases(self, directory, global_bitmap_pre_run=None, no_msg=False):
+        res = {}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cmd = [self.showmap_fork,
+                "-t",
+                str(TIMEOUT),
+                "-m", "16G",
+                "-b" # binary mode
+            ]
+
+            if self.qemu_mode:
+                cmd += ['-Q']
+
+            cmd += ["-o",
+                tmpdir,
+                '-i',
+                directory,
+                "--",
+            ] + self.cmd
+
+            env = os.environ.copy()
+            # env["AFL_INST_LIBS"] = "1"
+
+            with open(os.devnull, "wb") as devnull:
+                proc = sp.Popen(cmd, stdin=None, stdout=devnull, stderr=devnull, env=env)
+                proc.wait()
+
+            for f in glob.glob(tmpdir + "/*.dat"):
+
+                #this_bitmap = read_bitmap_file(f)
+                #interesting = self.is_interesting_testcase(this_bitmap, proc.returncode)
+                interesting = self.is_interesting_testcase_fork(f)
+                res[os.path.basename(f)] = interesting
+
+                if not no_msg:
+                    if interesting:
+                        print("[+] Keeping %s" % os.path.basename(f))
+                    else:
+                        print("[-] Discarding %s" % os.path.basename(f))
+        return res
 
     def check_testcase(self, testcase, global_bitmap_pre_run=None, no_msg=False):
 
@@ -157,6 +203,30 @@ class TestcaseMinimizer(object):
                 print("[-] Discarding %s" % os.path.basename(testcase))
 
         return interesting
+
+    def is_interesting_testcase_fork(self, bitmap):
+        my_bitmap_file = self.bitmap_file
+
+        cmd = [
+            SCRIPT_DIR + '/../utils/merge_bitmap',
+            bitmap,
+            my_bitmap_file
+        ]
+        # print(cmd)
+
+        with open(os.devnull, "wb") as devnull:
+            proc = sp.Popen(cmd, stdin=None, stdout=devnull, stderr=devnull)
+            proc.wait()
+            if proc.returncode == 0:
+                return True
+            elif proc.returncode == 2:
+                return False
+            else:
+                print("Error while merging bitmap %s [error code %d]" % (bitmap, proc.returncode))
+                return False
+
+        print("Error while merging bitmap %s" % bitmap)
+        return False
 
     def is_interesting_testcase(self, bitmap, returncode):
         if returncode == 0:

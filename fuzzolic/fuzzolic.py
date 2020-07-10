@@ -71,6 +71,8 @@ def main():
     parser.add_argument(
         '-n', '--input-fixed-name', help='Input name to use for input files')
     parser.add_argument(
+        '-l', '--symbolic-models', action='store_true', help='Enable symbolic models')
+    parser.add_argument(
         '--fuzz-expr', action='store_true', help='enable fuzz expression (debug)')
 
     # required args
@@ -136,13 +138,17 @@ def main():
     if fuzz_expr is None:
         fuzz_expr = False
     input_fixed_name = args.input_fixed_name
+    symbolic_models = args.symbolic_models
+    if symbolic_models is None:
+        symbolic_models = False
 
     signal.signal(signal.SIGINT, handler)
 
     fuzzolic_executor = executor.Executor(
         binary, input, output_dir, binary_args, debug, afl,
         timeout, fuzzy, optimistic_solving, memory_slice_reasoning,
-        address_reasoning, fuzz_expr, input_fixed_name, use_smt_if_empty)
+        address_reasoning, fuzz_expr, input_fixed_name, use_smt_if_empty,
+        symbolic_models)
     fuzzolic_executor.run()
 
 

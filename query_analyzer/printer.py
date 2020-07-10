@@ -924,7 +924,7 @@ def get_defs(cond, defs, to_skip):
                 break
     return s
 
-def traslate_to_pseudocode(query):
+def traslate_to_pseudocode(query, stop_after_first=False):
 
     global cond_counter
     s = ''
@@ -970,6 +970,9 @@ def traslate_to_pseudocode(query):
             if d not in deps:
                 deps[d] = []
             deps[d].append(cond_counter)
+
+        if stop_after_first:
+            break
 
     return s, S, C, deps
 
@@ -1226,11 +1229,11 @@ if str(query) in ['True', 'False']:
     print(query)
     sys.exit(0)
 
-s, S, C, deps = traslate_to_pseudocode(query)
+s, S, C, deps = traslate_to_pseudocode(query, True)
 
 if False:
     print(s)
-else:
+elif True:
     last_branch = C[-1]
     C_deps = set()
     vars_done = set()
@@ -1284,21 +1287,27 @@ if False:
 
 if True:
     solver = z3.Solver()
-    solver.set(':core.minimize', True)
+    #solver.set(':core.minimize', True)
     E = query.children()
+    print(E[0])
     ctracks = []
     for k in range(len(E)):
-        if True:
+        if False:
         #if k in S_deps and not remove_condition(C[k]):
         #if not remove_condition(C[k]):
             ctrack = z3.Bool('p' + str(len(ctracks)))
             solver.assert_and_track(E[k], ctrack)
             ctracks.append(ctrack)
+        else:
+            solver.add(E[k])
     start = time.time()
     solver.set(timeout=15000)
     r = solver.check()
     end = time.time()
     print("query is %s - time %s\n" % (r, str(end - start)))
+
+    if str(r) == 'sat':
+        print(solver.model())
 
     if True and str(r) == 'unsat':
         unsat_core = solver.unsat_core()
