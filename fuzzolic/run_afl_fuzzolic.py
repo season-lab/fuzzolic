@@ -75,7 +75,7 @@ if not debug:
     afl_slave = subprocess.Popen(afl_slave_args, stdout=DEVNULL, stderr=DEVNULL)
     p_children.append(afl_slave)
 
-    print(' '.join(afl_slave_args))
+    # print(' '.join(afl_slave_args))
 
     # wait for afl slave to create the bitmap
     time.sleep(30) #
@@ -97,7 +97,9 @@ if "SOLVING_TIMEOUT" in os.environ:
     fuzzolic_args += ["-t", os.environ["SOLVING_TIMEOUT"]]
 if filename:
     fuzzolic_args += ["-n", filename]
-
+if "USE_MODELS" in os.environ:
+    fuzzolic_args += ["-l"]
+    print("Enabling lib models")
 
 fuzzolic_args += [ '-a', run_dir + '/afl-slave/', '-i', run_dir + '/afl-slave/queue/', '-o', run_dir + '/fuzzolic', '--'] + program_args
 fuzzolic = subprocess.Popen(fuzzolic_args, stdout=None, stderr=None)
