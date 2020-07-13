@@ -15,7 +15,8 @@
 
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
-#define SOLVER_TIMEOUT_MS            10000
+#define SOLVER_TIMEOUT_Z3_MS         10000
+#define SOLVER_TIMEOUT_FUZZY_MS      1000
 
 #define SMT_SOLVE_ALL               1
 #define FUZZ_INTERESTING            2
@@ -256,7 +257,7 @@ static void smt_init(void)
 #if USE_FUZZY_SOLVER || ADDRESS_REASONING == FUZZ_GD
     z3fuzz_init(&smt_solver.fuzzy_ctx, smt_solver.ctx,
                 (char*)config.testcase_path, NULL, &conc_query_eval_value,
-                SOLVER_TIMEOUT_MS / 10);
+                SOLVER_TIMEOUT_FUZZY_MS);
 #endif
 }
 
@@ -275,7 +276,7 @@ static inline Z3_solver smt_new_solver()
 #if 1
     Z3_symbol timeout = Z3_mk_string_symbol(smt_solver.ctx, "timeout");
     Z3_params params  = Z3_mk_params(smt_solver.ctx);
-    Z3_params_set_uint(smt_solver.ctx, params, timeout, SOLVER_TIMEOUT_MS);
+    Z3_params_set_uint(smt_solver.ctx, params, timeout, SOLVER_TIMEOUT_Z3_MS);
     Z3_solver_set_params(smt_solver.ctx, cached_solver, params);
 #endif
     return cached_solver;
@@ -923,6 +924,7 @@ static void inline smt_dump_solver(Z3_solver solver, size_t idx)
     // SAYF("Dumping solution into %s\n", test_case_name);
     FILE* fp = fopen(test_case_name, "w");
     fwrite(s_query, strlen(s_query), 1, fp);
+    fwrite("\n(check-sat)", strlen("\n(check-sat)"), 1, fp);
     fclose(fp);
 }
 
@@ -4952,6 +4954,12 @@ static inline int smt_check_fuzzy(Query* q, Z3_ast z3_neg_query, GHashTable* inp
         smt_dump_testcase(proof, testcase.size, 1, GET_QUERY_IDX(q), 0);
         is_sat = 1;
         // mark_sat_branch();
+#if 0
+        Z3_solver solver = smt_new_solver();
+        Z3_solver_assert(smt_solver.ctx, solver, fuzzy_query);
+        smt_dump_solver(solver, GET_QUERY_IDX(q));
+        smt_del_solver(solver);
+#endif
     } else {
         if (conc_eval_count > 0) {
             printf("Query is non-SAT: avg_conc_eval=%lu count=%lu\n",
@@ -6483,14 +6491,15 @@ static void smt_model_expr(Query* q)
     } else if (q->query->opkind == MODEL_STRLEN) {
 
         int s1_len = UNPACK_0(CONST(q->query->op2));
+        size_t n = UNPACK_1(CONST(q->query->op2));
 
         Expr*       s1 = q->query->op1;
         GHashTable* s1_inputs = NULL;
         Z3_ast      s1_expr   = smt_query_to_z3_wrapper(s1, 0, 0, &s1_inputs);
 
         // print_z3_ast(s1_expr);
-
-        size_t n = UNPACK_1(CONST(q->query->op3));
+        // printf("len: %lu\n", n);
+        // printf("s1_len: %u\n", s1_len);
 
         uint64_t val;
         Z3_ast cc = NULL;
@@ -6515,9 +6524,12 @@ static void smt_model_expr(Query* q)
             byte = optimize_z3_query(byte);
             if (!is_const(byte, &val)) {
                 byte = Z3_mk_eq(smt_solver.ctx, byte, smt_new_const(0, 8));
-                assert(cc);
-                Z3_ast and[] = { cc, byte };
-                cc = Z3_mk_and(smt_solver.ctx, 2, and);
+                if (cc) {
+                    Z3_ast and[] = { cc, byte };
+                    cc = Z3_mk_and(smt_solver.ctx, 2, and);
+                } else {
+                    cc = byte;
+                }
             }
         }
 
@@ -7016,7 +7028,7 @@ int main(int argc, char* argv[])
             smt_query(&next_query[0]);
             next_query++;
 #if 0
-            if (GET_QUERY_IDX(next_query) > 100) {
+            if (GET_QUERY_IDX(next_query) > 500) {
                 printf("Exiting...\n");
                 save_bitmaps();
                 exit(0);

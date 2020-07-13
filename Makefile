@@ -102,3 +102,9 @@ objdump:
 
 objdump-fuzzy:
 	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/objdump/seeds/small_exec.elf -f -- ../fuzzolic-evaluation/benchmarks/objdump/objdump -d @@
+
+advmng:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ./advmng_input -- ../fuzzolic-evaluation/benchmarks/advmng/advmng -l @@
+
+advmng-fuzzy:
+	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ./advmng_input -f -- ../fuzzolic-evaluation/benchmarks/advmng/advmng -l @@

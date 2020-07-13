@@ -73,7 +73,7 @@ if os.path.exists(fuzzer_dir + "/crash"):
     testcase_dirs.append(fuzzer_dir + "/crash")
 if os.path.exists(fuzzer_dir + "/tests"):
     testcase_dirs.append(fuzzer_dir + "/tests")
-if "fuzzolic-0" == os.path.basename(fuzzer_dir):
+if "fuzzolic-00000" == os.path.basename(fuzzer_dir):
     testcase_dirs.append(fuzzer_dir)
 if "qsym-out-0" == os.path.basename(fuzzer_dir):
     testcase_dirs.append(fuzzer_dir)
