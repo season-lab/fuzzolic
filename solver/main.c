@@ -2245,6 +2245,10 @@ Z3_ast optimize_z3_query(Z3_ast e)
         Z3_ast op1 = ARG1(e);
         Z3_ast op2 = ARG2(e);
 
+        if (decl_kind == Z3_OP_EQ && op1 == op2) {
+            return Z3_mk_true(smt_solver.ctx);
+        }
+
         // from:
         //  X - Y op 0
         // whereL
@@ -4944,7 +4948,15 @@ static inline int smt_check_fuzzy(Query* q, Z3_ast z3_neg_query, GHashTable* inp
     smt_del_solver(solver);
 #endif
     printf("Running a query with FUZZY...\n");
-
+#if 0
+    if (GET_QUERY_IDX(q) == 164) {
+        print_z3_ast(fuzzy_query);
+        Z3_solver solver = smt_new_solver();
+        Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
+        smt_dump_solver(solver, GET_QUERY_IDX(q) + 100000);
+        smt_del_solver(solver);
+    }
+#endif
     conc_eval_time  = 0;
     conc_eval_count = 0;
     struct timespec start, end;
@@ -4980,6 +4992,8 @@ static inline int smt_check_fuzzy(Query* q, Z3_ast z3_neg_query, GHashTable* inp
                 smt_dump_testcase(proof, testcase.size, 1,
                                 GET_QUERY_IDX(q), 666);
                 is_sat = 1;
+            } else {
+                printf("Query is UNSAT [OPTIMISTIC]\n");
             }
         }
     }
@@ -5018,10 +5032,23 @@ static inline int smt_check_z3(Query* q, Z3_ast z3_neg_query, GHashTable* inputs
 #if !DISABLE_SMT
     printf("Running a query with Z3...\n");
     is_sat = smt_query_check(solver, GET_QUERY_IDX(q), 0);
+#if 0
+    if (is_sat) {
+        smt_dump_solver(solver, GET_QUERY_IDX(q));
+    }
+#endif
     if (mode && !is_sat) {
         Z3_solver_reset(smt_solver.ctx, solver);
         Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
         is_sat = smt_query_check(solver, GET_QUERY_IDX(q), 1);
+#if 0
+        if (is_sat) {
+            Z3_solver solver = smt_new_solver();
+            Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
+            smt_dump_solver(solver, GET_QUERY_IDX(q));
+            smt_del_solver(solver);
+        }
+#endif
     }
     printf(" [INFO] Branch interesting: addr=0x%lx taken=%u sat=%d\n",
         q->address, (uint16_t)q->args64, is_sat);
@@ -5147,7 +5174,10 @@ static void smt_branch_query(Query* q)
 #if 0
                 int is_sat = smt_check_fuzzy(q, z3_neg_query, inputs, 0);
                 if (!is_sat) {
-                    smt_check_z3(q, z3_neg_query, inputs, 2);
+                    is_sat = smt_check_z3(q, z3_neg_query, inputs, 2);
+                    if (is_sat) {
+                        printf("FUZZY MISPREDICTION\n");
+                    }
                 }
 #endif
             }
