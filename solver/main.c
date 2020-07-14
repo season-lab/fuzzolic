@@ -3630,6 +3630,10 @@ Z3_ast optimize_z3_query(Z3_ast e)
         Z3_ast op1 = ARG1(e);
         Z3_ast op2 = ARG2(e);
 
+        if (op1 == op2) {
+            return smt_new_const(0, SIZE(op1));
+        }
+
         if (is_zero_const(op1)) {
             return op2;
         }
@@ -5037,7 +5041,7 @@ static void smt_branch_query(Query* q)
     smt_stats(smt_solver.solver);
 #endif
 #if 0
-    if (GET_QUERY_IDX(q) >= 445) {
+    if (GET_QUERY_IDX(q) >= 300) {
         debug_translation = 1;
     }
 #endif
@@ -5183,6 +5187,7 @@ static void smt_branch_query(Query* q)
                                             symbols_sizes, symbols_count, NULL);
 
         if (solution == 0) {
+            printf("PI is UNSAT\n");
             print_z3_ast(z3_query);
             print_expr(q->query);
             ABORT();
@@ -6295,6 +6300,10 @@ static inline Z3_ast build_stride_cmpeq(Z3_ast s1, Z3_ast s2,
 {
     // printf("SIZE: s1=%u s2=%u\n", SIZE(s1), SIZE(s2));
 
+    if (len == 0) {
+        return Z3_mk_true(smt_solver.ctx);
+    }
+
     size_t start_offset = 0;
     size_t end_offset = (8 * len);
     size_t count = 0;
@@ -6346,13 +6355,12 @@ static void strcmp_s1_symbolic(Query* q,
 
     Z3_ast branch_neg = build_stride_cmpeq(s1_expr, s2_expr, len);
 
-    Z3_ast a = Z3_mk_extract(smt_solver.ctx, (len + 1) * 8 - 1, len * 8, s1_expr);
-    a = optimize_z3_query(a);
-    Z3_ast b = Z3_mk_extract(smt_solver.ctx, (len + 1) * 8 - 1, len * 8, s2_expr);
-    b = optimize_z3_query(b);
-
     Z3_ast branch = NULL;
     if (n == 0 || s1_len < n || s2_len < n) {
+        Z3_ast a = Z3_mk_extract(smt_solver.ctx, (len + 1) * 8 - 1, len * 8, s1_expr);
+        a = optimize_z3_query(a);
+        Z3_ast b = Z3_mk_extract(smt_solver.ctx, (len + 1) * 8 - 1, len * 8, s2_expr);
+        b = optimize_z3_query(b);
         Z3_ast c[] = { branch_neg, Z3_mk_eq(smt_solver.ctx, a, b) };
         branch = Z3_mk_not(smt_solver.ctx, Z3_mk_and(smt_solver.ctx, 2, c));
     } else {
@@ -6717,6 +6725,8 @@ static void smt_model_expr(Query* q)
     } else {
         ABORT("Not yet implemented");
     }
+
+    // printf("\n%s query (id=%lu) at %lx: DONE\n", opkind_to_str(q->query->opkind), GET_QUERY_IDX(q), pc);
 }
 
 static void smt_query(Query* q)
