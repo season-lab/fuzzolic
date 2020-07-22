@@ -6,7 +6,7 @@ import subprocess
 import argparse
 import re
 
-MODELS_LIBC = ["malloc", "free", "realloc", "calloc", "printf", "fprintf", "vfprintf"]
+MODELS_LIBC = ["malloc", "free", "realloc", "calloc", "printf", "fprintf", "vfprintf", "fputc"]
 MODELS = [
     "strcmp",   # indirect call, offset in libc.so is not useful
     "strncmp",  # indirect call

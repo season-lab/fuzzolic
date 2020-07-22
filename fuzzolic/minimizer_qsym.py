@@ -42,7 +42,10 @@ def get_score(testcase):
     # even though it contains new coverage
     score2 = "orig:" in testcase
     # Smaller size is better
-    score3 = -os.path.getsize(testcase)
+    try:
+        score3 = -os.path.getsize(testcase)
+    except:
+        score3 = -10000 # file has been renamed by AFL
     # Since name contains id, so later generated one will be chosen earlier
     score4 = testcase
     return (score1, score2, score3, score4)
@@ -103,9 +106,10 @@ class TestcaseMinimizer(object):
         else:
             print("Initializing bitmap for minimizer")
             bitmap = [0] * map_size
+            write_bitmap_file(filename, bitmap)
         return bitmap
 
-    def check_testcases(self, directory, global_bitmap_pre_run=None, no_msg=False):
+    def check_testcases(self, directory, global_bitmap_pre_run=None, no_msg=False, f_ext=None):
         res = {}
         with tempfile.TemporaryDirectory() as tmpdir:
             cmd = [self.showmap_fork,
@@ -128,15 +132,26 @@ class TestcaseMinimizer(object):
             env = os.environ.copy()
             # env["AFL_INST_LIBS"] = "1"
 
+            if f_ext:
+                env["FILE_EXT"] = f_ext
+
             with open(os.devnull, "wb") as devnull:
                 proc = sp.Popen(cmd, stdin=None, stdout=devnull, stderr=devnull, env=env)
                 proc.wait()
 
-            for f in glob.glob(tmpdir + "/*.dat"):
+            for f in glob.glob(tmpdir + "/*.dat*"):
 
                 #this_bitmap = read_bitmap_file(f)
                 #interesting = self.is_interesting_testcase(this_bitmap, proc.returncode)
-                interesting = self.is_interesting_testcase_fork(f)
+
+                if ".crash" in f:
+                    interesting = True
+                    print("[FUZZOLIC] FOUND CRASH!!!")
+                    #interesting = self.is_interesting_testcase_fork(f, self.crash_bitmap_file)
+                    f = f.replace(".crash", '')
+                else:
+                    interesting = self.is_interesting_testcase_fork(f)
+
                 res[os.path.basename(f)] = interesting
 
                 if not no_msg:
@@ -193,8 +208,9 @@ class TestcaseMinimizer(object):
                 proc = sp.Popen(cmd, stdin=sp.PIPE, stdout=devnull, stderr=devnull, env=env)
                 proc.communicate(stdin)
 
-        this_bitmap = read_bitmap_file(self.temp_file)
-        interesting = self.is_interesting_testcase(this_bitmap, proc.returncode)
+        #this_bitmap = read_bitmap_file(self.temp_file)
+        #interesting = self.is_interesting_testcase(this_bitmap, proc.returncode)
+        interesting = self.is_interesting_testcase_fork(self.temp_file)
 
         if not no_msg:
             if interesting:
@@ -204,8 +220,9 @@ class TestcaseMinimizer(object):
 
         return interesting
 
-    def is_interesting_testcase_fork(self, bitmap):
-        my_bitmap_file = self.bitmap_file
+    def is_interesting_testcase_fork(self, bitmap, my_bitmap_file=None):
+        if my_bitmap_file is None:
+            my_bitmap_file = self.bitmap_file
 
         cmd = [
             SCRIPT_DIR + '/../utils/merge_bitmap',

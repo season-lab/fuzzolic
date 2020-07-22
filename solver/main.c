@@ -29,6 +29,8 @@
 #define DISABLE_SMT     0
 #define ASAN_GLIB       0
 
+#define CHECK_FUZZY_MISPREDICTIONS 0
+
 #ifndef USE_FUZZY_SOLVER
 #define USE_FUZZY_SOLVER 0
 #endif
@@ -677,8 +679,8 @@ static void perform_mutations(size_t idx,
             case EXTEND:
             case EXTEND_WITH_A:{
                 for (size_t i = 0; i < size * stride; i += stride) {
-                    // printf("EXTENDING at %lu offset %lu...\n", i / stride, mutations[mutation_count].offset);
-                    if (i / stride >= mutations[mutation_count].offset) {
+                    // printf("EXTENDING at %lu offset %lu wiht len %lu...\n", i / stride, mutations[mutation_count].offset, mutations[mutation_count].len);
+                    if (i / stride == mutations[mutation_count].offset) {
                         // printf("EXTENDING at %lu\n", i / stride);
                         if (mutations[mutation_count].type == EXTEND) {
                             for (size_t i = 0; i < testcase.size; i++) {
@@ -3486,6 +3488,10 @@ Z3_ast optimize_z3_query(Z3_ast e)
                 return op1;
             }
 
+            if (value >= SIZE(op1)) {
+                return smt_new_const(0, SIZE(op1));
+            }
+
             Z3_ast a = Z3_mk_extract(ctx, SIZE(op1) - value - 1, 0, op1);
             a        = optimize_z3_query(a);
             Z3_ast b = smt_new_const(0, value);
@@ -4915,6 +4921,8 @@ int generate_matching_pattern(Z3_ast e)
     return 1;
 }
 
+static Z3_ast fuzzy_query_dump = NULL;
+
 #if USE_FUZZY_SOLVER
 static inline int smt_check_fuzzy(Query* q, Z3_ast z3_neg_query, GHashTable* inputs, int mode)
 {
@@ -4948,11 +4956,12 @@ static inline int smt_check_fuzzy(Query* q, Z3_ast z3_neg_query, GHashTable* inp
     smt_del_solver(solver);
 #endif
     printf("Running a query with FUZZY...\n");
+    fuzzy_query_dump = fuzzy_query;
 #if 0
-    if (GET_QUERY_IDX(q) == 164) {
-        print_z3_ast(fuzzy_query);
+    if (GET_QUERY_IDX(q) == 744) {
+        print_z3_ast(z3_neg_query);
         Z3_solver solver = smt_new_solver();
-        Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
+        Z3_solver_assert(smt_solver.ctx, solver, fuzzy_query);
         smt_dump_solver(solver, GET_QUERY_IDX(q) + 100000);
         smt_del_solver(solver);
     }
@@ -4984,7 +4993,11 @@ static inline int smt_check_fuzzy(Query* q, Z3_ast z3_neg_query, GHashTable* inp
         unsat_time += get_diff_time_microsec(&start, &end);
         unsat_count += 1;
         printf("UNSAT: sum=%lu count=%lu\n", unsat_time, unsat_count);
+#if CHECK_FUZZY_MISPREDICTIONS
+        if (mode >= 0) {
+#else
         if (mode > 0) {
+#endif
             r = z3fuzz_get_optimistic_sol(&smt_solver.fuzzy_ctx, &proof,
                                         &proof_size);
             if (r) {
@@ -5032,26 +5045,28 @@ static inline int smt_check_z3(Query* q, Z3_ast z3_neg_query, GHashTable* inputs
 #if !DISABLE_SMT
     printf("Running a query with Z3...\n");
     is_sat = smt_query_check(solver, GET_QUERY_IDX(q), 0);
-#if 0
+#if CHECK_FUZZY_MISPREDICTIONS
     if (is_sat) {
-        smt_dump_solver(solver, GET_QUERY_IDX(q));
+        smt_del_solver(solver);
+        print_z3_ast(z3_neg_query);
+        Z3_solver solver = smt_new_solver();
+        Z3_solver_assert(smt_solver.ctx, solver, fuzzy_query_dump);
+        smt_dump_solver(solver, GET_QUERY_IDX(q) + 100000);
     }
 #endif
     if (mode && !is_sat) {
         Z3_solver_reset(smt_solver.ctx, solver);
         Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
         is_sat = smt_query_check(solver, GET_QUERY_IDX(q), 1);
-#if 0
+#if CHECK_FUZZY_MISPREDICTIONS
         if (is_sat) {
-            Z3_solver solver = smt_new_solver();
-            Z3_solver_assert(smt_solver.ctx, solver, z3_neg_query);
-            smt_dump_solver(solver, GET_QUERY_IDX(q));
-            smt_del_solver(solver);
+            print_z3_ast(z3_neg_query);
+            smt_dump_solver(solver, GET_QUERY_IDX(q) + 100000);
         }
 #endif
     }
     printf(" [INFO] Branch interesting: addr=0x%lx taken=%u sat=%d\n",
-        q->address, (uint16_t)q->args64, is_sat);
+        q->address, (uint16_t)q->args8.arg0, is_sat);
 #endif
 #if 0
     if (q->address == 0x40013b38da) {
@@ -5068,7 +5083,7 @@ static void smt_branch_query(Query* q)
     smt_stats(smt_solver.solver);
 #endif
 #if 0
-    if (GET_QUERY_IDX(q) >= 300) {
+    if (GET_QUERY_IDX(q) >= 0) {
         debug_translation = 1;
     }
 #endif
@@ -5082,7 +5097,7 @@ static void smt_branch_query(Query* q)
     Z3_ast      z3_query = smt_query_to_z3_wrapper(q->query, 0, 0, &inputs);
     z3_ast_exprs[GET_QUERY_IDX(q)] = z3_query;
     // SAYF("DONE: Translating query to Z3\n");
-#if 1
+#if 0
     if (OP(z3_query) == Z3_OP_FALSE) {
         print_z3_ast(z3_query);
         print_expr(q->query);
@@ -5170,13 +5185,15 @@ static void smt_branch_query(Query* q)
             }
 #if USE_FUZZY_SOLVER
             else {
+#if !CHECK_FUZZY_MISPREDICTIONS
                 smt_check_fuzzy(q, z3_neg_query, inputs, config.optimistic_solving);
-#if 0
+#else
                 int is_sat = smt_check_fuzzy(q, z3_neg_query, inputs, 0);
                 if (!is_sat) {
                     is_sat = smt_check_z3(q, z3_neg_query, inputs, 2);
                     if (is_sat) {
                         printf("FUZZY MISPREDICTION\n");
+                        //ABORT();
                     }
                 }
 #endif
@@ -7068,7 +7085,7 @@ int main(int argc, char* argv[])
             smt_query(&next_query[0]);
             next_query++;
 #if 0
-            if (GET_QUERY_IDX(next_query) > 500) {
+            if (GET_QUERY_IDX(next_query) > 10) {
                 printf("Exiting...\n");
                 save_bitmaps();
                 exit(0);

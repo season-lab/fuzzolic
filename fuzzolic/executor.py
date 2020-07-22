@@ -27,7 +27,7 @@ TRACER_BIN = SCRIPT_DIR + '/../tracer/x86_64-linux-user/qemu-x86_64'
 AFL_PATH = SCRIPT_DIR + '/../../AFLplusplus/'
 
 SOLVER_WAIT_TIME_AT_STARTUP = 0.0010
-SOLVER_TIMEOUT = 10
+SOLVER_TIMEOUT = 1000
 SHUTDOWN = False
 
 RUNNING_PROCESSES = []
@@ -416,15 +416,21 @@ class Executor(object):
             sys.exit(p_tracer.returncode)
 
         if self.debug != 'no_solver' and self.debug != 'coverage':
+            elapsed = 0
+            timeout = False
             while not SHUTDOWN:
                 try:
-                    p_solver.wait(SOLVER_TIMEOUT)
+                    p_solver.wait(SOLVER_TIMEOUT / 1000)
                     break
                 except subprocess.TimeoutExpired:
                     pass
+                elapsed += SOLVER_TIMEOUT
+                if self.timeout > 0 and elapsed > (self.timeout + 10000):
+                    timeout = True
+                    break
 
-            if SHUTDOWN:
-                p_solver.send_signal(signal.SIGINT)
+            if SHUTDOWN or timeout:
+                p_solver.send_signal(signal.SIGUSR2)
                 try:
                     p_solver.wait(SOLVER_TIMEOUT)
                 except subprocess.TimeoutExpired:
@@ -481,7 +487,7 @@ class Executor(object):
             os.system("cp " + testcase + " " + self.__get_timeout_dir() + "/" + target)
 
         # check new test cases
-        if self.input_fixed_name:
+        if self.input_fixed_name and False:
             files = list(filter(os.path.isfile, glob.glob(
                 run_dir + "/test_case_*.dat")))
             files.sort(key=lambda x: os.path.getmtime(x))
@@ -500,7 +506,12 @@ class Executor(object):
                     if self.afl:
                         os.unlink(t)
         else:
-            r = self.minimizer.check_testcases(run_dir, global_bitmap_pre_run)
+            file_extension = None
+            if self.input_fixed_name:
+                _, file_extension = os.path.splitext(self.input_fixed_name)
+                file_extension = file_extension[1:]
+                print("File extensions: %s" % file_extension)
+            r = self.minimizer.check_testcases(run_dir, global_bitmap_pre_run, f_ext=file_extension)
             for t in r:
                 good = r[t]
                 if good:
@@ -599,10 +610,17 @@ class Executor(object):
                 print("\nWaited %s seconds for a new input from AFL\n" %
                       (waiting_rounds * 0.1))
 
+            while not os.path.exists(queued_inputs[0]):
+                # afl has rename the input, skip it
+                queued_inputs = queued_inputs[1:]
+
+            if len(queued_inputs) == 0:
+                return self.__pick_testcase(initial_run, force_smt)
+
             if force_smt:
                 self.afl_alt_processed_testcases.add(queued_inputs[0])
-            self.afl_processed_testcases.add(queued_inputs[0])
             shutil.copy2(queued_inputs[0], self.cur_input)
+            self.afl_processed_testcases.add(queued_inputs[0])
 
             # if initial_run:
             # update bitmap
