@@ -387,7 +387,18 @@ class Executor(object):
                     break
             p_tracer.stdin.close()
 
-        p_tracer.wait()
+        try:
+            p_tracer.wait(10)
+        except subprocess.TimeoutExpired:
+            print('[FUZZOLIC] Sending SIGINT to tracer.')
+            p_tracer.send_signal(signal.SIGINT)
+            try:
+                p_tracer.wait(1)
+            except subprocess.TimeoutExpired:
+                print('[FUZZOLIC] Sending SIGKILL to tracer.')
+                p_tracer.send_signal(signal.SIGKILL)
+                p_tracer.wait()
+
         if p_tracer in RUNNING_PROCESSES:
             RUNNING_PROCESSES.remove(p_tracer)
         # print("Tracer completed")

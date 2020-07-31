@@ -171,6 +171,7 @@ static void smt_error_handler(Z3_context c, Z3_error_code e)
 #else
     printf("Error code: %s\n", Z3_get_error_msg(smt_solver.ctx, e));
 #endif
+    ABORT();
     exitf("incorrect use of Z3");
 }
 
@@ -553,6 +554,17 @@ static inline Z3_ast get_deps(GHashTable* inputs)
                 g_hash_table_add(added_exprs, key);
                 size_t query_dep_idx = (size_t)key;
                 assert(z3_ast_exprs[query_dep_idx]);
+#if 0
+                for (size_t i = 0; i < testcase.size; i++) {
+                    eval_data[i] = testcase.data[i];
+                }
+                uintptr_t solution = conc_query_eval_value(smt_solver.ctx, z3_ast_exprs[query_dep_idx], eval_data,
+                                                    symbols_sizes, symbols_count, NULL);
+                if (solution == 0) {
+                    printf("Expr id=%lu is UNSAT\n", query_dep_idx);
+                    ABORT();
+                }
+#endif
                 if (!r) {
                     r = z3_ast_exprs[query_dep_idx];
                 } else {
@@ -2500,9 +2512,11 @@ Z3_ast optimize_z3_query(Z3_ast e)
             return e;
         }
 
+        // printf("EXTRACT OPT\n");
+
         if (OP(op1) == Z3_OP_CONCAT && N_ARGS(op1) == 2) {
 
-            // printf("EXTRACT OPT\n");
+            // printf("EXTRACT OPT 1\n");
 
             // keep only ARG2
             if (high < SIZE(ARG2(op1))) {
@@ -2936,13 +2950,20 @@ Z3_ast optimize_z3_query(Z3_ast e)
             return optimize_z3_query(e);
         }
 
-        if (low == 0 && OP(op1) == Z3_OP_SIGN_EXT && PARAM1(op1) == high + 1) {
-
-            // printf("EXTRACT OPT E16\n");
-
-            e = ARG1(op1);
-            g_hash_table_insert(z3_opt_cache, (gpointer)original_e, (gpointer)e);
-            return e;
+        if (low == 0 && OP(op1) == Z3_OP_SIGN_EXT) {
+            if (SIZE(ARG1(op1)) == high + 1) {
+                e = ARG1(op1);
+                g_hash_table_insert(z3_opt_cache, (gpointer)original_e, (gpointer)e);
+                return e;
+            } else if (SIZE(ARG1(op1)) > high + 1) {
+                e = Z3_mk_extract(ctx, high, 0, ARG1(op1));
+                g_hash_table_insert(z3_opt_cache, (gpointer)original_e, (gpointer)e);
+                return e;
+            } else {
+                e = Z3_mk_sign_ext(ctx, high + 1 - SIZE(ARG1(op1)), ARG1(op1));
+                g_hash_table_insert(z3_opt_cache, (gpointer)original_e, (gpointer)e);
+                return e;
+            }
         }
 
         // printf("EXTRACT OPT END\n");
@@ -5083,7 +5104,7 @@ static void smt_branch_query(Query* q)
     smt_stats(smt_solver.solver);
 #endif
 #if 0
-    if (GET_QUERY_IDX(q) >= 0) {
+    if (GET_QUERY_IDX(q) >= 94) {
         debug_translation = 1;
     }
 #endif
@@ -5225,21 +5246,6 @@ static void smt_branch_query(Query* q)
             Z3_solver_reset(smt_solver.ctx, solver);
         }
 #endif
-#if CHECK_SAT_PI
-        Z3_ast pi = get_deps(inputs);
-        for (size_t i = 0; i < testcase.size; i++) {
-            eval_data[i] = testcase.data[i];
-        }
-        uintptr_t solution = conc_query_eval_value(smt_solver.ctx, pi, eval_data,
-                                            symbols_sizes, symbols_count, NULL);
-
-        if (solution == 0) {
-            printf("PI is UNSAT\n");
-            print_z3_ast(z3_query);
-            print_expr(q->query);
-            ABORT();
-        }
-#endif
     } else {
         // printf("No real inputs in branch condition. Skipping it.\n");
     }
@@ -5249,6 +5255,23 @@ static void smt_branch_query(Query* q)
 #endif
 #if USE_FUZZY_SOLVER
     z3fuzz_notify_constraint(&smt_solver.fuzzy_ctx, z3_query);
+#endif
+
+#if CHECK_SAT_PI
+    Z3_ast pi = get_deps(inputs);
+    for (size_t i = 0; i < testcase.size; i++) {
+        eval_data[i] = testcase.data[i];
+    }
+    uintptr_t solution = conc_query_eval_value(smt_solver.ctx, pi, eval_data,
+                                        symbols_sizes, symbols_count, NULL);
+
+    if (solution == 0) {
+        printf("PI is UNSAT\n");
+        print_z3_ast(z3_query);
+        print_expr(q->query);
+        // print_z3_ast(pi);
+        ABORT();
+    }
 #endif
 }
 
@@ -6273,6 +6296,11 @@ static void smt_mem_concr_query(Query* q, OPKIND opkind)
     SAYF("\nTranslating %s %lu to Z3...\n", opkind_to_str(opkind),
          GET_QUERY_IDX(q));
 #endif
+#if 0
+    if (GET_QUERY_IDX(q) >= 91) {
+        debug_translation = 1;
+    }
+#endif
     GHashTable* inputs = NULL;
     Z3_ast memory_expr = smt_query_to_z3_wrapper(q->query->op1, 0, 0, &inputs);
     // SAYF("DONE: Translating %s to Z3\n", opkind_to_str(opkind));
@@ -6291,6 +6319,27 @@ static void smt_mem_concr_query(Query* q, OPKIND opkind)
 #if USE_FUZZY_SOLVER
     z3fuzz_notify_constraint(&smt_solver.fuzzy_ctx, c);
 #endif
+
+#if CHECK_SAT_PI
+    Z3_ast pi = get_deps(inputs);
+    for (size_t i = 0; i < testcase.size; i++) {
+        eval_data[i] = testcase.data[i];
+    }
+    uintptr_t solution = conc_query_eval_value(smt_solver.ctx, pi, eval_data,
+                                        symbols_sizes, symbols_count, NULL);
+
+    if (solution == 0) {
+
+        uintptr_t solution = conc_query_eval_value(smt_solver.ctx, memory_expr, eval_data,
+                                        symbols_sizes, symbols_count, NULL);
+
+        printf("PI is UNSAT: %lx\n", solution);
+        // print_z3_ast(c);
+        print_expr(q->query);
+        // print_z3_ast(pi);
+        ABORT();
+    }
+#endif
 }
 
 static void smt_consistency_expr(Query* q)
@@ -6299,7 +6348,7 @@ static void smt_consistency_expr(Query* q)
     uintptr_t concrete_value = CONST(q->query->op2);
     uintptr_t pc             = q->address;
 #if 0
-    if (GET_QUERY_IDX(q) >= 9330) {
+    if (GET_QUERY_IDX(q) >= 91) {
         debug_translation = 1;
     }
 #endif
@@ -6779,7 +6828,9 @@ static void smt_model_expr(Query* q)
 static void smt_query(Query* q)
 {
 #if 0
-    print_expr(q->query);
+    if (GET_QUERY_IDX(q) >= 92) {
+        print_expr(q->query);
+    }
 #endif
 
     switch (q->query->opkind) {
