@@ -18,10 +18,19 @@
 #define SOLVER_TIMEOUT_Z3_MS         10000
 #define SOLVER_TIMEOUT_FUZZY_MS      1000
 
+#ifndef USE_FUZZY_SOLVER
+#define USE_FUZZY_SOLVER 0
+#endif
+
 #define SMT_SOLVE_ALL               1
 #define FUZZ_INTERESTING            2
 #define FUZZ_GD                     3
+
+#if USE_FUZZY_SOLVER
+#define ADDRESS_REASONING           FUZZ_GD
+#else
 #define ADDRESS_REASONING           FUZZ_INTERESTING
+#endif
 
 #define DEBUG_FUZZ_EXPR 0
 #define DEBUG_EXPR_OPT  0
@@ -30,10 +39,6 @@
 #define ASAN_GLIB       0
 
 #define CHECK_FUZZY_MISPREDICTIONS 0
-
-#ifndef USE_FUZZY_SOLVER
-#define USE_FUZZY_SOLVER 0
-#endif
 
 static int go_signal        = 0;
 static int expr_pool_shm_id = -1;
@@ -5634,8 +5639,6 @@ static int gd_solutions(GHashTable* inputs, Z3_ast z3_query,
     };
     gd_solution_info = &info;
     Z3_ast deps = get_deps(inputs);
-    print_z3_ast(deps);
-    print_z3_ast(z3_query);
     z3fuzz_find_all_values(&smt_solver.fuzzy_ctx, z3_query, deps, &gd_solution);
     z3fuzz_find_all_values_gd(&smt_solver.fuzzy_ctx, z3_query, deps, 0, &gd_solution);
     z3fuzz_find_all_values_gd(&smt_solver.fuzzy_ctx, z3_query, deps, 1, &gd_solution);
@@ -6247,9 +6250,9 @@ static void smt_expr_query(Query* q, OPKIND opkind)
         smt_del_solver(solver);
 #else // Fuzzing:
 
-#if ADDRESS_REASONING == FUZZ_GD
         GHashTable* solutions = f_hash_table_new(NULL, NULL);
         g_hash_table_add(solutions, (gpointer) solution);
+#if ADDRESS_REASONING == FUZZ_GD
         gd_solution_info_t info = {
             .set = solutions,
             .dump_idx = GET_QUERY_IDX(q),
@@ -6258,19 +6261,18 @@ static void smt_expr_query(Query* q, OPKIND opkind)
         };
         gd_solution_info = &info;
         Z3_ast deps = get_deps(inputs);
+        z3fuzz_find_all_values(&smt_solver.fuzzy_ctx, z3_query, deps, &gd_solution);
         z3fuzz_find_all_values_gd(&smt_solver.fuzzy_ctx, z3_query, deps, 0, &gd_solution);
         z3fuzz_find_all_values_gd(&smt_solver.fuzzy_ctx, z3_query, deps, 1, &gd_solution);
         gd_solution_info = NULL;
 #else
-        GHashTable* solutions = f_hash_table_new(NULL, NULL);
-        g_hash_table_add(solutions, (gpointer)solution);
         int r = fuzz_query_eval(inputs, z3_query, solutions, GET_QUERY_IDX(q), 0, 0);
+#endif
         int n_solutions = g_hash_table_size(solutions);
         printf("Found %d solution for %s expr.\n", n_solutions - 1,
                opkind_to_str(opkind));
         count_addr_testcase += n_solutions - 1;
         f_hash_table_destroy(solutions);
-#endif
 
 #endif
     } else {
