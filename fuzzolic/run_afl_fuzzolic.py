@@ -67,15 +67,30 @@ signal.signal(signal.SIGINT, handler)
 signal.signal(signal.SIGTERM, handler)
 
 if not debug:
-    afl_master_args = [ AFL_BIN, '-c', '0', '-Q', '-M', 'afl-master', '-o', run_dir, '-i', input_dir] + afl_args + ['--'] + program_args
+
+    prog = program_args[0]
+    if os.path.exists(prog + "_afl"):
+        prog = prog + "_afl"
+        afl_args[afl_args.index("-m") + 1] = "none"
+        red_queen_mode_a = "-c"
+        red_queen_mode_b = prog
+    else:
+        afl_args.append("-Q")
+        red_queen_mode_a = "-c"
+        red_queen_mode_b = "0"
+
+    afl_master_args = [ AFL_BIN, red_queen_mode_a, red_queen_mode_b, '-M', 'afl-master', '-o', run_dir, '-i', input_dir] + afl_args + ['--'] + [ prog ] + program_args[1:]
     afl_master = subprocess.Popen(afl_master_args, stdout=DEVNULL, stderr=DEVNULL)
     p_children.append(afl_master)
+    print(' '.join(afl_master_args))
 
-    afl_slave_args = [ AFL_BIN,'-Q', '-S', 'afl-slave', '-o', run_dir, '-i', input_dir] + afl_args + ['--'] + program_args
+    time.sleep(20)
+
+    afl_slave_args = [ AFL_BIN, '-S', 'afl-slave', '-o', run_dir, '-i', input_dir] + afl_args + [ prog ] + program_args[1:]
     afl_slave = subprocess.Popen(afl_slave_args, stdout=DEVNULL, stderr=DEVNULL)
     p_children.append(afl_slave)
 
-    # print(' '.join(afl_slave_args))
+    print(' '.join(afl_slave_args))
 
     # wait for afl slave to create the bitmap
     time.sleep(30) #
