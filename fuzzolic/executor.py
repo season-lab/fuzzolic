@@ -609,17 +609,19 @@ class Executor(object):
                     queued_inputs = [ self.__get_timeout_dir() + "/" + testcase ]
 
             waiting_rounds = 0
+            reported_waiting_rounds = 0
             while len(queued_inputs) == 0:
                 waiting_rounds += 1
                 if waiting_rounds > 0 and waiting_rounds % 300 == 0:
                     print("Waiting for a new input from AFL (%s secs)\n" %
-                          (waiting_rounds * 0.1))
+                          ((waiting_rounds - reported_waiting_rounds) * 0.1))
+                    reported_waiting_rounds = waiting_rounds
                 time.sleep(0.1)
                 queued_inputs = self.__import_from_afl()
 
             if waiting_rounds > 0:
                 print("\nWaited %s seconds for a new input from AFL\n" %
-                      (waiting_rounds * 0.1))
+                      ((waiting_rounds - reported_waiting_rounds) * 0.1))
 
             while not os.path.exists(queued_inputs[0]):
                 # afl has rename the input, skip it
