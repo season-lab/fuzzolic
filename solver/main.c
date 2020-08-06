@@ -777,8 +777,9 @@ static void smt_dump_solution(Z3_context ctx, Z3_model m, size_t idx,
             if (Z3_get_ast_kind(ctx, solution) == Z3_NUMERAL_AST) {
                 Z3_bool successGet =
                     Z3_get_numeral_int(ctx, solution, &solution_byte);
-                if (successGet) // && solution_byte
-                    printf("Solution[%ld]: 0x%x\n", i, solution_byte);
+                if (successGet) { // && solution_byte
+                    // printf("Solution[%ld]: 0x%x\n", i, solution_byte);
+                }
             } else {
                 assert(Z3_get_ast_kind(ctx, solution) == Z3_APP_AST);
                 solution_byte = i < testcase.size ? testcase.data[i] : 0;
@@ -813,7 +814,7 @@ static void smt_dump_testcase(const uint8_t* data, size_t size, size_t stride,
     for (size_t i = 0; i < size * stride; i += stride) {
         uint8_t byte = data[i];
         if (byte != testcase.data[i / stride]) {
-            printf("Solution[%ld]: 0x%x\n", i / stride, byte);
+            // printf("Solution[%ld]: 0x%x\n", i / stride, byte);
         }
         fwrite(&byte, sizeof(char), 1, fp);
     }
