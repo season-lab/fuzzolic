@@ -1,6 +1,8 @@
 name: "Pull Request Docs Check"
 on: 
-- push
+  push:
+    paths:
+    - 'docs/**'
 
 jobs:
   docs:
