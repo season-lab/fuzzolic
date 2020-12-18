@@ -6,7 +6,7 @@ jobs:
     steps:
       - checkout
       - restore_cache:
-          key: fuzzolic-main-{{ checksum ".git/HEAD" }}
+          key: fuzzolic-core-{{ checksum ".git/HEAD" }}
       - run: 
           name: fetching submodules
           command: |
@@ -18,7 +18,7 @@ jobs:
             [[ -f tracer/.git ]] || echo "ciao A"
             [[ -f tracer/.git ]] && echo "ciao B"
       - save_cache:
-          key: fuzzolic-main-{{ checksum ".git/HEAD" }}
+          key: fuzzolic-core-{{ checksum ".git/HEAD" }}
           paths:
             - /home/ubuntu/project
       - restore_cache:
