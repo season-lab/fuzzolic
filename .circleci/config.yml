@@ -67,8 +67,14 @@ jobs:
           key: fuzzolic-fuzzy-build-{{ checksum "solver/fuzzy-sat/.git/HEAD" }}
           paths:
             - solver/fuzzy-sat
+      - restore_cache:
+          key: fuzzolic-solver-build-{{ checksum ".git/modules/solver/HEAD" }}
       - run: 
           name: building solver frontend
           working_directory: solver
           command: |
-            cmake . && make
+            [[ -f solver-smt ]] || (cmake . && make)
+       - save_cache:
+          key: fuzzolic-solver-build-{{ checksum ".git/modules/solver/HEAD" }}
+          paths:
+            - solver
