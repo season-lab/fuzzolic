@@ -8,6 +8,7 @@ jobs:
       - run: 
           name: install deps
           command: |
+            sed -i -- 's/# deb-src/deb-src/g' /etc/apt/sources.list
             apt update -y
             apt-get build-dep -y qemu-user
             apt install -y \
