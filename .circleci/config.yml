@@ -20,15 +20,14 @@ jobs:
           paths:
             - tracer
       - restore_cache:
-          key: fuzzolic-fuzzy
+          key: fuzzolic-fuzzy-v1
       - run: 
           name: fetching fuzzy-sat
           working_directory: solver
           command: |
-            [[ -d fuzzy-sat ]] || git clone git@github.com:season-lab/fuzzy-sat.git
-            [[ -d fuzzy-sat ]] || (cd fuzzy-sat && git submodule sync && git submodule update --init)
+            [[ -d fuzzy-sat ]] || (git clone git@github.com:season-lab/fuzzy-sat.git && cd fuzzy-sat && git submodule sync && git submodule update --init)
       - save_cache:
-          key: fuzzolic-fuzzy
+          key: fuzzolic-fuzzy-v1
           paths:
             - solver/fuzzy-sat
       - restore_cache:
