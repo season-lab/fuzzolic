@@ -10,7 +10,7 @@ jobs:
       - run: 
           name: fetching submodules
           command: |
-            [[ -d tracer/.git ]] || (git submodule sync && git submodule update --init)
+            [[ -f tracer/.git ]] || (git submodule sync && git submodule update --init)
       - save_cache:
           key: fuzzolic-main-{{ checksum ".git/HEAD" }}
           paths:
@@ -56,8 +56,14 @@ jobs:
             echo "export C_INCLUDE_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/include:$C_INCLUDE_PATH" >> $BASH_ENV
             echo "export LIBRARY_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib:$LIBRARY_PATH" >> $BASH_ENV
             echo "export LD_LIBRARY_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib:$LD_LIBRARY_PATH" >> $BASH_ENV
+      - restore_cache:
+          key: fuzzolic-fuzzy-build-{{ checksum "solver/fuzzy-sat/.git/HEAD" }}
       - run: 
           name: building fuzzy-sat
           working_directory: solver/fuzzy-sat
           command: |
             make
+       - save_cache:
+          key: fuzzolic-fuzzy-build-{{ checksum "solver/fuzzy-sat/.git/HEAD" }}
+          paths:
+            - solver/fuzzy-sat
