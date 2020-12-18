@@ -19,12 +19,26 @@ jobs:
           key: fuzzolic-tracer-{{ checksum ".git/modules/tracer/HEAD" }}
           paths:
             - tracer
+      - restore_cache:
+          key: fuzzolic-fuzzy
       - run: 
-          name: building fuzzy-sat
+          name: fetching fuzzy-sat
           working_directory: solver
           command: |
-            git clone git@github.com:season-lab/fuzzy-sat.git
-            cd fuzzy-sat && git submodule sync && git submodule update --init
-            cd fuzzolic-z3 && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=`pwd`/dist && make -j 4 && cd ../..
-            ls -al fuzzolic-z3/build
-
+            [[ -d fuzzy-sat ]] || git clone git@github.com:season-lab/fuzzy-sat.git
+            [[ -d fuzzy-sat ]] || (cd fuzzy-sat && git submodule sync && git submodule update --init)
+      - save_cache:
+          key: fuzzolic-fuzzy
+          paths:
+            - solver/fuzzy-sat
+      - restore_cache:
+          key: fuzzolic-z3-{{ checksum "solver/fuzzy-sat/.git/modules/fuzzolic-z3/HEAD" }}
+      - run: 
+          name: building Z3
+          working_directory: solver/fuzzy-sat
+          command: |
+            [[ -d fuzzolic-z3/build/dist ]] || (cd fuzzolic-z3 && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=`pwd`/dist && make -j 4 && make install && cd ../..)
+      - save_cache:
+          key: fuzzolic-z3-{{ checksum "solver/fuzzy-sat/.git/modules/fuzzolic-z3/HEAD" }}
+          paths:
+            - solver/fuzzy-sat/fuzzolic-z3
