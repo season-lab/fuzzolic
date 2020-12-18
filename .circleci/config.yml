@@ -56,3 +56,8 @@ jobs:
             echo "export C_INCLUDE_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/include:$C_INCLUDE_PATH" >> $BASH_ENV
             echo "export LIBRARY_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib:$LIBRARY_PATH" >> $BASH_ENV
             echo "export LD_LIBRARY_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib:$LD_LIBRARY_PATH" >> $BASH_ENV
+      - run: 
+          name: building fuzzy-sat
+          working_directory: solver/fuzzy-sat
+          command: |
+            make
