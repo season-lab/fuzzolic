@@ -5,8 +5,13 @@ jobs:
       - image: ercoppa/fuzzolic-ci-runner
     steps:
       - checkout
-      - run: git submodule sync
-      - run: git submodule update --init
+      - restore_cache:
+          key: fuzzolic-main-{{ checksum ".git/HEAD" }}
+      - run: [[ -d tracer ]] || (git submodule sync && git submodule update --init)
+      - save_cache:
+          key: fuzzolic-main-{{ checksum ".git/HEAD" }}
+          paths:
+            - ./
       - restore_cache:
           key: fuzzolic-tracer-{{ checksum ".git/modules/tracer/HEAD" }}
       - run: 
