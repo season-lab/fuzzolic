@@ -5,8 +5,10 @@ jobs:
       - image: ubuntu:18.04
     steps:
       - checkout
+      - run: git submodule sync
+      - run: git submodule update --init
       - run: 
-          name: install deps
+          name: installing deps
           command: |
             sed -i -- 's/# deb-src/deb-src/g' /etc/apt/sources.list
             apt update -y
@@ -30,3 +32,11 @@ jobs:
                   libtool-bin wget \
                   automake autoconf \
                   bison git gdb
+      - run: 
+          name: creating virtualenv
+          command: |
+            pip install --user virtualenv
+      - run: 
+          name: building tracer
+          command: |
+            ls -lh
