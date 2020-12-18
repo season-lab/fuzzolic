@@ -9,5 +9,7 @@ jobs:
       - run: git submodule update --init
       - run: 
           name: building tracer
+          working_directory: tracer
           command: |
-            ls -lh
+            ./configure --prefix=`pwd`/../build --target-list=x86_64-linux-user
+            make -j4
