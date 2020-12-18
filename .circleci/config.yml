@@ -25,6 +25,6 @@ jobs:
           command: |
             git clone git@github.com:season-lab/fuzzy-sat.git
             cd fuzzy-sat && git submodule sync && git submodule update --init
-            cd fuzzolic-z3 && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=`pwd`/dist && cd ../..
+            cd fuzzolic-z3 && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=`pwd`/dist && make -j 4 && cd ../..
             ls -al fuzzolic-z3/build
 
