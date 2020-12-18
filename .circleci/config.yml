@@ -37,7 +37,7 @@ jobs:
           working_directory: solver/fuzzy-sat
           command: |
             [[ -d fuzzolic-z3/build/dist ]] || (cd fuzzolic-z3 && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=`pwd`/dist && make -j 4 && make install && cd ../..)
-            ls fuzzolic-z3/build/dis
+            ls fuzzolic-z3/build/dist
       - save_cache:
           key: fuzzolic-z3-{{ checksum "solver/fuzzy-sat/.git/modules/fuzzolic-z3/HEAD" }}
           paths:
