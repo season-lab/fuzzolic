@@ -10,7 +10,7 @@ jobs:
       - run: 
           name: fetching submodules
           command: |
-            [[ -d tracer/.git ]] || (git submodule sync && git submodule update --init)
+            [[ -f tracer/.git ]] || (git submodule sync && git submodule update --init)
       - save_cache:
           key: fuzzolic-main-{{ checksum ".git/HEAD" }}
           paths:
@@ -63,7 +63,3 @@ jobs:
           working_directory: solver/fuzzy-sat
           command: |
             make
-       - save_cache:
-          key: fuzzolic-fuzzy-build-{{ checksum "solver/fuzzy-sat/.git/HEAD" }}
-          paths:
-            - solver/fuzzy-sat
