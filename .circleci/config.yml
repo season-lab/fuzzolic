@@ -63,3 +63,7 @@ jobs:
           working_directory: solver/fuzzy-sat
           command: |
             make
+      - save_cache:
+          key: fuzzolic-fuzzy-build-{{ checksum "solver/fuzzy-sat/.git/HEAD" }}
+          paths:
+            - solver/fuzzy-sat
