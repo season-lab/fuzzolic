@@ -14,7 +14,7 @@ jobs:
           working_directory: tracer
           command: |
             ./configure --prefix=`pwd`/../build --target-list=x86_64-linux-user
-            make -j4
+            make -j 4
       - save_cache:
           key: fuzzolic-tracer-{{ checksum ".git/modules/tracer/HEAD" }}
           paths:
