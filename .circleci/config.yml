@@ -20,7 +20,7 @@ jobs:
       - save_cache:
           key: fuzzolic-main-{{ checksum ".git/HEAD" }}
           paths:
-            - ./
+            - /home/ubuntu/project
       - restore_cache:
           key: fuzzolic-tracer-{{ checksum ".git/modules/tracer/HEAD" }}
       - run: 
