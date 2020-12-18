@@ -11,6 +11,7 @@ jobs:
           name: fetching submodules
           command: |
             [[ -f tracer/.git ]] || (git submodule sync && git submodule update --init)
+            ls -al tracer
       - save_cache:
           key: fuzzolic-main-{{ checksum ".git/HEAD" }}
           paths:
