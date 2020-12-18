@@ -19,4 +19,11 @@ jobs:
           key: fuzzolic-tracer-{{ checksum ".git/modules/tracer/HEAD" }}
           paths:
             - tracer
+      - run: 
+          name: building fuzzy-sat
+          working_directory: solver
+          command: |
+            git checkout git@github.com:season-lab/fuzzy-sat.git
+            cd fuzzy-sat && git submodule sync && git submodule update --init
+            ls
 
