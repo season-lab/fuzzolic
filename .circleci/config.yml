@@ -23,7 +23,7 @@ jobs:
           name: building fuzzy-sat
           working_directory: solver
           command: |
-            git checkout git@github.com:season-lab/fuzzy-sat.git
+            git clone git@github.com:season-lab/fuzzy-sat.git
             cd fuzzy-sat && git submodule sync && git submodule update --init
             ls
 
