@@ -7,7 +7,10 @@ jobs:
       - checkout
       - restore_cache:
           key: fuzzolic-main-{{ checksum ".git/HEAD" }}
-      - run: [[ -d tracer ]] || (git submodule sync && git submodule update --init)
+      - run: 
+          name: fetching submodules
+          command: |
+            [[ -d tracer ]] || (git submodule sync && git submodule update --init)
       - save_cache:
           key: fuzzolic-main-{{ checksum ".git/HEAD" }}
           paths:
