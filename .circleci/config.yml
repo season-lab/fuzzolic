@@ -12,8 +12,8 @@ jobs:
           command: |
             [[ -f tracer/.git ]] || (git submodule sync && git submodule update --init)
             ls -al tracer
-            [[ -f tracer/.git ]] || echo "ciao"
-            [[ -f tracer/.git ]] && echo "ciao"
+            [[ -f tracer/.git ]] || echo "ciao A"
+            [[ -f tracer/.git ]] && echo "ciao B"
       - save_cache:
           key: fuzzolic-main-{{ checksum ".git/HEAD" }}
           paths:
@@ -73,5 +73,5 @@ jobs:
       - run: 
           name: test
           command: |
-            [[ -f tracer/.git ]] || echo "ciao"
-            [[ -f tracer/.git ]] && echo "ciao"
+            [[ -f tracer/.git ]] || echo "ciao A"
+            [[ -f tracer/.git ]] && echo "ciao B"
