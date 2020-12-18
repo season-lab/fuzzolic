@@ -3,7 +3,7 @@ jobs:
   build:
     docker:
       - image: ubuntu:18.04
-  steps:
+    steps:
       - checkout
       - run: 
           name: update apt
