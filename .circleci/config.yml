@@ -37,7 +37,14 @@ jobs:
           working_directory: solver/fuzzy-sat
           command: |
             [[ -d fuzzolic-z3/build/dist ]] || (cd fuzzolic-z3 && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=`pwd`/dist && make -j 4 && make install && cd ../..)
+            ls fuzzolic-z3/build/dis
       - save_cache:
           key: fuzzolic-z3-{{ checksum "solver/fuzzy-sat/.git/modules/fuzzolic-z3/HEAD" }}
           paths:
             - solver/fuzzy-sat/fuzzolic-z3
+      - run:
+          name: Setup Environment Variables Z3
+          command: |
+            echo "export C_INCLUDE_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/include:$C_INCLUDE_PATH" >> $BASH_ENV
+            echo "export LIBRARY_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib:$LIBRARY_PATH" >> $BASH_ENV
+            echo "export LD_LIBRARY_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib:$LD_LIBRARY_PATH" >> $BASH_ENV
