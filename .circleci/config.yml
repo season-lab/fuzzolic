@@ -10,6 +10,9 @@ jobs:
       - run: 
           name: fetching submodules
           command: |
+            ls -al tracer
+            [[ -f tracer/.git ]] || echo "ciao A"
+            [[ -f tracer/.git ]] && echo "ciao B"
             [[ -f tracer/.git ]] || (git submodule sync && git submodule update --init)
             ls -al tracer
             [[ -f tracer/.git ]] || echo "ciao A"
@@ -65,7 +68,7 @@ jobs:
           name: building fuzzy-sat
           working_directory: solver/fuzzy-sat
           command: |
-            make
+            [[ -f libZ3Fuzzy.a ]] || make
       - save_cache:
           key: fuzzolic-fuzzy-build-{{ checksum "solver/fuzzy-sat/.git/HEAD" }}
           paths:
