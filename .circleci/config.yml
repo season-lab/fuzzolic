@@ -4,9 +4,6 @@ jobs:
     docker:
       - image: ubuntu:18.04
     steps:
-      - checkout
-      - run: git submodule sync
-      - run: git submodule update --init
       - run: 
           name: installing deps
           command: |
@@ -36,6 +33,9 @@ jobs:
           name: creating virtualenv
           command: |
             pip install --user virtualenv
+      - checkout
+      - run: git submodule sync
+      - run: git submodule update --init
       - run: 
           name: building tracer
           command: |
