@@ -10,13 +10,7 @@ jobs:
       - run: 
           name: fetching submodules
           command: |
-            ls -al tracer
-            [[ -f tracer/.git ]] || echo "ciao A"
-            [[ -f tracer/.git ]] && echo "ciao B"
             [[ -f tracer/.git ]] || (git submodule sync && git submodule update --init)
-            ls -al tracer
-            [[ -f tracer/.git ]] || echo "ciao A"
-            [[ -f tracer/.git ]] && echo "ciao B"
       - save_cache:
           key: fuzzolic-core-{{ checksum ".git/HEAD" }}
           paths:
@@ -73,8 +67,3 @@ jobs:
           key: fuzzolic-fuzzy-build-{{ checksum "solver/fuzzy-sat/.git/HEAD" }}
           paths:
             - solver/fuzzy-sat
-      - run: 
-          name: test
-          command: |
-            [[ -f tracer/.git ]] || echo "ciao A"
-            [[ -f tracer/.git ]] && echo "ciao B"
