@@ -19,7 +19,7 @@ import sphinx_rtd_theme
 # -- Project information -----------------------------------------------------
 
 project = 'Fuzzolic'
-copyright = '2020'
+copyright = '2021, Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu'
 author = 'Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu'
 
 
