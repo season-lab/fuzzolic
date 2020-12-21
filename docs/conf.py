@@ -18,9 +18,9 @@ import sphinx_rtd_theme
 
 # -- Project information -----------------------------------------------------
 
-project = 'No Errors Test Project'
-copyright = '2019, sphinx-action Test Suite'
-author = 'sphinx-action Test Suite'
+project = 'Fuzzolic'
+copyright = '2020'
+author = 'Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu'
 
 
 # -- General configuration ---------------------------------------------------
