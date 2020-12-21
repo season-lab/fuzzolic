@@ -3,8 +3,8 @@
 fuzzing + concolic = fuzzolic :)
 ==================================================
 
-.. image:: https://circleci.com/gh/season-lab/fuzzolic.svg?style=shield&circle-token=0a042e239339c13dce861e5304f5a19b52bc36b
-    :target: https://app.circleci.com/pipelines/github/season-lab/fuzzolic
+.. image:: https://circleci.com/gh/season-lab/fuzzolic.svg?circle-token=0a042e239339c13dce861e5304f5a19b52bc36b
+    :target: https://circleci.com/gh/season-lab/fuzzolic
 
 Publications
 ------------
