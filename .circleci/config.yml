@@ -21,7 +21,7 @@ jobs:
           paths:
             - /home/ubuntu/project
       - restore_cache:
-          key: fuzzolic-tracer-{{ checksum ".git/modules/tracer/refs/heads/symbolic" }}
+          key: fuzzolic-tracer-{{ checksum ".git/modules/tracer/HEAD" }}
       - run: 
           name: Building tracer
           working_directory: tracer
@@ -29,7 +29,7 @@ jobs:
             [[ -f x86_64-linux-user/qemu-x86_64 ]] || ./configure --prefix=`pwd`/../build --target-list=x86_64-linux-user
             [[ -f x86_64-linux-user/qemu-x86_64 ]] || make -j `nproc`
       - save_cache:
-          key: fuzzolic-tracer-{{ checksum ".git/modules/tracer/refs/heads/symbolic" }}
+          key: fuzzolic-tracer-{{ checksum ".git/modules/tracer/HEAD" }}
           paths:
             - tracer
       - restore_cache:
@@ -47,7 +47,7 @@ jobs:
           paths:
             - solver/fuzzy-sat
       - restore_cache:
-          key: fuzzolic-z3-{{ checksum "solver/fuzzy-sat/.git/modules/fuzzolic-z3/refs/heads/master" }}
+          key: fuzzolic-z3-{{ checksum ".git/modules/solver/fuzzy-sat/modules/fuzzolic-z3/refs/heads/fuzzolic" }}
       - run: 
           name: Building Z3
           working_directory: solver/fuzzy-sat
@@ -61,7 +61,7 @@ jobs:
               fi
             fi
       - save_cache:
-          key: fuzzolic-z3-{{ checksum "solver/fuzzy-sat/.git/modules/fuzzolic-z3/refs/heads/master" }}
+          key: fuzzolic-z3-{{ checksum ".git/modules/solver/fuzzy-sat/modules/fuzzolic-z3/refs/heads/fuzzolic" }}
           paths:
             - solver/fuzzy-sat/fuzzolic-z3
       - run:
@@ -71,14 +71,14 @@ jobs:
             echo "export LIBRARY_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib:$LIBRARY_PATH" >> $BASH_ENV
             echo "export LD_LIBRARY_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib:$LD_LIBRARY_PATH" >> $BASH_ENV
       - restore_cache:
-          key: fuzzolic-fuzzy-build-{{ checksum "solver/fuzzy-sat/.git/refs/heads/master" }}
+          key: fuzzolic-fuzzy-build-{{ checksum ".git/modules/solver/fuzzy-sat/refs/heads/master" }}
       - run: 
           name: Building fuzzy-sat
           working_directory: solver/fuzzy-sat
           command: |
             [[ -f libZ3Fuzzy.a ]] || make -j `nproc`
       - save_cache:
-          key: fuzzolic-fuzzy-build-{{ checksum "solver/fuzzy-sat/.git/refs/heads/master" }}
+          key: fuzzolic-fuzzy-build-{{ checksum ".git/modules/solver/fuzzy-sat/refs/heads/master" }}
           paths:
             - solver/fuzzy-sat
       - run: 
