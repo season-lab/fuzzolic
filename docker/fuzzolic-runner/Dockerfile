@@ -32,14 +32,41 @@ RUN apt update -y && \
 RUN groupadd --gid 1000 ubuntu \
     && useradd --uid 1000 --gid ubuntu --shell /bin/bash --create-home ubuntu
 
-# user 1007
-RUN groupadd --gid 1008 ubuntu-1008 \
-    && useradd --uid 1008 --gid ubuntu-1008 --shell /bin/bash --create-home ubuntu-1008
-
-USER ubuntu-1008
-
-RUN pip install --user virtualenv
-
 USER ubuntu
 
 RUN pip install --user virtualenv
+
+COPY --chown=1000:1000 . /home/ubuntu/fuzzolic
+
+WORKDIR /home/ubuntu/fuzzolic
+
+# Build QEMU tracer
+RUN cd tracer && ./configure --prefix=`pwd`/../build --target-list=x86_64-linux-user && make -j `nproc` 
+
+# Build custom Z3
+RUN cd solver/fuzzy-sat/fuzzolic-z3 && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=`pwd`/dist && make -j `nproc` && make install
+
+# Set environment vars for Z3
+ENV C_INCLUDE_PATH=/home/ubuntu/fuzzolic/solver/fuzzy-sat/fuzzolic-z3/build/dist/include
+ENV LIBRARY_PATH=/home/ubuntu/fuzzolic/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib
+ENV LD_LIBRARY_PATH=/home/ubuntu/fuzzolic/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib
+ENV BASH_ENV=/home/ubuntu/.bashrc
+RUN echo "export C_INCLUDE_PATH=/home/ubuntu/fuzzolic/solver/fuzzy-sat/fuzzolic-z3/build/dist/include" >> $BASH_ENV
+RUN echo "export LIBRARY_PATH=/home/ubuntu/fuzzolic/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib" >> $BASH_ENV
+RUN echo "export LD_LIBRARY_PATH=/home/ubuntu/fuzzolic/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib" >> $BASH_ENV
+
+# Build fuzzy-sat
+RUN cd solver/fuzzy-sat && make -j `nproc`
+
+# Build solver frontend
+RUN cd solver && cmake . && make -j `nproc`
+
+# Build AFL++
+RUN cd utils && git clone https://github.com/AFLplusplus/AFLplusplus.git && \
+	cd AFLplusplus && git checkout 9dbace240d570f8eb938db5a152e31756922b2f3 && \
+	git apply ../afl-showmap.c.patch && \
+	make -j `nproc` all && cd qemu_mode && ./build_qemu_support.sh
+ENV AFL_PATH=/home/ubuntu/fuzzolic/utils/AFLplusplus
+RUN echo "export AFL_PATH=/home/ubuntu/fuzzolic/utils/AFLplusplus" >> $BASH_ENV
+
+CMD bash

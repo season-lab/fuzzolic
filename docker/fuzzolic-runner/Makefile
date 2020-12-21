@@ -1,5 +1,7 @@
-build:
-	docker build --force-rm -t ercoppa/fuzzolic-runner-v1 .
+build: # --force-rm 
+	(cd ../../ && git submodule sync && git submodule update --init)
+	(cd ../../solver/fuzzy-sat && git submodule sync && git submodule update --init)
+	docker build -t ercoppa/fuzzolic-runner-v1 -f ./Dockerfile ../../
 
 push:
 	docker push ercoppa/fuzzolic-runner-v1
