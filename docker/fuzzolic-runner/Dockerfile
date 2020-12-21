@@ -69,4 +69,7 @@ RUN cd utils && git clone https://github.com/AFLplusplus/AFLplusplus.git && \
 ENV AFL_PATH=/home/ubuntu/fuzzolic/utils/AFLplusplus
 RUN echo "export AFL_PATH=/home/ubuntu/fuzzolic/utils/AFLplusplus" >> $BASH_ENV
 
+# Build fuzzolic tests
+RUN cd tests && make
+
 CMD bash
