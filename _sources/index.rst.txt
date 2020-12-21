@@ -1,6 +1,6 @@
 .. Documentation of Fuzzolic
 
-Fuzzolic: fuzzing + concolic = :)
+fuzzing + concolic = fuzzolic :)
 ==================================================
 
 .. toctree::
