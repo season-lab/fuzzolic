@@ -1,3 +1,8 @@
+# localbuild: 
+# 1) locally fetch any private repo
+# 2) fix ownership (1000:1000) over files
+# 3) run:
+#   circleci local execute --job build --volume=`pwd`:"/repo"
 version: 2
 jobs:
   build:
@@ -82,7 +87,7 @@ jobs:
           command: |
             cmake . && make -j `nproc`
       - restore_cache:
-          key: fuzzolic-aflpp-9dbace2
+          key: fuzzolic-aflpp-v0-9dbace2
       - run: 
           name: Building AFL++
           working_directory: utils
@@ -93,18 +98,20 @@ jobs:
                 cp -a /repo/utils/AFLplusplus .
               fi
             fi
-            [[ -d AFLplusplus ]] || (git clone https://github.com/AFLplusplus/AFLplusplus.git && cd AFLplusplus)
-            [[ -f afl-showmap ]] || git checkout 9dbace240d570f8eb938db5a152e31756922b2f3
-            [[ -f afl-showmap ]] || git apply ../afl-showmap.c.patch # showmap crash detector
-            [[ -f afl-showmap ]] || (make -j `nproc` all && cd qemu_mode && ./build_qemu_support.sh)
+            [[ -d AFLplusplus ]] || git clone https://github.com/AFLplusplus/AFLplusplus.git
+            [[ -f AFLplusplus/afl-showmap ]] || (cd AFLplusplus && git checkout 9dbace240d570f8eb938db5a152e31756922b2f3)
+            [[ -f AFLplusplus/afl-showmap ]] || (cd AFLplusplus && git apply ../afl-showmap.c.patch) # showmap crash detector
+            [[ -f AFLplusplus/afl-showmap ]] || (cd AFLplusplus && make -j `nproc` all && cd qemu_mode && ./build_qemu_support.sh)
             # caching AFLplusplus when localbuild
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
               if [[ ! -d /repo/utils/AFLplusplus/afl-showmap ]]; then
-                cp -a . /repo/utils/AFLplusplus
+                ls -l /repo/
+                ls -l /repo/utils
+                cp -a . /repo/utils/
               fi
             fi
       - save_cache:
-          key: fuzzolic-aflpp-9dbace2
+          key: fuzzolic-aflpp-v0-9dbace2
           paths:
             - utils/AFLplusplus
       - run:
