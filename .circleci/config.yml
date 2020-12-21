@@ -32,26 +32,18 @@ jobs:
           key: fuzzolic-tracer-{{ checksum ".git/modules/tracer/HEAD" }}
           paths:
             - tracer
-      - restore_cache:
-          key: fuzzolic-fuzzy-v1
       - run: 
           name: Fetching fuzzy-sat
           working_directory: solver
           command: |
-            if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
-              cp -a /repo/solver/fuzzy-sat fuzzy-sat
-            fi
-            [[ -d fuzzy-sat ]] || (git clone git@github.com:season-lab/fuzzy-sat.git && cd fuzzy-sat && git submodule sync && git submodule update --init)
-      - save_cache:
-          key: fuzzolic-fuzzy-v1
-          paths:
-            - solver/fuzzy-sat
+            [[ -d fuzzolic-z3 ]] || (cd fuzzy-sat && git submodule sync && git submodule update --init)
       - restore_cache:
           key: fuzzolic-z3-{{ checksum ".git/modules/solver/fuzzy-sat/modules/fuzzolic-z3/refs/heads/fuzzolic" }}
       - run: 
           name: Building Z3
           working_directory: solver/fuzzy-sat
           command: |
+            ls -l .git/modules/solver/
             ls -l .git/modules/solver/fuzzy-sat/
             ls -l .git/modules/solver/fuzzy-sat/modules/fuzzolic-z3/
             ls -l .git/modules/solver/fuzzy-sat/modules/fuzzolic-z3/refs/heads/
