@@ -19,5 +19,6 @@ Step-by-step instructions for compiling these components can be found inside the
 ## Running tests
 To test your installation of fuzzolic and fuzzy-sat, you can run some tests from the root of project:
 ```
-make tests
+cd tests
+make run
 ```
