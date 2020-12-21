@@ -9,7 +9,6 @@ fuzzing + concolic = fuzzolic :)
    
    install
    usage
-   internals
 
 .. toctree::
    :maxdepth: 3
