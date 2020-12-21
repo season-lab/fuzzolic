@@ -116,11 +116,14 @@ jobs:
           key: fuzzolic-aflpp-v0-9dbace2
           paths:
             - utils/AFLplusplus
+      
       - run:
           name: Running tests
           command: |
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
               cat /tmp/.bash_env-localbuild-* >> /home/ubuntu/.bashrc
             fi
+            cd tests && python3 -m pytest run.py --junitxml=test-results/junit.xml
             # git clone git@github.com:season-lab/fuzzy-sat.git
-        
+      - store_test_results:
+          path: tests/test-results      

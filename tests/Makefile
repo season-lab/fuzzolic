@@ -17,3 +17,8 @@ fooend:
 	objdump -d driver | awk -v RS= '/^[[:xdigit:]]+ <foo>/' | tail -n 1 | cut -f1 -d':'| tr -d '[:space:]'
 
 
+run:
+	python3 -m pytest run.py
+
+run-verbose:
+	python3 -m pytest -v -s run.py

@@ -24,19 +24,19 @@ RUN apt update -y && \
         libtool-bin wget \
         automake autoconf \
         bison git gdb dumb-init valgrind \
-	time xxd && \
+	time xxd python3-pip && \
 	apt clean && \
 	rm -rf /var/lib/apt/lists/*
 
-# user 1000
-RUN groupadd --gid 1000 ubuntu \
-    && useradd --uid 1000 --gid ubuntu --shell /bin/bash --create-home ubuntu
+RUN groupadd --gid 1008 ubuntu \
+    && useradd --uid 1008 --gid ubuntu --shell /bin/bash --create-home ubuntu
 
 USER ubuntu
 
 RUN pip install --user virtualenv
+RUN python3 -m pip install --user pytest
 
-COPY --chown=1000:1000 . /home/ubuntu/fuzzolic
+COPY --chown=1008:1008 . /home/ubuntu/fuzzolic
 
 WORKDIR /home/ubuntu/fuzzolic
 

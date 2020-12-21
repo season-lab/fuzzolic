@@ -24,22 +24,14 @@ RUN apt update -y && \
         libtool-bin wget \
         automake autoconf \
         bison git gdb dumb-init valgrind \
-	time xxd && \
+	time xxd python3-pip && \
 	apt clean && \
 	rm -rf /var/lib/apt/lists/*
 
-# user 1000
 RUN groupadd --gid 1000 ubuntu \
     && useradd --uid 1000 --gid ubuntu --shell /bin/bash --create-home ubuntu
 
-# user 1007
-RUN groupadd --gid 1008 ubuntu-1008 \
-    && useradd --uid 1008 --gid ubuntu-1008 --shell /bin/bash --create-home ubuntu-1008
-
-USER ubuntu-1008
-
-RUN pip install --user virtualenv
-
 USER ubuntu
 
-RUN pip install --user virtualenv
+RUN python3 -m pip install --user virtualenv
+RUN python3 -m pip install --user pytest
