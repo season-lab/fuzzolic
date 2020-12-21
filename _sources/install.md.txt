@@ -1,7 +1,7 @@
 # Installation
 
 ## Docker container
-A container images is available on Docker Hub. You can pull and launch it with:
+A prebuilt container image is available on Docker Hub. You can pull and launch it with:
 ```
 docker run -ti --rm ercoppa/fuzzolic-runner-v1
 ```
