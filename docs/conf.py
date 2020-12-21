@@ -55,3 +55,9 @@ html_theme = "sphinx_rtd_theme" #'alabaster'
 html_static_path = ['_static']
 
 master_doc = 'index'
+
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.txt': 'markdown',
+    '.md': 'markdown',
+}
