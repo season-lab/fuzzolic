@@ -527,9 +527,9 @@ class Executor(object):
                 file_extension = file_extension[1:]
                 print("File extensions: %s" % file_extension)
             r = self.minimizer.check_testcases(run_dir, global_bitmap_pre_run, f_ext=file_extension)
+            k = 0
             for t in r:
                 good = r[t]
-                k = 0
                 if good:
                     if self.afl:
                         target = os.path.basename(target)[:len("id:......")]
@@ -546,6 +546,7 @@ class Executor(object):
 
     def __check_testcase(self, t, run_id, k, target, global_bitmap_pre_run):
         if self.minimizer.check_testcase(t, global_bitmap_pre_run):
+            print("HERE")
             self.__import_test_case(
                 t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')
             return True

@@ -48,4 +48,4 @@ def test_simple_if():
 
 
 def test_nested_if():
-    run_one("nested_if")
+    run_one("nested_if", expected_inputs=4)
