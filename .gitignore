@@ -6,3 +6,4 @@ build
 *.out
 *.log
 logs
+utils/AFLplusplus/
