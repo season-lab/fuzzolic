@@ -47,7 +47,7 @@ jobs:
           name: Building Z3
           working_directory: solver/fuzzy-sat
           command: |
-            [[ -d fuzzolic-z3/build/dist ]] || (cd fuzzolic-z3 && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=`pwd`/dist && make -j 12 && make install && cd ../..)
+            [[ -d fuzzolic-z3/build/dist ]] || (cd fuzzolic-z3 && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=`pwd`/dist && make -j `nproc` && make install && cd ../..)
             # caching Z3 build when localbuild
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
               if [[ -d fuzzolic-z3/build/dist ]]; then
@@ -71,7 +71,7 @@ jobs:
           name: Building fuzzy-sat
           working_directory: solver/fuzzy-sat
           command: |
-            [[ -f libZ3Fuzzy.a ]] || make
+            [[ -f libZ3Fuzzy.a ]] || make -j `nproc`
       - save_cache:
           key: fuzzolic-fuzzy-build-{{ checksum "solver/fuzzy-sat/.git/HEAD" }}
           paths:
@@ -80,7 +80,33 @@ jobs:
           name: Building solver frontend
           working_directory: solver
           command: |
-            cmake . && make
+            cmake . && make -j `nproc`
+      - restore_cache:
+          key: fuzzolic-aflpp-9dbace2
+      - run: 
+          name: Building AFL++
+          working_directory: utils
+          command: |
+            # caching AFLplusplus when localbuild
+            if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
+              if [[ -d /repo/utils/AFLplusplus/afl-showmap ]]; then
+                cp -a /repo/utils/AFLplusplus .
+              fi
+            fi
+            [[ -d AFLplusplus ]] || (git clone https://github.com/AFLplusplus/AFLplusplus.git && cd AFLplusplus)
+            [[ -f afl-showmap ]] || git checkout 9dbace240d570f8eb938db5a152e31756922b2f3
+            [[ -f afl-showmap ]] || git apply ../afl-showmap.c.patch # showmap crash detector
+            [[ -f afl-showmap ]] || (make -j `nproc` all && cd qemu_mode && ./build_qemu_support.sh)
+            # caching AFLplusplus when localbuild
+            if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
+              if [[ ! -d /repo/utils/AFLplusplus/afl-showmap ]]; then
+                cp -a . /repo/utils/AFLplusplus
+              fi
+            fi
+      - save_cache:
+          key: fuzzolic-aflpp-9dbace2
+          paths:
+            - utils/AFLplusplus
       - run:
           name: Running tests
           command: |

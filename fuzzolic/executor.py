@@ -24,7 +24,11 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 SOLVER_SMT_BIN = SCRIPT_DIR + '/../solver/solver-smt'
 SOLVER_FUZZY_BIN = SCRIPT_DIR + '/../solver/solver-fuzzy'
 TRACER_BIN = SCRIPT_DIR + '/../tracer/x86_64-linux-user/qemu-x86_64'
-AFL_PATH = SCRIPT_DIR + '/../../AFLplusplus/'
+
+if not os.environ['AFL_PATH']:
+    AFL_PATH = SCRIPT_DIR + '/../../AFLplusplus/'
+else:
+    AFL_PATH = os.environ['AFL_PATH']
 
 SOLVER_WAIT_TIME_AT_STARTUP = 0.0010
 SOLVER_TIMEOUT = 1000
@@ -525,6 +529,7 @@ class Executor(object):
             r = self.minimizer.check_testcases(run_dir, global_bitmap_pre_run, f_ext=file_extension)
             for t in r:
                 good = r[t]
+                k = 0
                 if good:
                     if self.afl:
                         target = os.path.basename(target)[:len("id:......")]
