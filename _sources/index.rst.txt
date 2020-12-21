@@ -16,6 +16,12 @@ fuzzing + concolic = fuzzolic :)
    
    internals
    
+.. toctree::
+   :maxdepth: 1
+   :caption: Other
+   
+   icse-experiments
+   
 Publications
 ============
 
