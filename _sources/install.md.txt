@@ -1,4 +1,4 @@
-# Install
+# Installation
 
 ## Docker container
 A container images is available on Docker Hub. You can pull and launch it with:
