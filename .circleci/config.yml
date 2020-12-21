@@ -43,10 +43,6 @@ jobs:
           name: Building Z3
           working_directory: solver/fuzzy-sat
           command: |
-            ls -l .git/modules/solver/
-            ls -l .git/modules/solver/fuzzy-sat/
-            ls -l .git/modules/solver/fuzzy-sat/modules/fuzzolic-z3/
-            ls -l .git/modules/solver/fuzzy-sat/modules/fuzzolic-z3/refs/heads/
             [[ -d fuzzolic-z3/build/dist ]] || (cd fuzzolic-z3 && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=`pwd`/dist && make -j `nproc` && make install && cd ../..)
             # caching Z3 build when localbuild
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
