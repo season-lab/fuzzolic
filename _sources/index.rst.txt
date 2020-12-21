@@ -6,4 +6,5 @@ fuzzing + concolic = fuzzolic :)
 .. toctree::
    :maxdepth: 2
    
-   build
+   install
+   usage
