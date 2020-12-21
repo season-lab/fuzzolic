@@ -14,7 +14,7 @@ Fuzzolic and fuzzy-sat have been tested on Ubuntu 18.04/20.04 x86_64. A manual i
  * fuzzolic solver frontend 
  * AFL++
 
-Step-by-step instruction for compiling these components can be found inside the [`Dockerfile`](https://github.com/season-lab/fuzzolic/blob/master/docker/fuzzolic-runner/Dockerfile).
+Step-by-step instructions for compiling these components can be found inside the [`Dockerfile`](https://github.com/season-lab/fuzzolic/blob/master/docker/fuzzolic-runner/Dockerfile).
 
 ## Running tests
 To test your installation of fuzzolic and fuzzy-sat, you can run some tests from the root of project:
