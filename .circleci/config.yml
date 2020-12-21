@@ -105,11 +105,13 @@ jobs:
             # caching AFLplusplus when localbuild
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
               if [[ ! -d /repo/utils/AFLplusplus/afl-showmap ]]; then
-                ls -l /repo/
-                ls -l /repo/utils
                 cp -a . /repo/utils/
               fi
             fi
+      - run:
+          name: Setup Environment Variable AFL_PATH
+          command: |
+            echo "export AFL_PATH=/home/ubuntu/project/utils/AFLplusplus" >> $BASH_ENV
       - save_cache:
           key: fuzzolic-aflpp-v0-9dbace2
           paths:
@@ -119,7 +121,6 @@ jobs:
           command: |
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
               cat /tmp/.bash_env-localbuild-* >> /home/ubuntu/.bashrc
-              echo "export AFL_PATH=/AFL" >> /home/ubuntu/.bashrc
             fi
             # git clone git@github.com:season-lab/fuzzy-sat.git
         
