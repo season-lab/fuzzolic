@@ -22,5 +22,6 @@
 
 
 **NOTE #1**: CRC checks were disabled in lodepng.
+
 **NOTE #2**: When a benchmark is a library, we compiled it as a static library.
 		
