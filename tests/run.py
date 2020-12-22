@@ -6,12 +6,17 @@ import subprocess
 import glob
 import filecmp
 import time
+import pytest
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 WORKDIR = SCRIPT_DIR + "/workdir"
 
 
-def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=False, match_output=False, use_lib_models=False):
+def pytest_addoption(parser):
+    parser.addoption("--fuzzy", action="store_true", default="run tests using Fuzzy-SAT")
+
+
+def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=False, match_output=False, use_lib_models=False, use_fuzzy=False):
     initial_input = "%s/%s_0.dat" % (SCRIPT_DIR, test)
     assert os.path.exists(initial_input)
 
@@ -20,9 +25,7 @@ def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=
         env['USE_DUPLICATE_TESTCASE_CHECKER'] = '1'
 
     native_time = None
-    perf_run_opts = []
     if perf_run:
-        perf_run_opts = ['-d', 'out']
         start = time.time()
         p = subprocess.Popen(
                                 [
@@ -39,10 +42,6 @@ def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=
         end = time.time()
         native_time = end - start
 
-    use_lib_opts = []
-    if use_lib_models:
-        use_lib_opts = ['-l']
-
     start = time.time()
     p = subprocess.Popen(
                             [
@@ -51,8 +50,9 @@ def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=
                                 "-i", initial_input,
                                 "-k",
                             ] 
-                            + perf_run_opts 
-                            + use_lib_opts
+                            + (['-d', 'out'] if perf_run else []) 
+                            + (['-l'] if use_lib_models else [])
+                            + (['-f'] if use_fuzzy else [])
                             + [
                                 SCRIPT_DIR + "/driver", test
                             ],
@@ -87,7 +87,6 @@ def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=
                                 )
             with open(f, "rb") as fp:
                 p.stdin.write(fp.read())
-                #p.stdin.close()
             stdout = p.communicate()[0].decode("utf-8") 
             if stdout == 'RESULT=1\n':
                 match = True
@@ -157,6 +156,6 @@ def test_adcb():
     run("adcb", expected_inputs=1, match_output=True)
 
 
-def test_model_strcmp():
+def test_model_strcmp(fuzzy):
     # FixMe: this models does not extend the input
-    run("model_strcmp", expected_inputs=1, match_output=True, use_lib_models=True)
+    run("model_strcmp", expected_inputs=1, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)

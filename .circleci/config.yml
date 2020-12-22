@@ -114,9 +114,13 @@ jobs:
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
               cat /tmp/.bash_env-localbuild-* >> /home/ubuntu/.bashrc
             fi
-            cd tests && make && python3 -m pytest run.py --junitxml=test-results/junit.xml
+            cd tests && make && python3 -m pytest run.py --junitxml=test-results-smt/junit.xml ; python3 -m pytest --fuzzy run.py --junitxml=test-results-fuzzy/junit.xml
             # git clone git@github.com:season-lab/fuzzy-sat.git
       - store_test_results:
-          path: tests/test-results
+          path: tests/test-results-smt
+      - store_test_results:
+          path: tests/test-results-fuzzy
       - store_artifacts:
-          path: tests/test-results      
+          path: tests/test-results-smt
+      - store_artifacts:
+          path: tests/test-results-fuzzy  
