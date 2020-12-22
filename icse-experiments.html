@@ -177,7 +177,8 @@
 <th>Release</th>
 <th>Command-line args</th>
 <th>Seed</th>
-<th>Driver (if required)</th>
+<th>Driver</th>
+<th>Dictionary</th>
 </tr>
 </thead>
 <tbody>
@@ -187,12 +188,14 @@
 <td><code>-l @@</code></td>
 <td><a href="https://github.com/amadvance/advancecomp/blob/master/test/mappy.mng">mappy.mng</a></td>
 <td></td>
+<td></td>
 </tr>
 <tr>
 <td>advzip</td>
 <td><a href="https://github.com/SoftSec-KAIST/Eclipser-Artifact/tree/master/docker-scripts/setup-scripts/packages-src">advancecomp-2.0</a></td>
 <td><code>-l @@</code></td>
 <td><a href="https://github.com/google/AFL/blob/master/testcases/archives/common/zip/small_archive.zip">small_archive.zip</a></td>
+<td></td>
 <td></td>
 </tr>
 <tr>
@@ -201,6 +204,23 @@
 <td><code>@@</code></td>
 <td><a href="https://github.com/google/AFL/blob/master/testcases/others/elf/small_exec.elf">small_exec.elf</a></td>
 <td></td>
+<td></td>
+</tr>
+<tr>
+<td>bsdtar</td>
+<td><a href="https://github.com/libarchive/libarchive/tree/f3b1f9f239c580b38f4d1197a40c6dde9753672e">libarchive git f3b1f9</a></td>
+<td><code>tf @@</code></td>
+<td><a href="https://github.com/mathiasbynens/small/blob/master/tar.tar">tar.tar</a></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>djpeg</td>
+<td><a href="http://www.ijg.org/files/jpegsrc.v9d.tar.gz">v9d</a></td>
+<td><code>@@</code></td>
+<td><a href="https://github.com/google/AFL/blob/master/testcases/images/jpeg/not_kitty.jpg">not_kitty.jpg</a></td>
+<td></td>
+<td><a href="https://github.com/google/AFL/blob/master/dictionaries/jpeg.dict">jpeg.dict</a></td>
 </tr>
 </tbody>
 </table></div>
