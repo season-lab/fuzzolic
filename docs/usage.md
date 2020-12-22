@@ -1,6 +1,6 @@
 # Usage
 
-## Fuzzy-SAT (CLI)
+## Fuzzy-SAT (cli)
 
 ## Concolid execution (standalone)
 
