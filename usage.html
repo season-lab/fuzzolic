@@ -174,8 +174,8 @@
 </pre></div>
 </div>
 <p>The symbols in the smt2 file MUST be declared as 8-bit bitvectors, and they must be named <code class="docutils literal notranslate"><span class="pre">k!&lt;i&gt;</span></code>, where <code class="docutils literal notranslate"><span class="pre">&lt;i&gt;</span></code> is the index of the i-th byte in the seed that represents the initial assignment for that symbol.</p>
-<p><em>Example</em>:
-<strong>query.smt2</strong></p>
+<p><strong>Example</strong>:</p>
+<p><em>query.smt2</em></p>
 <div class="highlight-smt2 notranslate"><div class="highlight"><pre><span></span>(declare-const k!0 (_ BitVec 8))
 (declare-const k!1 (_ BitVec 8))
 (declare-const k!2 (_ BitVec 8))
@@ -190,12 +190,12 @@
 )
 </pre></div>
 </div>
-<p><strong>seed.bin</strong></p>
+<p><em>seed.bin</em></p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">0000</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> will try to solve every <strong>assert</strong> contained in the <strong>smt2</strong> file, and will print to stdout the number of queries proved SAT, and the elapsed time.</p>
-<p>If the user provides an output directory (<code class="docutils literal notranslate"><span class="pre">--outdir=DIR</span></code>), <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> will dump assignments for SAT queries (one for each assert) to the directory as binary files (using the same convetion of the seed). <strong>TO BE IMPLEMENTED</strong></p>
+<p><code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> will try to solve every <em>assert</em> contained in the <em>smt2</em> file, and will print to stdout the number of queries proved SAT, and the elapsed time.</p>
+<p>If the user provides an output directory (<code class="docutils literal notranslate"><span class="pre">--outdir=DIR</span></code>), <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> will dump assignments for SAT queries (one for each assert) to the directory as binary files (using the same convetion of the seed). <em>TO BE IMPLEMENTED</em></p>
 </div>
 <div class="section" id="concolic-execution-standalone">
 <h2>Concolic execution (standalone)<a class="headerlink" href="#concolic-execution-standalone" title="Permalink to this headline">¶</a></h2>
