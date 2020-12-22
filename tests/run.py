@@ -11,11 +11,9 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 WORKDIR = SCRIPT_DIR + "/workdir"
 
 
-def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=False, match_output=False):
+def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=False, match_output=False, use_lib_models=False):
     initial_input = "%s/%s_0.dat" % (SCRIPT_DIR, test)
     assert os.path.exists(initial_input)
-    expected_input = "%s/%s_1.dat" % (SCRIPT_DIR, test)
-    assert os.path.exists(expected_input)
 
     env = os.environ.copy()
     if use_duplicate_testcase_checker:
@@ -41,13 +39,21 @@ def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=
         end = time.time()
         native_time = end - start
 
+    use_lib_opts = []
+    if use_lib_models:
+        use_lib_opts = ['-l']
+
     start = time.time()
     p = subprocess.Popen(
                             [
                                 SCRIPT_DIR + "/../fuzzolic/fuzzolic.py",
                                 "-o", WORKDIR,
-                                "-i", initial_input
-                            ] + perf_run_opts + [
+                                "-i", initial_input,
+                                "-k",
+                            ] 
+                            + perf_run_opts 
+                            + use_lib_opts
+                            + [
                                 SCRIPT_DIR + "/driver", test
                             ],
                             stderr=subprocess.DEVNULL,
@@ -86,6 +92,8 @@ def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=
             if stdout == 'RESULT=1\n':
                 match = True
     else:
+        expected_input = "%s/%s_1.dat" % (SCRIPT_DIR, test)
+        assert os.path.exists(expected_input)
         for f in testcases:
             if filecmp.cmp(f, expected_input, shallow=False):
                 match = True
@@ -147,3 +155,8 @@ def test_adcw():
 
 def test_adcb():
     run("adcb", expected_inputs=1, match_output=True)
+
+
+def test_model_strcmp():
+    # FixMe: this models does not extend the input
+    run("model_strcmp", expected_inputs=1, match_output=True, use_lib_models=True)

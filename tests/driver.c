@@ -31,6 +31,9 @@ int adcl(uint32_t);
 int adcw(uint16_t);
 int adcb(uint8_t);
 
+// models
+int model_strcmp(const char* s1);
+
 typedef enum TestcaseInputMode {
     FIXED_SIZE,
     VARIABLE_SIZE,
@@ -142,6 +145,10 @@ Testcase tests[] = {
      .input_type = VAR,
      .input_mode = FIXED_SIZE,
      .input_size = 8},
+    {.name       = "model_strcmp",
+     .f          = F(model_strcmp),
+     .input_type = BUFFER,
+     .input_size = 128},
 };
 
 void foo(Testcase* t)
