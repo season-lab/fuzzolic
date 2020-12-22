@@ -21,7 +21,6 @@
 | tiff2pdf | [4.1.0](https://download.osgeo.org/libtiff/tiff-4.1.0.tar.gz) | `@@` | [not_kitty.tiff](https://github.com/google/AFL/blob/master/testcases/images/tiff/not_kitty.tiff) | [tiff.dict](https://github.com/google/AFL/blob/master/dictionaries/tiff.dict) | |
 
 
-**NOTE #1**: CRC checks were disabled in lodepng.
-
+**NOTE #1**: CRC checks were disabled in lodepng.  
 **NOTE #2**: When a benchmark is a library, we compiled it as a static library.
 		
