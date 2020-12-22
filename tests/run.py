@@ -11,7 +11,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 WORKDIR = SCRIPT_DIR + "/workdir"
 
 
-def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=False):
+def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=False, match_output=False):
     initial_input = "%s/%s_0.dat" % (SCRIPT_DIR, test)
     assert os.path.exists(initial_input)
     expected_input = "%s/%s_1.dat" % (SCRIPT_DIR, test)
@@ -66,10 +66,29 @@ def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=
     testcases = glob.glob(WORKDIR + "/tests/test_*.dat") 
     assert len(testcases) == expected_inputs
 
-    match = False    
-    for f in testcases:
-        if filecmp.cmp(f, expected_input, shallow=False):
-            match = True
+    match = False
+
+    if match_output:
+        for f in testcases:
+            p = subprocess.Popen(
+                                    [
+                                        SCRIPT_DIR + "/driver", test
+                                    ],
+                                    stderr=subprocess.DEVNULL,
+                                    stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE,
+                                    env=env
+                                )
+            with open(f, "rb") as fp:
+                p.stdin.write(fp.read())
+                #p.stdin.close()
+            stdout = p.communicate()[0].decode("utf-8") 
+            if stdout == 'RESULT=1\n':
+                match = True
+    else:
+        for f in testcases:
+            if filecmp.cmp(f, expected_input, shallow=False):
+                match = True
 
     assert match
 
@@ -96,3 +115,35 @@ def test_all_concrete():
 
 def test_div3():
     run("div3", expected_inputs=1)
+
+
+def test_addq():
+    run("addq", expected_inputs=1, match_output=True)
+
+
+def test_addl():
+    run("addl", expected_inputs=1, match_output=True)
+
+
+def test_addw():
+    run("addw", expected_inputs=1, match_output=True)
+
+
+def test_addb():
+    run("addb", expected_inputs=1, match_output=True)
+
+
+def test_adcq():
+    run("adcq", expected_inputs=1, match_output=True)
+
+
+def test_adcl():
+    run("adcl", expected_inputs=1, match_output=True)
+
+
+def test_adcw():
+    run("adcw", expected_inputs=1, match_output=True)
+
+
+def test_adcb():
+    run("adcb", expected_inputs=1, match_output=True)
