@@ -3,7 +3,7 @@
 ## Docker container
 A prebuilt container image is available on Docker Hub. You can pull and launch it with:
 ```
-docker run -ti --rm ercoppa/fuzzolic-runner-v1
+$ docker run -ti --rm ercoppa/fuzzolic-runner-v1
 ```
 
 ## Manual build
@@ -19,8 +19,8 @@ Step-by-step instructions for compiling these components can be found inside the
 ## Running tests
 To test your installation of fuzzolic and fuzzy-sat, you can run some tests from the root of project:
 ```
-cd tests
-make run
+$ cd tests
+$ make run
 ```
 The expected output should be similar to:
 ```
@@ -44,4 +44,4 @@ run.py ..............                                                    [100%]
 
 ============================= 14 passed in 15.98s ==============================
 ```
-The number of executed tests may differ.
+The number of executed tests and the running time may differ.
