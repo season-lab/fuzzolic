@@ -18,7 +18,7 @@
 | optipng | [0.7.6](https://github.com/SoftSec-KAIST/Eclipser-Artifact/tree/master/docker-scripts/setup-scripts/packages-src) | `-out /dev/null @@` | [not_kitty.png](https://github.com/google/AFL/blob/master/testcases/images/png/not_kitty.png) | | |
 | readelf | [binutils-2.34](https://ftp.gnu.org/gnu/binutils/binutils-2.34.tar.gz) | `-a @@` | [small_exec.elf](https://github.com/google/AFL/blob/master/testcases/others/elf/small_exec.elf) | | |
 | tcpdump | [4.9.3](https://www.tcpdump.org/release/tcpdump-4.9.3.tar.gz) ([pcap 1.9.1](https://www.tcpdump.org/release/libpcap-1.9.1.tar.gz)) | `-e -vv -nr @@` | [small_capture.pcap](https://github.com/google/AFL/blob/master/testcases/others/pcap/small_capture.pcap) | | |
-| tiff2pdf | [4.1.0](https://download.osgeo.org/libtiff/tiff-4.1.0.tar.gz) | `@@` | [not_kitty.tiff](https://github.com/google/AFL/blob/master/testcases/images/tiff/not_kitty.tiff) | | [tiff.dict](https://github.com/google/AFL/blob/master/dictionaries/tiff.dict) |
+| tiff2pdf | [4.1.0](https://download.osgeo.org/libtiff/tiff-4.1.0.tar.gz) | `@@` | [not_kitty.tiff](https://github.com/google/AFL/blob/master/testcases/images/tiff/not_kitty.tiff) | [tiff.dict](https://github.com/google/AFL/blob/master/dictionaries/tiff.dict) | |
 
 
 **NOTE #1**: CRC checks were disabled in lodepng.
