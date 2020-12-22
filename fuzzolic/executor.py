@@ -502,24 +502,16 @@ class Executor(object):
             os.system("cp " + testcase + " " + self.__get_timeout_dir() + "/" + target)
 
         # check new test cases
-        if self.input_fixed_name and False:
+        if 'USE_DUPLICATE_TESTCASE_CHECKER' in env and not self.afl:
             files = list(filter(os.path.isfile, glob.glob(
                 run_dir + "/test_case_*.dat")))
             files.sort(key=lambda x: os.path.getmtime(x))
             k = 0
             for t in files:
-                if self.afl:
-                    good = self.__check_testcase_afl(
-                        t, run_id, k, target, global_bitmap_pre_run)
-                else:
-                    good = self.__check_testcase(
-                        t, run_id, k, target, global_bitmap_pre_run)
-                    # good = self.__check_testcase_full(t, run_id, k, target)
+                good = self.__check_testcase_duplicate(t, run_id, k, target)
                 if good:
+                    self.__import_test_case(run_dir + '/' + t, 'test_case_%03d_%03d_.dat' % (run_id, k))
                     k += 1
-                else:
-                    if self.afl:
-                        os.unlink(t)
         else:
             file_extension = None
             if self.input_fixed_name:
@@ -546,14 +538,13 @@ class Executor(object):
 
     def __check_testcase(self, t, run_id, k, target, global_bitmap_pre_run):
         if self.minimizer.check_testcase(t, global_bitmap_pre_run):
-            print("HERE")
             self.__import_test_case(
                 t, 'test_case_' + str(run_id) + '_' + str(k) + '.dat')
             return True
         else:
             return False
 
-    def __check_testcase_full(self, t, run_id, k, target):
+    def __check_testcase_duplicate(self, t, run_id, k, target):
         # check whether this a duplicate test case
         discard = False
         known_tests = glob.glob(

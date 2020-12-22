@@ -10,11 +10,15 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 WORKDIR = SCRIPT_DIR + "/workdir"
 
 
-def run(test, single_run=True, expected_inputs=1):
+def run(test, use_duplicate_testcase_checker=False, expected_inputs=1):
     initial_input = "%s/%s_0.dat" % (SCRIPT_DIR, test)
     assert os.path.exists(initial_input)
     expected_input = "%s/%s_1.dat" % (SCRIPT_DIR, test)
     assert os.path.exists(expected_input)
+
+    env = os.environ.copy()
+    if use_duplicate_testcase_checker:
+        env['USE_DUPLICATE_TESTCASE_CHECKER'] = '1'
 
     p = subprocess.Popen(
                             [
@@ -25,6 +29,7 @@ def run(test, single_run=True, expected_inputs=1):
                             ],
                             stderr=subprocess.DEVNULL,
                             stdin=subprocess.DEVNULL,
+                            env=env
                         )
     p.wait()
 
@@ -39,13 +44,16 @@ def run(test, single_run=True, expected_inputs=1):
     assert match
 
 
-def run_one(test, expected_inputs=1):
-    run(test, single_run=True, expected_inputs=expected_inputs)
-
-
 def test_simple_if():
-    run_one("simple_if")
+    run("simple_if")
 
 
 def test_nested_if():
-    run_one("nested_if", expected_inputs=4)
+    run("nested_if", expected_inputs=4)
+
+
+def test_mystrcmp():
+    # FixMe: to generate the correct input, we have to: 
+    #   (1) disable bitmap filtering
+    #   (2) start with a seed with enough bytes
+    run("mystrcmp", use_duplicate_testcase_checker=True, expected_inputs=8)
