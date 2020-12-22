@@ -3,6 +3,10 @@
 fuzzing + concolic = fuzzolic :)
 ==================================================
 
+.. raw:: html
+
+    <p><img src="https://circleci.com/gh/season-lab/fuzzolic.svg?style=shield&circle-token=0a042e239339c13dce861e5304f5a19b52bc36bd" /><br /></p>
+
 Publications
 ------------
 
@@ -30,6 +34,7 @@ Publications
    :caption: Development
    
    internals
+   debug
    
 .. toctree::
    :maxdepth: 1
