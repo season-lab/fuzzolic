@@ -44,4 +44,4 @@ run.py ..............                                                    [100%]
 
 ============================= 14 passed in 15.98s ==============================
 ```
-The number of executed tests may differ.
+The number of executed tests and the running time may differ.
