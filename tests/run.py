@@ -61,7 +61,7 @@ def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=
     if perf_run:
         slowdown = emulated_time / native_time
         print("Slowdown: %s" % round(slowdown, 1))
-        assert slowdown < 40
+        assert slowdown < 50
 
     testcases = glob.glob(WORKDIR + "/tests/test_*.dat") 
     assert len(testcases) == expected_inputs
