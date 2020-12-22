@@ -45,5 +45,13 @@ $ ./fuzzolic/fuzzolic.py -o ./workdir -i ./seeds -- ./program [args] @@
 ```
 will run concolic execution on `./program`, passing arguments (optional) `args`, using initial inputs available in the directory `seeds`, generating the results in the directory `./workdir`. Similarly to AFL, since `@@` is specified for the program, the fuzzolic is assuming that the program is getting the input from a file stored on the filesystem (fuzzolic will replace `@@` with the correct path at runtime). When `@@` is not used, fuzzolic will assume that the input is obtained by reading from the standard input. The exploration will follow multiple paths, halting when no new interesting inputs can be generated anymore by fuzzolic. 
 
+In the previous experiment, fuzzolic will use the SMT solver Z3. To select Fuzzy-SAT as the solver backend, add the option `-f`:
+```
+$ ./fuzzolic/fuzzolic.py -o ./workdir -i ./seeds -- ./program [args] @@
+```
+
+
+
+
 
 ## Hybrid fuzzing (AFL mode)
