@@ -4,8 +4,8 @@
 
 ## Configurations for benchmarks in Section IVC
 
-| Benchmark | Release | Command-line args | seed |  
-|---|---|---|---|
-| advmng | advancecomp-2.0 | `-l @@` | [mappy.mng](https://github.com/amadvance/advancecomp/blob/master/test/mappy.mng) |
+| Benchmark | Release | Command-line args | Seed | Driver (if required) |  
+|---|---|---|---|---|
+| advmng | [advancecomp-2.0](https://github.com/SoftSec-KAIST/Eclipser-Artifact/tree/master/docker-scripts/setup-scripts/packages-src) | `-l @@` | [mappy.mng](https://github.com/amadvance/advancecomp/blob/master/test/mappy.mng) | |
 
 		
