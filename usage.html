@@ -87,7 +87,7 @@
 <li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Usage</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#fuzzy-sat-cli">Fuzzy-SAT (cli)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#concolic-execution-standalone">Concolic execution (standalone)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#concolic-execution-standalone-mode">Concolic execution (standalone mode)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#hybrid-fuzzing-afl-mode">Hybrid fuzzing (AFL mode)</a></li>
 </ul>
 </li>
@@ -197,8 +197,13 @@
 <p><code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> will try to solve every <em>assert</em> contained in the <em>smt2</em> file, and will print to stdout the number of queries proved SAT, and the elapsed time.</p>
 <p>If the user provides an output directory (<code class="docutils literal notranslate"><span class="pre">--outdir=DIR</span></code>), <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> will dump assignments for SAT queries (one for each assert) to the directory as binary files (using the same convetion of the seed). <em>TO BE IMPLEMENTED</em></p>
 </div>
-<div class="section" id="concolic-execution-standalone">
-<h2>Concolic execution (standalone)<a class="headerlink" href="#concolic-execution-standalone" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="concolic-execution-standalone-mode">
+<h2>Concolic execution (standalone mode)<a class="headerlink" href="#concolic-execution-standalone-mode" title="Permalink to this headline">¶</a></h2>
+<p>To run fuzzolic in standalone mode, you need to execute the <code class="docutils literal notranslate"><span class="pre">./fuzzolic/fuzzolic.py</span></code> script. For instance:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ ./fuzzolic/fuzzolic.py -o ./workdir -i ./seeds -- ./program [args] @@
+</pre></div>
+</div>
+<p>will run concolic execution on <code class="docutils literal notranslate"><span class="pre">./program</span></code>, passing arguments (optional) <code class="docutils literal notranslate"><span class="pre">args</span></code>, using initial inputs available in the directory <code class="docutils literal notranslate"><span class="pre">seeds</span></code>, generating the results in the directory <code class="docutils literal notranslate"><span class="pre">./workdir</span></code>. Similarly to AFL, since <code class="docutils literal notranslate"><span class="pre">&#64;&#64;</span></code> is specified for the program, the fuzzolic is assuming that the program is getting the input from a file stored on the filesystem (fuzzolic will replace <code class="docutils literal notranslate"><span class="pre">&#64;&#64;</span></code> with the correct path at runtime). When <code class="docutils literal notranslate"><span class="pre">&#64;&#64;</span></code> is not used, fuzzolic will assume that the input is obtained by reading from the standard input. The exploration will explore multiple paths, halting when no new interesting inputs can be generated.</p>
 </div>
 <div class="section" id="hybrid-fuzzing-afl-mode">
 <h2>Hybrid fuzzing (AFL mode)<a class="headerlink" href="#hybrid-fuzzing-afl-mode" title="Permalink to this headline">¶</a></h2>
