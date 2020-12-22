@@ -117,4 +117,6 @@ jobs:
             cd tests && make && python3 -m pytest run.py --junitxml=test-results/junit.xml
             # git clone git@github.com:season-lab/fuzzy-sat.git
       - store_test_results:
+          path: tests/test-results
+      - store_artifacts:
           path: tests/test-results      
