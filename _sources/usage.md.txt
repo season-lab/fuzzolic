@@ -2,6 +2,6 @@
 
 ## Fuzzy-SAT (cli)
 
-## Concolid execution (standalone)
+## Concolic execution (standalone)
 
 ## Hybrid fuzzing (AFL mode)
