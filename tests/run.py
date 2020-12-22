@@ -88,8 +88,11 @@ def test_mystrcmp():
     #   (2) start with a seed with enough bytes
     run("mystrcmp", use_duplicate_testcase_checker=True, expected_inputs=8)
 
+
 def test_all_concrete():
-    # FixMe: to generate the correct input, we have to: 
-    #   (1) disable bitmap filtering
-    #   (2) start with a seed with enough bytes
+    # performance test
     run("all_concrete", use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=True)
+
+
+def test_div3():
+    run("div3", expected_inputs=1)
