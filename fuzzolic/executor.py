@@ -51,7 +51,8 @@ class Executor(object):
                  fuzz_expr=False,
                  input_fixed_name=None,
                  use_smt_if_empty=False,
-                 use_symbolic_models=False):
+                 use_symbolic_models=False,
+                 keep_run_dirs=False):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
@@ -102,6 +103,7 @@ class Executor(object):
         self.address_reasoning = address_reasoning
         self.fuzz_expr = fuzz_expr
         self.input_fixed_name = input_fixed_name
+        self.keep_run_dirs = keep_run_dirs
 
         self.__load_config()
         self.__warning_log = set()
@@ -199,10 +201,10 @@ class Executor(object):
 
     def get_solver_bin(self, force_smt=False):
         if self.fuzzy and not force_smt:
-            print("Using fuzzy solver")
+            print("Using Fuzzy-SAT solver")
             return SOLVER_FUZZY_BIN
         else:
-            print("Using smt solver")
+            print("Using SMT solver")
             return SOLVER_SMT_BIN
 
     def fuzz_one(self, testcase, target, force_smt=False):
@@ -215,8 +217,7 @@ class Executor(object):
         os.system("cp " + testcase + " " + run_dir)
         #testcase = run_dir + "/" + os.path.basename(testcase)
 
-        print('\nRunning using testcase: %s' % testcase)
-        print('Running directory: %s' % run_dir)
+        print('\nRunning directory: %s' % run_dir)
 
         env = os.environ.copy()
         for c in self.config:
@@ -280,7 +281,7 @@ class Executor(object):
             if self.address_reasoning:
                 p_solver_args += [ '-a' ]
 
-            if debug == 'gdb_solver':
+            if self.debug == 'gdb_solver':
                 p_solver = subprocess.Popen(['gdb'] + p_solver_args[0:1],
                                             stdout=p_solver_log if not self.debug else None,
                                             stderr=subprocess.STDOUT if not self.debug else None,
@@ -400,7 +401,7 @@ class Executor(object):
         # print("Tracer completed")
         p_tracer_log.close()
 
-        if debug == 'gdb_solver':
+        if self.debug == 'gdb_solver':
             for line in sys.stdin:
                 p_solver.stdin.write(line.encode())
                 if 'quit' in line or line.startswith('q'):
@@ -525,6 +526,9 @@ class Executor(object):
                 else:
                     if self.afl:
                         os.unlink(run_dir + '/' + t)
+
+        if not self.keep_run_dirs:
+            shutil.rmtree(run_dir)
 
         os.unlink(global_bitmap_pre_run)
 
@@ -712,7 +716,7 @@ class Executor(object):
             testcase, target, force_smt = self.__pick_testcase()
             self.__check_shutdown_flag()
 
-        print("[FUZZOLIC] no more testcase. Finishing.")
+        print("[FUZZOLIC] no more testcase. Finishing.\n")
 
         if len(self.__warning_log):
             print()

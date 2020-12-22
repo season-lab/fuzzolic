@@ -74,6 +74,8 @@ def main():
         '-l', '--symbolic-models', action='store_true', help='Enable symbolic models')
     parser.add_argument(
         '--fuzz-expr', action='store_true', help='enable fuzz expression (debug)')
+    parser.add_argument(
+        '-k', '--keep-run-dirs', action='store_true', help='keep run directories')
 
     # required args
     parser.add_argument(
@@ -141,6 +143,9 @@ def main():
     symbolic_models = args.symbolic_models
     if symbolic_models is None:
         symbolic_models = False
+    keep_run_dirs = args.keep_run_dirs
+    if keep_run_dirs is None:
+        keep_run_dirs = False
 
     signal.signal(signal.SIGINT, handler)
 
@@ -148,7 +153,7 @@ def main():
         binary, input, output_dir, binary_args, debug, afl,
         timeout, fuzzy, optimistic_solving, memory_slice_reasoning,
         address_reasoning, fuzz_expr, input_fixed_name, use_smt_if_empty,
-        symbolic_models)
+        symbolic_models, keep_run_dirs)
     fuzzolic_executor.run()
 
 
