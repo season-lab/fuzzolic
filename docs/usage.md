@@ -10,8 +10,9 @@ $ fuzzy-solver query.smt2 seed.bin
 
 The symbols in the smt2 file MUST be declared as 8-bit bitvectors, and they must be named `k!<i>`, where `<i>` is the index of the i-th byte in the seed that represents the initial assignment for that symbol.
 
-*Example*:
-__query.smt2__
+**Example**:
+
+_query.smt2_
 ``` smt2
 (declare-const k!0 (_ BitVec 8))
 (declare-const k!1 (_ BitVec 8))
@@ -27,14 +28,14 @@ __query.smt2__
 )
 ```
 
-__seed.bin__
+_seed.bin_
 ```
 0000
 ```
 
-`fuzzy-solver` will try to solve every __assert__ contained in the __smt2__ file, and will print to stdout the number of queries proved SAT, and the elapsed time.
+`fuzzy-solver` will try to solve every _assert_ contained in the _smt2_ file, and will print to stdout the number of queries proved SAT, and the elapsed time.
 
-If the user provides an output directory (`--outdir=DIR`), `fuzzy-solver` will dump assignments for SAT queries (one for each assert) to the directory as binary files (using the same convetion of the seed). **TO BE IMPLEMENTED**
+If the user provides an output directory (`--outdir=DIR`), `fuzzy-solver` will dump assignments for SAT queries (one for each assert) to the directory as binary files (using the same convetion of the seed). *TO BE IMPLEMENTED*
 
 ## Concolic execution (standalone)
 
