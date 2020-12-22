@@ -53,7 +53,7 @@ def main():
 
     # optional args
     parser.add_argument(
-        '-d', '--debug', choices=['coverage', 'gdb', 'trace', 'out', 'no_solver'], help='enable debug mode')
+        '-d', '--debug', choices=['coverage', 'gdb_trace', 'trace', 'out', 'no_solver', 'gdb_solver'], help='enable debug mode')
     parser.add_argument(
         '-a', '--afl', help='path to afl workdir')
     parser.add_argument(

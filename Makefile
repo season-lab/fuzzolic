@@ -1,19 +1,10 @@
-COUNT=3850
-
-all: build clean-work-dir
+simpleif: build clean-work-dir
 	./fuzzolic/fuzzolic.py -o workdir -i tests/simple_if_0.dat tests/driver simple_if
 	./utils/print_test_cases.py workdir/tests
 
-fuzzy: build clean-work-dir
+simpleif-fuzzy: build clean-work-dir
 	./fuzzolic/fuzzolic.py -f -o workdir -i tests/simple_if_0.dat tests/driver simple_if
 	./utils/print_test_cases.py workdir/tests
-
-simpleif: build-tracer build-solver kill-solver clean-work-dir
-	time -p ./fuzzolic/fuzzolic.py --debug out -o workdir -i tests/simple_if_0.dat tests/driver simple_if
-	./utils/print_test_cases.py workdir/tests
-
-native:
-	cat tests/simple_if_input_ko.dat | ./tracer/x86_64-linux-user/qemu-x86_64 -d in_asm,op_opt,out_asm ./tests/simple-if 2> asm_in_out.log
 
 all-concrete: clean-work-dir kill-solver
 	time -p ./fuzzolic/fuzzolic.py --debug out -o workdir -i tests/all_concrete_0.dat tests/driver all_concrete
@@ -35,8 +26,11 @@ mystrcmp: clean-work-dir kill-solver
 	time -p ./fuzzolic/fuzzolic.py -o workdir -i tests/mystrcmp_0.dat tests/driver mystrcmp
 	./utils/print_test_cases.py workdir/tests
 
-configure:
-	cd tracer && ./configure --target-list=i386-linux-user,x86_64-linux-user # --disable-werror
+tracer-configure:
+	cd tracer && ./configure --target-list=x86_64-linux-user # --disable-werror
+
+solver-configure:
+	cd solver && cmake .
 
 clean-work-dir:
 	rm -rf workdir

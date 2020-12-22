@@ -250,8 +250,6 @@ class Executor(object):
         p_solver_log_name = run_dir + '/solver.log'
         p_solver_log = open(p_solver_log_name, 'w')
 
-        gdb_solver = False
-
         # launch solver
         if self.debug != 'no_solver' and self.debug != 'coverage':
             p_solver_args = []
@@ -282,15 +280,7 @@ class Executor(object):
             if self.address_reasoning:
                 p_solver_args += [ '-a' ]
 
-            if not gdb_solver:
-                p_solver = subprocess.Popen(p_solver_args,
-                                            stdout=p_solver_log if not self.debug else None,
-                                            stderr=subprocess.STDOUT if not self.debug else None,
-                                            cwd=run_dir,
-                                            preexec_fn=setlimits,
-                                            env=env)
-                RUNNING_PROCESSES.append(p_solver)
-            else:
+            if debug == 'gdb_solver':
                 p_solver = subprocess.Popen(['gdb'] + p_solver_args[0:1],
                                             stdout=p_solver_log if not self.debug else None,
                                             stderr=subprocess.STDOUT if not self.debug else None,
@@ -311,32 +301,34 @@ class Executor(object):
                 p_solver.stdin.write("break exit\n".encode())
                 p_solver.stdin.write(gdb_cmd.encode())
                 # p_solver.stdin.close()
+                time.sleep(2)
+            else:
+                p_solver = subprocess.Popen(p_solver_args,
+                                            stdout=p_solver_log if not self.debug else None,
+                                            stderr=subprocess.STDOUT if not self.debug else None,
+                                            cwd=run_dir,
+                                            preexec_fn=setlimits,
+                                            env=env)
+                RUNNING_PROCESSES.append(p_solver)
 
             # wait a few moments to let the solver setup setup shared memories
             time.sleep(SOLVER_WAIT_TIME_AT_STARTUP)
-
-        if gdb_solver:
-            time.sleep(2)
 
         # launch tracer
         p_tracer_log_name = run_dir + '/tracer.log'
         p_tracer_log = open(p_tracer_log_name, 'w')
 
         p_tracer_args = []
-        if self.debug != 'gdb':
-            # p_tracer_args += ['stdbuf', '-o0']  # No buffering on stdout
-            pass
-        else:
+        if self.debug == 'gdb_tracer':
             p_tracer_args += ['gdb']
 
         p_tracer_args += [TRACER_BIN]
 
-        if self.debug != 'gdb':
+        if self.debug != 'gdb_tracer':
             p_tracer_args += ['-symbolic'] # self.fuzz_expr or 
-            if False or (self.fuzz_expr or self.debug == 'trace'):  # or self.debug == 'no_solver':
+            if (self.fuzz_expr or self.debug == 'trace'):  # or self.debug == 'no_solver':
                 p_tracer_args += ['-d']
-                # 'in_asm,op_opt,out_asm'
-                p_tracer_args += ['in_asm,op']
+                p_tracer_args += ['in_asm,op'] # 'in_asm,op_opt,out_asm'
 
         args = self.binary_args
         if not self.testcase_from_stdin:
@@ -344,7 +336,7 @@ class Executor(object):
                 if args[k] == '@@':
                     args[k] = testcase
 
-        if self.debug != 'gdb':
+        if self.debug != 'gdb_tracer':
             p_tracer_args += [self.binary]
             p_tracer_args += args
 
@@ -357,12 +349,12 @@ class Executor(object):
                                     # stderr=subprocess.STDOUT if not self.debug and not self.fuzz_expr else None,
                                     stdout=subprocess.DEVNULL if not self.debug and not self.fuzz_expr else None,
                                     stderr=p_tracer_log if not self.debug and not self.fuzz_expr else None,
-                                    stdin=subprocess.PIPE if self.testcase_from_stdin or self.debug == 'gdb' else None,
+                                    stdin=subprocess.PIPE if self.testcase_from_stdin or self.debug == 'gdb_tracer' else None,
                                     cwd=run_dir,
                                     env=env,
                                     preexec_fn=setlimits,
-                                    bufsize=0 if self.debug == 'gdb' else -1,
-                                    #universal_newlines=True if self.debug == 'gdb' else False
+                                    bufsize=0 if self.debug == 'gdb_tracer' else -1,
+                                    #universal_newlines=True if self.debug == 'gdb_tracer' else False
                                     )
         RUNNING_PROCESSES.append(p_tracer)
 
@@ -370,7 +362,7 @@ class Executor(object):
         # print("Tracer started")
 
         # emit testcate on stdin
-        if self.debug != 'gdb':
+        if self.debug != 'gdb_tracer':
             if self.testcase_from_stdin:
                 with open(testcase, "rb") as f:
                     p_tracer.stdin.write(f.read())
@@ -408,7 +400,7 @@ class Executor(object):
         # print("Tracer completed")
         p_tracer_log.close()
 
-        if gdb_solver:
+        if debug == 'gdb_solver':
             for line in sys.stdin:
                 p_solver.stdin.write(line.encode())
                 if 'quit' in line or line.startswith('q'):
@@ -517,7 +509,7 @@ class Executor(object):
             if self.input_fixed_name:
                 _, file_extension = os.path.splitext(self.input_fixed_name)
                 file_extension = file_extension[1:]
-                print("File extensions: %s" % file_extension)
+                # print("File extensions: %s" % file_extension)
             r = self.minimizer.check_testcases(run_dir, global_bitmap_pre_run, f_ext=file_extension)
             k = 0
             for t in r:
@@ -528,7 +520,7 @@ class Executor(object):
                         name = "id:%06d,src:%s" % (self.tick(), target)
                         self.__import_test_case(run_dir + '/' + t, name)
                     else:
-                        self.__import_test_case(run_dir + '/' + t, 'test_case_%03d_%03d_.dat' % (run_id, k))
+                        self.__import_test_case(run_dir + '/' + t, 'test_case_%03d_%03d.dat' % (run_id, k))
                     k += 1
                 else:
                     if self.afl:
