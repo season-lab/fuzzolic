@@ -34,6 +34,7 @@ Publications
    :caption: Development
    
    internals
+   debug
    
 .. toctree::
    :maxdepth: 1
