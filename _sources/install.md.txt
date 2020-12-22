@@ -22,3 +22,26 @@ To test your installation of fuzzolic and fuzzy-sat, you can run some tests from
 cd tests
 make run
 ```
+The expected output should be similar to:
+```
+Running tests using SMT solver
+============================= test session starts ==============================
+platform linux -- Python 3.6.9, pytest-6.2.1, py-1.10.0, pluggy-0.13.1
+rootdir: /home/ubuntu/fuzzolic/tests
+collected 14 items                                                             
+
+run.py ..............                                                    [100%]
+
+============================= 14 passed in 16.04s ==============================
+
+Running tests using Fuzzy-SAT solver
+============================= test session starts ==============================
+platform linux -- Python 3.6.9, pytest-6.2.1, py-1.10.0, pluggy-0.13.1
+rootdir: /home/ubuntu/fuzzolic/tests
+collected 14 items                                                             
+
+run.py ..............                                                    [100%]
+
+============================= 14 passed in 15.98s ==============================
+```
+The number of executed tests may differ.
