@@ -4,7 +4,7 @@
 
 ## Configurations for benchmarks in Section IV-C
 
-| Benchmark | Release | Args | Seed | Driver | Dictionary |
+| Benchmark | Release | Args | Seed | Dictionary | Driver |
 |---|---|---|---|---|---|
 | advmng | [advancecomp-2.0](https://github.com/SoftSec-KAIST/Eclipser-Artifact/tree/master/docker-scripts/setup-scripts/packages-src) | `-l @@` | [mappy.mng](https://github.com/amadvance/advancecomp/blob/master/test/mappy.mng) | | |
 | advzip | [advancecomp-2.0](https://github.com/SoftSec-KAIST/Eclipser-Artifact/tree/master/docker-scripts/setup-scripts/packages-src) | `-l @@` | [small_archive.zip](https://github.com/google/AFL/blob/master/testcases/archives/common/zip/small_archive.zip) | | |
