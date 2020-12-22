@@ -219,8 +219,8 @@
 <td><a href="http://www.ijg.org/files/jpegsrc.v9d.tar.gz">v9d</a></td>
 <td><code>@@</code></td>
 <td><a href="https://github.com/google/AFL/blob/master/testcases/images/jpeg/not_kitty.jpg">not_kitty.jpg</a></td>
-<td></td>
 <td><a href="https://github.com/google/AFL/blob/master/dictionaries/jpeg.dict">jpeg.dict</a></td>
+<td></td>
 </tr>
 <tr>
 <td>jhead</td>
@@ -234,12 +234,62 @@
 <td>libpng</td>
 <td><a href="https://sourceforge.net/projects/libpng/files/libpng16/1.6.37/">1.6.37</a></td>
 <td><code>@@ /dev/null</code></td>
-<td><a href="https://github.com/google/AFL/blob/master/testcases/images/png/not_kitty.png">not_kitty.jpg</a></td>
+<td><a href="https://github.com/google/AFL/blob/master/testcases/images/png/not_kitty.png">not_kitty.png</a></td>
 <td><a href="https://github.com/google/AFL/blob/master/dictionaries/png.dict">png.dict</a></td>
 <td><a href="https://sites.cs.ucsb.edu/~pconrad/cs32/15F/lect/11.25/libpngCpp/libpngExample1.cpp">driver.c</a></td>
 </tr>
+<tr>
+<td>lodepng</td>
+<td><a href="https://lodev.org/lodepng/">20200112</a></td>
+<td><code>@@</code></td>
+<td><a href="https://github.com/google/AFL/blob/master/testcases/images/png/not_kitty.png">not_kitty.png</a></td>
+<td><a href="https://github.com/google/AFL/blob/master/dictionaries/png.dict">png.dict</a></td>
+<td></td>
+</tr>
+<tr>
+<td>objdump</td>
+<td><a href="https://ftp.gnu.org/gnu/binutils/binutils-2.34.tar.gz">binutils-2.34</a></td>
+<td><code>-d @@</code></td>
+<td><a href="https://github.com/google/AFL/blob/master/testcases/others/elf/small_exec.elf">small_exec.elf</a></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>optipng</td>
+<td><a href="https://github.com/SoftSec-KAIST/Eclipser-Artifact/tree/master/docker-scripts/setup-scripts/packages-src">0.7.6</a></td>
+<td><code>-out /dev/null @@</code></td>
+<td><a href="https://github.com/google/AFL/blob/master/testcases/images/png/not_kitty.png">not_kitty.png</a></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>readelf</td>
+<td><a href="https://ftp.gnu.org/gnu/binutils/binutils-2.34.tar.gz">binutils-2.34</a></td>
+<td><code>-a @@</code></td>
+<td><a href="https://github.com/google/AFL/blob/master/testcases/others/elf/small_exec.elf">small_exec.elf</a></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>tcpdump</td>
+<td><a href="https://www.tcpdump.org/release/tcpdump-4.9.3.tar.gz">4.9.3</a> (<a href="https://www.tcpdump.org/release/libpcap-1.9.1.tar.gz">pcap 1.9.1</a>)</td>
+<td><code>-e -vv -nr @@</code></td>
+<td><a href="https://github.com/google/AFL/blob/master/testcases/others/pcap/small_capture.pcap">small_capture.pcap</a></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>tiff2pdf</td>
+<td><a href="https://download.osgeo.org/libtiff/tiff-4.1.0.tar.gz">4.1.0</a></td>
+<td><code>@@</code></td>
+<td><a href="https://github.com/google/AFL/blob/master/testcases/images/tiff/not_kitty.tiff">not_kitty.tiff</a></td>
+<td></td>
+<td><a href="https://github.com/google/AFL/blob/master/dictionaries/tiff.dict">tiff.dict</a></td>
+</tr>
 </tbody>
-</table></div>
+</table><p><strong>NOTE #1</strong>: CRC checks were disabled in lodepng.
+<strong>NOTE #2</strong>: When a benchmark is a library, we compiled it as a static library.</p>
+</div>
 </div>
 
 
