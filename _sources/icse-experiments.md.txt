@@ -1,8 +1,8 @@
 # ICSE Experiments
 
-## SMT queries used in Section IVA
+## SMT queries used in Section IV-A
 
-## Configurations for benchmarks in Section IVC
+## Configurations for benchmarks in Section IV-C
 
 | Benchmark | Release | Args | Seed | Driver | Dictionary |
 |---|---|---|---|---|---|
