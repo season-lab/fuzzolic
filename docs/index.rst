@@ -23,14 +23,14 @@ Publications
    }
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
    :caption: Getting Started
    
    install
    usage
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
    :caption: Development
    
    internals
