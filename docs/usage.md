@@ -18,8 +18,9 @@ Usage: ./build/bin/fuzzy-solver [OPTIONS]
   --notui                   no text UI
 ```
 
-It takes as mandatory command line arguments an smt2 query file with `--query` and a seed file with `--seed`. Optionally, the user can specify an output folder (`--out`) where the program dump the sat queries (`--dsat`) and the assignments for sat queries (`--dproofs`). `fuzzy-solver` will try to solve every _assert_ contained in the _smt2_ file.
+It takes as mandatory command line arguments an smt2 query file with `--query` and a seed file with `--seed`. Optionally, the user can specify an output folder (`--out`) where it dumps the sat queries (`--dsat`) and the assignments for sat queries (`--dproofs`).
 
+`fuzzy-solver` will try to solve every _assert_ contained in the _smt2_ file.
 Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and they must be named `k!<i>`, where `<i>` is the index of the i-th byte in the seed that represents the initial assignment for that symbol. This is an example of smt2 query and seed file:
 
 _query.smt2_
@@ -30,11 +31,11 @@ _query.smt2_
 (declare-const k!3 (_ BitVec 8))
 
 (assert 
-	(= 
-		#xdeadbeef 
-		(bvadd 
-			(concat k!0 k!1 k!2 k!3)
-			#xabadcafe))
+    (= 
+        #xdeadbeef 
+        (bvadd 
+            (concat k!0 k!1 k!2 k!3)
+            #xabadcafe))
 )
 ```
 
