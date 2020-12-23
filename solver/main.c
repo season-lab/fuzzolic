@@ -6784,7 +6784,6 @@ static void smt_model_expr(Query* q)
                     Z3_ast cc3 = Z3_mk_and(smt_solver.ctx, 2, and);
                     if (is_interesting) {
                         sub_idx_offset = i;
-                        printf("Running query...\n");
 #if !USE_FUZZY_SOLVER
                         smt_check_z3(q, cc3, p_inputs, 2);
 #else
@@ -6822,11 +6821,11 @@ static void smt_model_expr(Query* q)
         Z3_ast      s2_expr   = smt_query_to_z3_wrapper(s2, 0, 0, &s2_inputs);
 
         size_t n = UNPACK_1(CONST(q->query->op3));
-
+#if 0
         print_z3_ast(s1_expr);
         print_z3_ast(s2_expr);
         printf("len: %lu\n", n);
-
+#endif
         Z3_ast c = build_stride_cmpeq(s1_expr, s2_expr, n);
         Z3_ast c_neg = Z3_mk_not(smt_solver.ctx, c);
 

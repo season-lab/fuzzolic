@@ -39,6 +39,7 @@ int model_strnlen_v0(const char* s1);
 int model_strnlen_v1(const char* s1);
 int model_memcmp_v0(const char* s1);
 int model_memcmp_v1(const char* s1);
+int model_memchr(const char* s1);
 
 typedef enum TestcaseInputMode {
     FIXED_SIZE,
@@ -178,6 +179,10 @@ Testcase tests[] = {
      .input_size = 128},
     {.name       = "model_memcmp_v1",
      .f          = F(model_memcmp_v1),
+     .input_type = BUFFER,
+     .input_size = 128},
+    {.name       = "model_memchr",
+     .f          = F(model_memchr),
      .input_type = BUFFER,
      .input_size = 128},
 };

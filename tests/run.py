@@ -185,3 +185,7 @@ def test_model_memcmp_v0(fuzzy):
 
 def test_model_memcmp_v1(fuzzy):
     run("model_memcmp_v1", expected_inputs=1, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
+
+
+def test_model_memchr(fuzzy):
+    run("model_memchr", expected_inputs=1, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
