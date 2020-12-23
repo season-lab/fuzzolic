@@ -387,7 +387,7 @@ class Executor(object):
             p_tracer.stdin.close()
 
         try:
-            p_tracer.wait(10)
+            p_tracer.wait(20)
         except subprocess.TimeoutExpired:
             print('[FUZZOLIC] Sending SIGINT to tracer.')
             p_tracer.send_signal(signal.SIGINT)
