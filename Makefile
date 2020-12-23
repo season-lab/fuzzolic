@@ -105,3 +105,6 @@ advmng-fuzzy:
 
 libpng:
 	reset && make build && ./fuzzolic/fuzzolic.py -d out -o workdir -i ../fuzzolic-evaluation/benchmarks/libpng/seeds/not_kitty.png -- ../fuzzolic-evaluation/benchmarks/libpng/libpng_driver_nopie @@ /dev/null
+
+ci-local:
+	../circleci local execute --job build --volume=`pwd`:"/repo"

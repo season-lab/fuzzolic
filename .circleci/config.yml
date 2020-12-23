@@ -85,7 +85,7 @@ jobs:
           command: |
             # caching AFLplusplus when localbuild
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
-              if [[ -d /repo/utils/AFLplusplus/afl-showmap ]]; then
+              if [[ -f /repo/utils/AFLplusplus/afl-showmap ]]; then
                 cp -a /repo/utils/AFLplusplus .
               fi
             fi
@@ -95,7 +95,7 @@ jobs:
             [[ -f AFLplusplus/afl-showmap ]] || (cd AFLplusplus && make -j `nproc` all && cd qemu_mode && ./build_qemu_support.sh)
             # caching AFLplusplus when localbuild
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
-              if [[ ! -d /repo/utils/AFLplusplus/afl-showmap ]]; then
+              if [[ ! -f /repo/utils/AFLplusplus/afl-showmap ]]; then
                 cp -a . /repo/utils/
               fi
             fi
