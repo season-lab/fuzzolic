@@ -121,7 +121,7 @@ def test_all_concrete(fuzzy):
 
 
 def test_div3(fuzzy):
-    # FixMe: fuzzy fails on this
+    # NOTE: fuzzy cannot deterministically solve this a
     run("div3", expected_inputs=1)
 
 
@@ -158,5 +158,22 @@ def test_adcb(fuzzy):
 
 
 def test_model_strcmp(fuzzy):
-    # FixMe: this models does not extend the input
+    # FixMe: this model does not extend the input
     run("model_strcmp", expected_inputs=1, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
+
+
+def test_model_strncmp(fuzzy):
+    # FixMe: this model does not extend the input
+    run("model_strncmp", expected_inputs=1, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
+
+
+def test_model_strlen(fuzzy):
+    run("model_strlen", expected_inputs=1, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
+
+
+def test_model_strnlen_v0(fuzzy):
+    run("model_strnlen_v0", expected_inputs=1, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
+
+
+def test_model_strnlen_v1(fuzzy):
+    run("model_strnlen_v1", expected_inputs=1, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)

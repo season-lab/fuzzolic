@@ -33,6 +33,10 @@ int adcb(uint8_t);
 
 // models
 int model_strcmp(const char* s1);
+int model_strncmp(const char* s1);
+int model_strlen(const char* s1);
+int model_strnlen_v0(const char* s1);
+int model_strnlen_v1(const char* s1);
 
 typedef enum TestcaseInputMode {
     FIXED_SIZE,
@@ -145,8 +149,25 @@ Testcase tests[] = {
      .input_type = VAR,
      .input_mode = FIXED_SIZE,
      .input_size = 8},
+    //
     {.name       = "model_strcmp",
      .f          = F(model_strcmp),
+     .input_type = BUFFER,
+     .input_size = 128},
+    {.name       = "model_strncmp",
+     .f          = F(model_strncmp),
+     .input_type = BUFFER,
+     .input_size = 128},
+    {.name       = "model_strlen",
+     .f          = F(model_strlen),
+     .input_type = BUFFER,
+     .input_size = 128},
+    {.name       = "model_strnlen_v0",
+     .f          = F(model_strnlen_v0),
+     .input_type = BUFFER,
+     .input_size = 128},
+    {.name       = "model_strnlen_v1",
+     .f          = F(model_strnlen_v1),
      .input_type = BUFFER,
      .input_size = 128},
 };

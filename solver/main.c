@@ -119,7 +119,7 @@ typedef struct {
 } TestcaseMutation;
 
 static Testcase testcase;
-static TestcaseMutation mutations[16];
+static TestcaseMutation mutations[32];
 
 static int debug_translation = 0;
 
@@ -663,6 +663,9 @@ static void perform_mutations(size_t idx,
     while (mutations[mutation_count].type != NO_MUTATION) {
         int  n = snprintf(testcase_name, sizeof(testcase_name),
                      "test_case_%lu_%lu.dat", idx, ++sub_idx + sub_idx_offset);
+#if 0
+        printf("Running mutation: %s\n", testcase_name);
+#endif
         FILE* fp = fopen(testcase_name, "w");
         switch (mutations[mutation_count].type) {
             case TRIM: {
@@ -674,6 +677,7 @@ static void perform_mutations(size_t idx,
 #endif
                     if (i / stride >= mutations[mutation_count].offset &&
                         i / stride < mutations[mutation_count].offset + mutations[mutation_count].len) {
+                        // printf("Skipping value at %lu\n", i);
                         continue;
                     }
                     uint8_t byte = data[i];
@@ -695,8 +699,8 @@ static void perform_mutations(size_t idx,
             }
             case EXTEND:
             case EXTEND_WITH_A:{
-                for (size_t i = 0; i < size * stride; i += stride) {
-                    // printf("EXTENDING at %lu offset %lu wiht len %lu...\n", i / stride, mutations[mutation_count].offset, mutations[mutation_count].len);
+                for (size_t i = 0; i < (size + mutations[mutation_count].len) * stride; i += stride) {
+                    // printf("EXTENDING at %lu offset %lu with len %lu...\n", i / stride, mutations[mutation_count].offset, mutations[mutation_count].len);
                     if (i / stride == mutations[mutation_count].offset) {
                         // printf("EXTENDING at %lu\n", i / stride);
                         if (mutations[mutation_count].type == EXTEND) {
@@ -6603,11 +6607,11 @@ static void smt_model_expr(Query* q)
         Expr*       s1 = q->query->op1;
         GHashTable* s1_inputs = NULL;
         Z3_ast      s1_expr   = smt_query_to_z3_wrapper(s1, 0, 0, &s1_inputs);
-
-        // print_z3_ast(s1_expr);
-        // printf("len: %lu\n", n);
-        // printf("s1_len: %u\n", s1_len);
-
+#if 0
+        print_z3_ast(s1_expr);
+        printf("len: %lu\n", n);
+        printf("s1_len: %u\n", s1_len);
+#endif
         uint64_t val;
         Z3_ast cc = NULL;
         for (size_t i = 0; i < s1_len; i++) {
@@ -6668,6 +6672,10 @@ static void smt_model_expr(Query* q)
                     if (i < s1_len) {
                         // remove additional bytes
                         mutations[mutation_count].type = TRIM;
+                        mutations[mutation_count].offset = min_index + i;
+                        mutations[mutation_count++].len = s1_len - i;
+                        // remove additional bytes and insert string terminator
+                        mutations[mutation_count].type = TRIM_DEL;
                         mutations[mutation_count].offset = min_index + i;
                         mutations[mutation_count++].len = s1_len - i;
                     } else {
