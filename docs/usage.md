@@ -57,7 +57,7 @@ Several other options can be set to enable additional features:
  * `--keep-run-dirs`: intermediate run directories (`workdir/fuzzolic-XXXXX`), containing tracer/solver logs and generated testcases (before discarding uninteresting ones), will not be deleted when this option is set;
  * `--address-reasoning`: fuzzolic will try to generate testcases that cover different memory addresses when detecting a symbolic pointer during the exploration.
  
- The full list of fuzzolic options can be seed using `./fuzzolic/fuzzolic.py --help`.
+ The full list of fuzzolic options can be seen using `./fuzzolic/fuzzolic.py --help`.
 
 After (and during) an exploration, the workdir will typically contain the following files:
 * `{afl-bitmap, afl-crash-bitmap, branch_bitmap, context_bitmap}`: bitmaps used by fuzzolic to evaluate whether a branch query is interesting;
