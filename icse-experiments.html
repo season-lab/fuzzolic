@@ -94,8 +94,12 @@
 <p class="caption"><span class="caption-text">Other</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">ICSE Experiments</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#smt-queries-used-in-section-iv-a">SMT queries used in Section IV-A</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#configurations-for-benchmarks-in-section-iv-c">Configurations for benchmarks in Section IV-C</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#smt-queries-used-in-section-v-a">SMT queries used in Section V-A</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#fuzzy-vs-z3-experiment">Fuzzy vs Z3 experiment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fuzzy-vs-jsf-experiment">Fuzzy vs JSF experiment</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#configurations-for-benchmarks-in-section-v-c">Configurations for benchmarks in Section V-C</a></li>
 </ul>
 </li>
 </ul>
@@ -165,11 +169,100 @@
             
   <div class="section" id="icse-experiments">
 <h1>ICSE Experiments<a class="headerlink" href="#icse-experiments" title="Permalink to this headline">¶</a></h1>
-<div class="section" id="smt-queries-used-in-section-iv-a">
-<h2>SMT queries used in Section IV-A<a class="headerlink" href="#smt-queries-used-in-section-iv-a" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="smt-queries-used-in-section-v-a">
+<h2>SMT queries used in Section V-A<a class="headerlink" href="#smt-queries-used-in-section-v-a" title="Permalink to this headline">¶</a></h2>
+<p>We executed the experiments in Section IV-A on the following queries and seeds:</p>
+<p><em>queries</em>: https://drive.google.com/file/d/1aTBMcWr6pzPNkVyJQnHqpxi2_xz8qgeu/view?usp=sharing
+<em>seeds</em>: https://drive.google.com/file/d/1x9da_dbbaI6DOPScbWzfl5K_WzStLy3L/view?usp=sharing</p>
+<p>We collected the queries using QSYM by dumping the branch conditions of each benchmark when executed on a seed input. In particular, we dumped the path constraint when the execution reached the <code class="docutils literal notranslate"><span class="pre">Solver::negatePath</span></code> function. We also deactivated the query simplification in the <code class="docutils literal notranslate"><span class="pre">Solver::add</span></code> function.</p>
+<p>This table summarize the benchmarks:</p>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Benchmark</th>
+<th>Seed</th>
+<th>Num. of Queries</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>advmng</td>
+<td>mappy.mng</td>
+<td>1481</td>
+</tr>
+<tr>
+<td>advzip</td>
+<td>small_archive.zip</td>
+<td>300</td>
+</tr>
+<tr>
+<td>bloaty</td>
+<td>small_exec.elf</td>
+<td>2085</td>
+</tr>
+<tr>
+<td>bsdtar</td>
+<td>tar.tar</td>
+<td>325</td>
+</tr>
+<tr>
+<td>djpeg</td>
+<td>not_kitty.jpg</td>
+<td>1245</td>
+</tr>
+<tr>
+<td>jhead</td>
+<td>not_kitty.jpg</td>
+<td>405</td>
+</tr>
+<tr>
+<td>libpng</td>
+<td>not_kitty.png</td>
+<td>1673</td>
+</tr>
+<tr>
+<td>lodepng</td>
+<td>not_kitty.png</td>
+<td>1531</td>
+</tr>
+<tr>
+<td>objdump</td>
+<td>small_exec.elf</td>
+<td>992</td>
+</tr>
+<tr>
+<td>optipng</td>
+<td>not_kitty.png</td>
+<td>1740</td>
+</tr>
+<tr>
+<td>readelf</td>
+<td>small_exec.elf</td>
+<td>1055</td>
+</tr>
+<tr>
+<td>tcpdump</td>
+<td>small_capture.pcap</td>
+<td>409</td>
+</tr>
+<tr>
+<td>tiff2pdf</td>
+<td>not_kitty.tiff</td>
+<td>3084</td>
+</tr>
+</tbody>
+</table><div class="section" id="fuzzy-vs-z3-experiment">
+<h3>Fuzzy vs Z3 experiment<a class="headerlink" href="#fuzzy-vs-z3-experiment" title="Permalink to this headline">¶</a></h3>
+<p>The <a class="reference external" href="https://github.com/season-lab/fuzzy-sat/blob/dev/scripts/run_batch_fuzzy_z3.sh">run_batch_fuzzy_z3.sh</a> script can be used to run both <code class="docutils literal notranslate"><span class="pre">z3</span></code> and <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> on the benchmarks.</p>
+<p>To use the script, download the queries and the seeds, extract them, set accordingly <code class="docutils literal notranslate"><span class="pre">QUERIES_PATH</span></code>, <code class="docutils literal notranslate"><span class="pre">SEED_PATH</span></code> and <code class="docutils literal notranslate"><span class="pre">OUTPUT_DIR</span></code> in the script, and run it. It will create two <code class="docutils literal notranslate"><span class="pre">csv</span></code> files for for each benchmark. The script <a class="reference external" href="https://github.com/season-lab/fuzzy-sat/blob/dev/scripts/parse_info_query_splitted.py">parse_info_query_splitted.py</a> can be used to parse the data and print a table about the number of queries proved sat by Fuzzy-SAT and Z3, and the elapsed time.</p>
 </div>
-<div class="section" id="configurations-for-benchmarks-in-section-iv-c">
-<h2>Configurations for benchmarks in Section IV-C<a class="headerlink" href="#configurations-for-benchmarks-in-section-iv-c" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="fuzzy-vs-jsf-experiment">
+<h3>Fuzzy vs JSF experiment<a class="headerlink" href="#fuzzy-vs-jsf-experiment" title="Permalink to this headline">¶</a></h3>
+<p>[…]</p>
+</div>
+</div>
+<div class="section" id="configurations-for-benchmarks-in-section-v-c">
+<h2>Configurations for benchmarks in Section V-C<a class="headerlink" href="#configurations-for-benchmarks-in-section-v-c" title="Permalink to this headline">¶</a></h2>
 <table border="1" class="docutils">
 <thead>
 <tr>

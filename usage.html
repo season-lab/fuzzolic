@@ -86,7 +86,10 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Usage</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#fuzzy-sat-cli">Fuzzy-SAT (cli)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#fuzzy-sat-cli">Fuzzy-SAT (cli)</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#text-ui">Text UI</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="#concolic-execution-standalone-mode">Concolic execution (standalone mode)</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#example">Example</a></li>
 </ul>
@@ -172,12 +175,22 @@
 <h1>Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="fuzzy-sat-cli">
 <h2>Fuzzy-SAT (cli)<a class="headerlink" href="#fuzzy-sat-cli" title="Permalink to this headline">¶</a></h2>
-<p>The program <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> can be used to solve SMT queries using the Fuzzy-SAT algorithm. It takes as input an SMT file, and a binary seed file:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ fuzzy-solver query.smt2 seed.bin
+<p>The program <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> can be used to solve SMT queries using the Fuzzy-SAT algorithm:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ fuzzy-solver --help
+
+Usage: ./build/bin/fuzzy-solver [OPTIONS]
+  -h, --help                print this help and exit
+  -q, --query               SMT2 query filename (required)
+  -s, --seed                binary seed file (required)
+  -o, --out                 output directory
+
+  --dsat                    dump sat queries
+  --dproofs                 dump sat proofs
+  --notui                   no text UI
 </pre></div>
 </div>
-<p>The symbols in the smt2 file MUST be declared as 8-bit bitvectors, and they must be named <code class="docutils literal notranslate"><span class="pre">k!&lt;i&gt;</span></code>, where <code class="docutils literal notranslate"><span class="pre">&lt;i&gt;</span></code> is the index of the i-th byte in the seed that represents the initial assignment for that symbol.</p>
-<p><strong>Example</strong>:</p>
+<p>It takes as mandatory command line arguments an smt2 query file with <code class="docutils literal notranslate"><span class="pre">--query</span></code> and a seed file with <code class="docutils literal notranslate"><span class="pre">--seed</span></code>. Optionally, the user can specify an output folder (<code class="docutils literal notranslate"><span class="pre">--out</span></code>) where the program dump the sat queries (<code class="docutils literal notranslate"><span class="pre">--dsat</span></code>) and the assignments for sat queries (<code class="docutils literal notranslate"><span class="pre">--dproofs</span></code>). <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> will try to solve every <em>assert</em> contained in the <em>smt2</em> file.</p>
+<p>Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and they must be named <code class="docutils literal notranslate"><span class="pre">k!&lt;i&gt;</span></code>, where <code class="docutils literal notranslate"><span class="pre">&lt;i&gt;</span></code> is the index of the i-th byte in the seed that represents the initial assignment for that symbol. This is an example of smt2 query and seed file:</p>
 <p><em>query.smt2</em></p>
 <div class="highlight-smt2 notranslate"><div class="highlight"><pre><span></span>(declare-const k!0 (_ BitVec 8))
 (declare-const k!1 (_ BitVec 8))
@@ -197,8 +210,31 @@
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">0000</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> will try to solve every <em>assert</em> contained in the <em>smt2</em> file, and will print to stdout the number of queries proved SAT, and the elapsed time.</p>
-<p>If the user provides an output directory (<code class="docutils literal notranslate"><span class="pre">--outdir=DIR</span></code>), <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> will dump assignments for SAT queries (one for each assert) to the directory as binary files (using the same convetion of the seed). <em>TO BE IMPLEMENTED</em></p>
+<div class="section" id="text-ui">
+<h3>Text UI<a class="headerlink" href="#text-ui" title="Permalink to this headline">¶</a></h3>
+<p>By default, <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> uses a text UI where it prints useful statistics about the solving process:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>   <span class="n">query</span> <span class="mi">992</span><span class="o">/</span><span class="mi">992</span>
+ <span class="n">o</span><span class="o">-------------------------------------------------------------</span><span class="n">o</span>
+ <span class="o">|</span> <span class="n">num</span> <span class="nb">eval</span><span class="p">:</span>   <span class="mi">400528</span>        <span class="n">sat</span><span class="p">:</span>        <span class="mi">147</span> <span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="p">[</span><span class="mi">727</span> <span class="n">opt</span><span class="p">]</span>     <span class="o">|</span>
+ <span class="o">|</span>                                                             <span class="o">|</span>
+ <span class="o">|</span> <span class="n">its</span><span class="p">:</span>        <span class="mi">91</span>            <span class="n">its</span> <span class="n">ext</span><span class="p">:</span>    <span class="mi">14</span>                    <span class="o">|</span>
+ <span class="o">|</span> <span class="n">sm</span><span class="p">:</span>         <span class="mi">8</span>             <span class="n">bf</span><span class="p">:</span>         <span class="mi">11</span>                    <span class="o">|</span>
+ <span class="o">|</span> <span class="n">rbf</span><span class="p">:</span>        <span class="mi">4</span>             <span class="n">rbf</span> <span class="n">opt</span><span class="p">:</span>    <span class="mi">6</span>                     <span class="o">|</span>
+ <span class="o">|</span> <span class="n">gd</span><span class="p">:</span>         <span class="mi">0</span>             <span class="n">havoc</span><span class="p">:</span>      <span class="mi">0</span>                     <span class="o">|</span>
+ <span class="o">|</span> <span class="n">bit</span> <span class="n">flips</span><span class="p">:</span>  <span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>       <span class="n">byte</span> <span class="n">flips</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>            <span class="o">|</span>
+ <span class="o">|</span> <span class="n">arithms</span><span class="p">:</span>    <span class="mi">0</span>             <span class="n">ints</span><span class="p">:</span>       <span class="mi">0</span>                     <span class="o">|</span>
+ <span class="o">|</span> <span class="n">multigoal</span><span class="p">:</span>  <span class="mi">5</span>             <span class="n">fallbacks</span><span class="p">:</span>  <span class="mi">164</span> <span class="p">(</span><span class="mi">1120</span><span class="p">)</span><span class="n">si</span> <span class="p">(</span><span class="mi">115</span><span class="p">)</span><span class="n">nt</span>  <span class="o">|</span>
+ <span class="o">|</span>                                                             <span class="o">|</span>
+ <span class="o">|</span> <span class="c1"># confl:          1203    # univ def:          0            |</span>
+ <span class="o">|</span> <span class="n">confl</span> <span class="n">cache</span> <span class="n">size</span><span class="p">:</span> <span class="mi">198</span>     <span class="n">ast</span> <span class="n">info</span> <span class="n">cache</span> <span class="n">size</span><span class="p">:</span> <span class="mi">5378</span>         <span class="o">|</span>
+ <span class="o">|</span> <span class="n">num</span> <span class="n">timeouts</span><span class="p">:</span>     <span class="mi">0</span>       <span class="n">ast</span> <span class="n">info</span> <span class="n">cache</span> <span class="n">hits</span><span class="p">:</span> <span class="mi">6387</span>         <span class="o">|</span>
+ <span class="o">|</span>                                                             <span class="o">|</span>
+ <span class="o">|</span> <span class="n">avg</span> <span class="nb">eval</span> <span class="n">time</span><span class="p">:</span> <span class="mf">1.293</span> <span class="n">usec</span>                                   <span class="o">|</span>
+ <span class="n">o</span><span class="o">-------------------------------------------------------------</span><span class="n">o</span>
+</pre></div>
+</div>
+<p>[…]</p>
+</div>
 </div>
 <div class="section" id="concolic-execution-standalone-mode">
 <h2>Concolic execution (standalone mode)<a class="headerlink" href="#concolic-execution-standalone-mode" title="Permalink to this headline">¶</a></h2>
