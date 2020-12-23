@@ -55,27 +55,29 @@ def main():
     parser.add_argument(
         '-d', '--debug', choices=['coverage', 'gdb_trace', 'trace', 'out', 'no_solver', 'gdb_solver'], help='enable debug mode')
     parser.add_argument(
-        '-a', '--afl', help='path to afl workdir')
+        '-a', '--afl', help='path to afl workdir (it enables AFL mode); AFL_PATH must be set.')
     parser.add_argument(
         '-t', '--timeout', type=int, help='set timeout on the solving time (ms)')
     parser.add_argument(
         '-f', '--fuzzy', action='store_true', help='use fuzzy solver')
     parser.add_argument(
-        '-m', '--mixed', action='store_true', help='use fuzzy solver, then Z3 when empty queue')
+        '-m', '--mixed', action='store_true', help='use fuzzy solver, then Z3 when empty queue [experimental]')
     parser.add_argument(
         '-r', '--address-reasoning', action='store_true', help='enable address reasoning')
     parser.add_argument(
-        '-s', '--memory-slice', action='store_true', help='enable memory slice reasoning')
+        '-s', '--memory-slice', action='store_true', help='enable memory slice reasoning [experimental]')
     parser.add_argument(
         '-p', '--optimistic-solving', action='store_true', help='enable optimistic solving')
     parser.add_argument(
-        '-n', '--input-fixed-name', help='Input name to use for input files')
+        '-n', '--input-fixed-name', help='Input name to use for input files [experimental]')
     parser.add_argument(
         '-l', '--symbolic-models', action='store_true', help='Enable symbolic models')
     parser.add_argument(
-        '--fuzz-expr', action='store_true', help='enable fuzz expression (debug)')
+        '--fuzz-expr', action='store_true', help='enable fuzz expression (debug) [experimental]')
     parser.add_argument(
         '-k', '--keep-run-dirs', action='store_true', help='keep run directories')
+    parser.add_argument(
+        '--single-path', action='store_true', help='perform a single-path exploration (first input from the input directory)')
 
     # required args
     parser.add_argument(
@@ -146,6 +148,12 @@ def main():
     keep_run_dirs = args.keep_run_dirs
     if keep_run_dirs is None:
         keep_run_dirs = False
+    single_path = args.single_path
+    if single_path is None:
+        single_path = False
+    if debug is not None:
+        print("WARNING: in debug mode, only a single path is explored.")
+        single_path = True
 
     signal.signal(signal.SIGINT, handler)
 
@@ -153,7 +161,7 @@ def main():
         binary, input, output_dir, binary_args, debug, afl,
         timeout, fuzzy, optimistic_solving, memory_slice_reasoning,
         address_reasoning, fuzz_expr, input_fixed_name, use_smt_if_empty,
-        symbolic_models, keep_run_dirs)
+        symbolic_models, keep_run_dirs, single_path)
     fuzzolic_executor.run()
 
 

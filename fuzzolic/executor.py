@@ -52,7 +52,8 @@ class Executor(object):
                  input_fixed_name=None,
                  use_smt_if_empty=False,
                  use_symbolic_models=False,
-                 keep_run_dirs=False):
+                 keep_run_dirs=False,
+                 single_path=False):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
@@ -104,6 +105,7 @@ class Executor(object):
         self.fuzz_expr = fuzz_expr
         self.input_fixed_name = input_fixed_name
         self.keep_run_dirs = keep_run_dirs
+        self.single_path = single_path
 
         self.__load_config()
         self.__warning_log = set()
@@ -710,7 +712,7 @@ class Executor(object):
             self.fuzz_one(testcase, target)
             end = time.time()
             print("Run took %s secs" % round(end-start, 1))
-            if self.debug or self.fuzz_expr:
+            if self.debug or self.fuzz_expr or self.single_path:
                 return
             self.__check_shutdown_flag()
             testcase, target, force_smt = self.__pick_testcase()
