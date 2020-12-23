@@ -109,6 +109,7 @@ typedef enum {
     TRIM_DEL,
     EXTEND,
     EXTEND_WITH_A,
+    REPLACE,
 } TESTCASE_MUTATION;
 
 typedef struct {
@@ -697,9 +698,31 @@ static void perform_mutations(size_t idx,
                 }
                 break;
             }
+            case REPLACE: {
+                for (size_t i = 0; i < (size + 1) * stride; i += stride) {
+                    if (i / stride == mutations[mutation_count].offset) {
+                        for (size_t k = 0; k < mutations[mutation_count].len; k++) {
+                            Z3_ast byte = Z3_mk_extract(smt_solver.ctx,
+                                                                8 * (k + 1) - 1, 8 * k,
+                                                                mutations[mutation_count].data);
+                            // print_z3_ast(byte);
+                            uint8_t value = conc_query_eval_value(smt_solver.ctx, byte, eval_data,
+                                                                symbols_sizes, symbols_count, NULL);
+                            fwrite(&value, sizeof(char), 1, fp);
+                        }
+                        i += mutations[mutation_count].len * stride;
+                        continue;
+                    }
+                    if (i < size * stride) {
+                        uint8_t byte = data[i];
+                        fwrite(&byte, sizeof(char), 1, fp);
+                    }
+                }
+                break;
+            }
             case EXTEND:
             case EXTEND_WITH_A:{
-                for (size_t i = 0; i < (size + mutations[mutation_count].len) * stride; i += stride) {
+                for (size_t i = 0; i < (size + 1) * stride; i += stride) {
                     // printf("EXTENDING at %lu offset %lu with len %lu...\n", i / stride, mutations[mutation_count].offset, mutations[mutation_count].len);
                     if (i / stride == mutations[mutation_count].offset) {
                         // printf("EXTENDING at %lu\n", i / stride);
@@ -723,8 +746,10 @@ static void perform_mutations(size_t idx,
                             fwrite(&value, sizeof(char), 1, fp);
                         }
                     }
-                    uint8_t byte = data[i];
-                    fwrite(&byte, sizeof(char), 1, fp);
+                    if (i < size * stride) {
+                        uint8_t byte = data[i];
+                        fwrite(&byte, sizeof(char), 1, fp);
+                    }
                 }
                 break;
             }
@@ -6796,10 +6821,11 @@ static void smt_model_expr(Query* q)
         GHashTable* s2_inputs = NULL;
         Z3_ast      s2_expr   = smt_query_to_z3_wrapper(s2, 0, 0, &s2_inputs);
 
-        // print_z3_ast(s1_expr);
-        // print_z3_ast(s2_expr);
-
         size_t n = UNPACK_1(CONST(q->query->op3));
+
+        print_z3_ast(s1_expr);
+        print_z3_ast(s2_expr);
+        printf("len: %lu\n", n);
 
         Z3_ast c = build_stride_cmpeq(s1_expr, s2_expr, n);
         Z3_ast c_neg = Z3_mk_not(smt_solver.ctx, c);
@@ -6826,6 +6852,30 @@ static void smt_model_expr(Query* q)
 #else
             smt_check_fuzzy(q, branch_neg, inputs, config.optimistic_solving);
 #endif
+
+            int64_t min_index = -1;
+            GHashTableIter iter;
+            gpointer       key, value;
+            //
+            g_hash_table_iter_init(&iter, s1_inputs ? s1_inputs : s2_inputs);
+            while (g_hash_table_iter_next(&iter, &key, &value)) {
+                int64_t index = (int64_t) key;
+                if (min_index < 0) min_index = index;
+                else if (index < min_index) min_index = index;
+            }
+
+            int mutation_count = 0;
+            if (min_index >= 0) {
+                mutations[mutation_count].type = REPLACE;
+                mutations[mutation_count].offset = min_index;
+                mutations[mutation_count].len = n;
+                Z3_ast data = s1_inputs 
+                    ? Z3_mk_extract(smt_solver.ctx, n * 8 - 1, 0, s2_expr)
+                    : Z3_mk_extract(smt_solver.ctx, n * 8 - 1, 0, s1_expr);
+                mutations[mutation_count++].data = data;
+            }
+            mutations[mutation_count].type = NO_MUTATION;
+            perform_mutations(GET_QUERY_IDX(q), 999, testcase.data, testcase.size, 1);
         } else {
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
         }
