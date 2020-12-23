@@ -2,15 +2,25 @@
 
 ## Fuzzy-SAT (cli)
 
-The program `fuzzy-solver` can be used to solve SMT queries using the Fuzzy-SAT algorithm. It takes as input an SMT file, and a binary seed file:
+The program `fuzzy-solver` can be used to solve SMT queries using the Fuzzy-SAT algorithm:
 
 ```
-$ fuzzy-solver query.smt2 seed.bin
+$ fuzzy-solver --help
+
+Usage: ./build/bin/fuzzy-solver [OPTIONS]
+  -h, --help                print this help and exit
+  -q, --query               SMT2 query filename (required)
+  -s, --seed                binary seed file (required)
+  -o, --out                 output directory
+
+  --dsat                    dump sat queries
+  --dproofs                 dump sat proofs
+  --notui                   no text UI
 ```
 
-The symbols in the smt2 file MUST be declared as 8-bit bitvectors, and they must be named `k!<i>`, where `<i>` is the index of the i-th byte in the seed that represents the initial assignment for that symbol.
+It takes as mandatory command line arguments an smt2 query file with `--query` and a seed file with `--seed`. Optionally, the user can specify an output folder (`--out`) where the program dump the sat queries (`--dsat`) and the assignments for sat queries (`--dproofs`). `fuzzy-solver` will try to solve every _assert_ contained in the _smt2_ file.
 
-**Example**:
+Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and they must be named `k!<i>`, where `<i>` is the index of the i-th byte in the seed that represents the initial assignment for that symbol. This is an example of smt2 query and seed file:
 
 _query.smt2_
 ``` smt2
@@ -33,9 +43,31 @@ _seed.bin_
 0000
 ```
 
-`fuzzy-solver` will try to solve every _assert_ contained in the _smt2_ file, and will print to stdout the number of queries proved SAT, and the elapsed time.
+#### Text UI
 
-If the user provides an output directory (`--outdir=DIR`), `fuzzy-solver` will dump assignments for SAT queries (one for each assert) to the directory as binary files (using the same convetion of the seed). *TO BE IMPLEMENTED*
+By default, `fuzzy-solver` uses a text UI where it prints useful statistics about the solving process:
+```
+   query 992/992
+ o-------------------------------------------------------------o
+ | num eval:   400528        sat:        147 (1) [727 opt]     |
+ |                                                             |
+ | its:        91            its ext:    14                    |
+ | sm:         8             bf:         11                    |
+ | rbf:        4             rbf opt:    6                     |
+ | gd:         0             havoc:      0                     |
+ | bit flips:  8, 0, 0       byte flips: 0, 0, 0, 0            |
+ | arithms:    0             ints:       0                     |
+ | multigoal:  5             fallbacks:  164 (1120)si (115)nt  |
+ |                                                             |
+ | # confl:          1203    # univ def:          0            |
+ | confl cache size: 198     ast info cache size: 5378         |
+ | num timeouts:     0       ast info cache hits: 6387         |
+ |                                                             |
+ | avg eval time: 1.293 usec                                   |
+ o-------------------------------------------------------------o
+```
+
+[...]
 
 ## Concolic execution (standalone mode)
 
