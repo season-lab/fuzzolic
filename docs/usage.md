@@ -83,7 +83,7 @@ By default, fuzzolic will use the SMT solver Z3. To select Fuzzy-SAT as the solv
 $ ./fuzzolic/fuzzolic.py -f -o ./workdir -i ./seeds -- ./program [args] @@
 ```
 Several other options can be set to enable additional features:
- * `--afl AFL_WORKDIR`: this enables the AFL model, see next section;
+ * `--afl AFL_WORKDIR`: this enables the AFL mode, see next section;
  * `--timeout TIMEOUT`: maximum cumulative solving time (ms) within one path exploration;
  * `--optimistic-solving`: this enables optimistic solving;
  * `--single-path`: fuzzolic will perform a single-path exploration (first input from the seed directory)
