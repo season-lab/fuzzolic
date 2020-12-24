@@ -13,25 +13,23 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          repository: 'ercoppa/ftest'
+          repository: 'ercoppa-bot/fuzzolic-builder-ci'
           persist-credentials: false
           fetch-depth: 0
       
       - name: New revision
         run: |
-          # git checkout main
           echo "${RANDOM}" > revision.dat
           git add revision.dat
       - name: Commit files
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git commit -m "Add changes" -a
-          git pull
+          git commit -m "Update" -a
         
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
-          github_token: 5a48139223c4c8fafc10aa62b1ccd91550463b4b
+          github_token: c61ea64df65108b862bb21a235d9546261449609
           branch: ${{ github.ref }}
-          repository: 'ercoppa/ftest'
+          repository: 'ercoppa-bot/fuzzolic-builder-ci'
