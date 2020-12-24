@@ -35,6 +35,6 @@ jobs:
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
-          github_token: 5a48139223c4c8fafc10aa62b1ccd91550463b4b
+          github_token: ${{ secrets.GITHUB_TOKEN }} # 5a48139223c4c8fafc10aa62b1ccd91550463b4b
           branch: ${{ github.ref }}
           repository: 'season-lab/ftest'
