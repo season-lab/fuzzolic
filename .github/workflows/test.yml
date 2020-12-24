@@ -23,6 +23,7 @@ jobs:
         run: |
           git checkout master
           echo "${RANDOM}" > revision.dat
+          git status -s
       - name: Commit files
         run: |
           git config --local user.email "action@github.com"
