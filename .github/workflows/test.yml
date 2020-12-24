@@ -13,9 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          # Repository name with owner. For example, actions/checkout
-          # Default: ${{ github.repository }}
-          repository: 'season-lab/ftest'
+          repository: 'ercoppa/ftest'
           persist-credentials: false
           fetch-depth: 0
       
@@ -23,7 +21,7 @@ jobs:
         run: |
           git checkout master
           echo "${RANDOM}" > revision.dat
-          git status -s
+          git add revision.dat
       - name: Commit files
         run: |
           git config --local user.email "action@github.com"
@@ -35,6 +33,6 @@ jobs:
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }} # 5a48139223c4c8fafc10aa62b1ccd91550463b4b
+          github_token: 5a48139223c4c8fafc10aa62b1ccd91550463b4b
           branch: ${{ github.ref }}
-          repository: 'season-lab/ftest'
+          repository: 'ercoppa/ftest'
