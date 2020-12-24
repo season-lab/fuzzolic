@@ -19,7 +19,7 @@ jobs:
       
       - name: New revision
         run: |
-          git checkout main
+          # git checkout main
           echo "${RANDOM}" > revision.dat
           git add revision.dat
       - name: Commit files
