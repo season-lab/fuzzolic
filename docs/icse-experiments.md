@@ -6,9 +6,9 @@ We executed the experiments in Section IV-A using the following:
 * [queries](https://drive.google.com/file/d/1aTBMcWr6pzPNkVyJQnHqpxi2_xz8qgeu/view?usp=sharing)
 * [seeds](https://drive.google.com/file/d/1x9da_dbbaI6DOPScbWzfl5K_WzStLy3L/view?usp=sharing)
 
-We collected the queries using QSYM by dumping the branch conditions of each benchmark when executed on a seed input. In particular, we dumped the path constraint when the execution reached the `Solver::negatePath` function. We also deactivated the query simplification in the `Solver::add` function.
+We collected the queries using QSYM by dumping the branch conditions of each benchmark when executed on a seed input (see Table below). In particular, we dumped the path constraints when the execution reached the `Solver::negatePath` function. We also deactivated the query simplification in the `Solver::add` function.
 
-This table summarize the benchmarks:
+This table summarizes the benchmarks:
 
 | Benchmark | Seed               | Num. of Queries |
 |-----------|--------------------|-----------------|
@@ -26,11 +26,11 @@ This table summarize the benchmarks:
 | tcpdump   | small_capture.pcap | 409             |
 | tiff2pdf  | not_kitty.tiff     | 3084            |
 
-#### Fuzzy vs Z3 experiment
+#### Fuzzy-SAT vs Z3 experiment
 
-The [run_batch_fuzzy_z3.sh](https://github.com/season-lab/fuzzy-sat/blob/dev/scripts/run_batch_fuzzy_z3.sh) script can be used to run both `z3` and `fuzzy-solver` on the benchmarks.
+The [run_batch_fuzzy_z3.sh](https://github.com/season-lab/fuzzy-sat/blob/dev/scripts/run_batch_fuzzy_z3.sh) script can be used to run both `z3` and `fuzzy-solver` on the queries.
 
-To use the script, download the queries and the seeds, extract them, set accordingly `QUERIES_PATH`, `SEED_PATH` and `OUTPUT_DIR` in the script, and run it. It will create two `csv` files for for each benchmark. The script [parse_info_query_splitted.py](https://github.com/season-lab/fuzzy-sat/blob/dev/scripts/parse_info_query_splitted.py) can be used to parse the data and print a table about the number of queries proved sat by Fuzzy-SAT and Z3, and the elapsed time.
+To use the script, download the queries and the seeds, extract them, set accordingly `QUERIES_PATH`, `SEED_PATH` and `OUTPUT_DIR` in the script, and run it. It will create two CSV files for for each benchmark. The script [parse_info_query_splitted.py](https://github.com/season-lab/fuzzy-sat/blob/dev/scripts/parse_info_query_splitted.py) can be used to parse these CSV files and print a table about the number of queries proved sat by Fuzzy-SAT and Z3, and the elapsed time.
 
 #### Fuzzy vs JSF experiment
 
