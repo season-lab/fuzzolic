@@ -2,11 +2,9 @@
 
 ## SMT queries used in Section V-A
 
-We executed the experiments in Section IV-A on the following queries and seeds:
-
-_queries_: https://drive.google.com/file/d/1aTBMcWr6pzPNkVyJQnHqpxi2_xz8qgeu/view?usp=sharing
-
-_seeds_: https://drive.google.com/file/d/1x9da_dbbaI6DOPScbWzfl5K_WzStLy3L/view?usp=sharing
+We executed the experiments in Section IV-A using the following:
+* [queries](https://drive.google.com/file/d/1aTBMcWr6pzPNkVyJQnHqpxi2_xz8qgeu/view?usp=sharing)
+* [seeds](https://drive.google.com/file/d/1x9da_dbbaI6DOPScbWzfl5K_WzStLy3L/view?usp=sharing)
 
 We collected the queries using QSYM by dumping the branch conditions of each benchmark when executed on a seed input. In particular, we dumped the path constraint when the execution reached the `Solver::negatePath` function. We also deactivated the query simplification in the `Solver::add` function.
 
