@@ -21,6 +21,7 @@ jobs:
       
       - name: New revision
         run: |
+          git checkout master
           echo "${RANDOM}" > revision.dat
       - name: Commit files
         run: |
