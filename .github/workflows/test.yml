@@ -19,7 +19,7 @@ jobs:
       
       - name: New revision
         run: |
-          git checkout master
+          git checkout main
           echo "${RANDOM}" > revision.dat
           git add revision.dat
       - name: Commit files
@@ -28,10 +28,9 @@ jobs:
           git config --local user.name "GitHub Action"
           git commit -m "Add changes" -a
           git pull
-          git status -s
         
       - name: Push changes
-        uses: ad-m/github-push-action@master
+        uses: ad-m/github-push-action@main
         with:
           github_token: 5a48139223c4c8fafc10aa62b1ccd91550463b4b
           branch: ${{ github.ref }}
