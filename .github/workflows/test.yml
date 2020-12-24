@@ -1,4 +1,4 @@
-name: Circle-CI-publich
+name: Circle-CI-publish
 on: 
   push
 
@@ -17,6 +17,13 @@ jobs:
           # Default: ${{ github.repository }}
           repository: 'season-lab/ftest'
       
-      - name: Run a multi-line script
+      - name: New revision
         run: |
-          ls
+          echo "${RANDOM}" > revision.dat
+          
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref }}
+          repository: 'season-lab/ftest'
