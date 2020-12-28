@@ -131,7 +131,7 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 ```
-Our goal is to automatically find the magic value `0xDEADBEEF` that is expected by the function `magic_check`. Since we do not know the magic value beforehand, we consider as an initial seed ([`tests/example/inputs/seed.dat`](https://github.com/season-lab/fuzzolic/blob/master/tests/example/inputs/seed.dat)) a file containing just the `AAAA\n` characters. Moreover, since fuzzolic is a binary concolic executor, we need to compile the example into a working binary:
+Our goal is to automatically find the magic value `0xDEADBEEF` that is expected by the function `magic_check`. Since we do not know the magic value beforehand, we consider as an initial seed a file ([`tests/example/inputs/seed.dat`](https://github.com/season-lab/fuzzolic/blob/master/tests/example/inputs/seed.dat)) containing just the `AAAA\n` characters. Moreover, since fuzzolic is a binary concolic executor, we need to compile the example into a working binary:
 ```
 $ gcc -o  tests/example/example tests/example/example.c
 ```
