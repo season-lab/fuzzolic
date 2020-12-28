@@ -1,4 +1,4 @@
-name: Circle-CI-publish
+name: Circle-CI-Bot
 on:
   push:
     paths-ignore:
