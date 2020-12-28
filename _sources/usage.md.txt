@@ -169,12 +169,12 @@ Run took 0.2 secs
 ```
 We can see that fuzzolic has generated 6 testcases (`test_case_{1, 3, 5, 7, 11}_0.dat`) during run with id=`00000`, where the first one (`test_case_1_0.dat`) is due to the internal check from the `magic_check` function, while the other ones are due to the `printf` function inside the `main` function (which performs some checks). Moreover, we can see that fuzzolic is keeping only the first test case (see `[+]` in the output) and is discarding the other ones (see `[-]` in the output): only the first test case bring more code coverage in the program. Test case `test_case_1_0.dat` is copied (renaming it as `test_case_000_000.dat`) into both the `queue` and `tests` directories. In the second run (id=`00001`), fuzzolic performs another exploration using the new input (picking it from the queue) and generates only a single test case (`test_case_1_0.dat`), which is however dubbed uninteresting and thus discarded.
 
-If we check the content of the test case, we can use `xxd`:
+If we check the content of the generated test case using `xxd`:
 ```
 $ xxd workdir/tests/test_case_000_000.dat
 00000000: efbe adde 0a 
 ```
-which contain the little endian representation of `0xdeadbeef`.
+we can see that it contaisn the little endian representation of `0xdeadbeef`.
 To test that fuzzolic has indeed found the correct input, we can run again the example program on the generated test case:
 ```
 $ ./tests/example/example workdir/tests/test_case_000_000.dat 
