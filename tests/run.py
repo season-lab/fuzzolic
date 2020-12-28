@@ -16,7 +16,15 @@ def pytest_addoption(parser):
     parser.addoption("--fuzzy", action="store_true", default="run tests using Fuzzy-SAT")
 
 
-def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=False, match_output=False, use_lib_models=False, use_fuzzy=False):
+def run(test, 
+        use_duplicate_testcase_checker=False, 
+        expected_inputs=1, 
+        perf_run=False, 
+        match_output=False, 
+        use_lib_models=False, 
+        use_fuzzy=False,
+        use_memory_slice=False):
+
     initial_input = "%s/%s_0.dat" % (SCRIPT_DIR, test)
     assert os.path.exists(initial_input)
 
@@ -53,6 +61,7 @@ def run(test, use_duplicate_testcase_checker=False, expected_inputs=1, perf_run=
                             + (['-d', 'out'] if perf_run else []) 
                             + (['-l'] if use_lib_models else [])
                             + (['-f'] if use_fuzzy else [])
+                            + (['-s'] if use_memory_slice else [])
                             + [
                                 SCRIPT_DIR + "/driver", test
                             ],
@@ -121,7 +130,8 @@ def test_all_concrete(fuzzy):
 
 
 def test_div3(fuzzy):
-    # NOTE: fuzzy cannot deterministically solve this a
+    if fuzzy:
+        pytest.skip("Fuzzy-SAT cannot deterministically solve this")
     run("div3", expected_inputs=1)
 
 
@@ -189,3 +199,7 @@ def test_model_memcmp_v1(fuzzy):
 
 def test_model_memchr(fuzzy):
     run("model_memchr", expected_inputs=1, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
+
+
+def test_symbolic_index(fuzzy):
+    run("symbolic_index", expected_inputs=1, use_fuzzy=fuzzy, use_memory_slice=True)

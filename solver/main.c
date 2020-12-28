@@ -5834,8 +5834,8 @@ static Z3_ast get_input_from_slice_array(uintptr_t addr, size_t size,
                                             GHashTable* slice_inputs,
                                             uint8_t* out_of_bounds)
 {
-    if (addr < start || addr > end) {
-        printf("ERROR: out of bounds input slice access: addr=%lx\n", addr);
+    if (addr < start || addr + size > end) {
+        printf("ERROR: out of bounds input slice access: addr=%lx start=%lx\n", addr, start);
         *out_of_bounds = 1;
         return NULL;
     }
@@ -5843,7 +5843,13 @@ static Z3_ast get_input_from_slice_array(uintptr_t addr, size_t size,
     uintptr_t index = (addr - start) + offset;
     *out_of_bounds = 0;
     Z3_ast z3_expr = NULL;
+#if 0
+    // big endian:
     for (size_t i = 0; i < size; i++) {
+#else
+    // little endian:
+    for (ssize_t i = size - 1; i >= 0; i--) {
+#endif
         g_hash_table_add(slice_inputs, (gpointer)(index + i));
         Z3_ast byte = input_exprs[index + i];
         if (byte == NULL) {
@@ -5952,14 +5958,14 @@ static void smt_slice_query(Query* q)
                     }
                 }
             }
-
-        } else if (q->query->opkind == MEMORY_INPUT_SLICE_ACCESS) {
-            Expr* input_slice = (q->query + 2);
-            assert(input_slice->opkind == INPUT_SLICE);
-            slice_start = CONST(input_slice->op1);
-            slice_end = CONST(input_slice->op2);
-            offset_start = CONST(input_slice->op3);
         }
+    }
+    if (q->query->opkind == MEMORY_INPUT_SLICE_ACCESS) {
+        Expr* input_slice = (q->query + 2);
+        assert(input_slice->opkind == INPUT_SLICE);
+        slice_start = CONST(input_slice->op1);
+        slice_end = CONST(input_slice->op2);
+        offset_start = CONST(input_slice->op3);
     }
 
     GHashTable* conc_addrs = f_hash_table_new(NULL, NULL);
@@ -6097,6 +6103,7 @@ static void smt_slice_query(Query* q)
                                         slice_start, slice_end, offset_start,
                                         inputs, &is_out_of_slice_bounds);
         // printf("addr=%lx start=%lx end=%lx\n", addr_conc, slice_start, slice_end);
+        // print_z3_ast(v);
         assert(is_out_of_slice_bounds == 0);
     }
 
@@ -6128,9 +6135,11 @@ static void smt_slice_query(Query* q)
             v1 = get_input_from_slice_array(addr, s_load_size,
                                         slice_start, slice_end, offset_start,
                                         inputs, &is_out_of_slice_bounds);
+            // printf("addr=%lx start=%lx end=%lx offset=%lu\n", addr, slice_start, slice_end, offset_start);
             if (is_out_of_slice_bounds) {
                 continue;
             }
+            // print_z3_ast(v1);
         }
 
         fetched_slice_values += 1;

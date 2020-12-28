@@ -108,3 +108,7 @@ libpng:
 
 ci-local:
 	../circleci local execute --job build --volume=`pwd`:"/repo"
+
+.PHONY: docker
+docker:
+	docker run -ti --rm -v `pwd`:/home/ubuntu/fuzzolic ercoppa/fuzzolic-runner-v1 bash

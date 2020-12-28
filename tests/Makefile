@@ -1,7 +1,7 @@
 all: switch.o div3.o
 	gcc-4.8 driver.c atoi.c adcq.s adcl.s adcw.s adcb.s addq.s addl.s \
 		addw.s addb.s simple_if.c mystrcmp.c all_concrete.c switch.o \
-		nested_if.c symbolic_index.c symbolic_input_read.c div3.o \
+		nested_if.c symbolic_index.c symbolic_read.c div3.o \
 		model_strcmp.c model_strncmp.c model_strlen.c model_memcmp.c \
 		model_memchr.c \
 		-o driver
