@@ -285,11 +285,24 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 <div class="section" id="example">
 <h3>Example<a class="headerlink" href="#example" title="Permalink to this headline">¶</a></h3>
 <p>Let us consider the program <a class="reference external" href="https://github.com/season-lab/fuzzolic/blob/master/tests/example/example.c#L21"><code class="docutils literal notranslate"><span class="pre">tests/example/example.c</span></code></a>:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span> <span class="n">magic_check</span><span class="p">(</span><span class="nb">int</span> <span class="n">p</span><span class="p">){</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1">#include &lt;stdio.h&gt;</span>
+<span class="c1">#include &lt;stdlib.h&gt;</span>
+
+<span class="nb">int</span> <span class="n">magic_check</span><span class="p">(</span><span class="nb">int</span> <span class="n">p</span><span class="p">){</span>
     <span class="k">if</span> <span class="p">(</span><span class="n">p</span> <span class="o">==</span> <span class="mh">0xDEADBEEF</span><span class="p">)</span>
         <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
     <span class="k">else</span>
         <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="nb">int</span> <span class="n">get_input</span><span class="p">(</span><span class="n">char</span><span class="o">*</span> <span class="n">fname</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">FILE</span><span class="o">*</span> <span class="n">fp</span> <span class="o">=</span> <span class="n">fopen</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">fp</span> <span class="o">==</span> <span class="n">NULL</span><span class="p">)</span> <span class="n">exit</span><span class="p">(</span><span class="n">EXIT_FAILURE</span><span class="p">);</span>
+    <span class="nb">int</span> <span class="n">data</span><span class="p">;</span>
+    <span class="nb">int</span> <span class="n">r</span> <span class="o">=</span> <span class="n">fread</span><span class="p">(</span><span class="o">&amp;</span><span class="n">data</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">sizeof</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">fp</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">r</span> <span class="o">!=</span> <span class="n">sizeof</span><span class="p">(</span><span class="n">data</span><span class="p">))</span> <span class="n">exit</span><span class="p">(</span><span class="n">EXIT_FAILURE</span><span class="p">);</span>
+    <span class="n">fclose</span><span class="p">(</span><span class="n">fp</span><span class="p">);</span>
+    <span class="k">return</span> <span class="n">data</span><span class="p">;</span>
 <span class="p">}</span>
 
 <span class="nb">int</span> <span class="n">main</span><span class="p">(</span><span class="nb">int</span> <span class="n">argc</span><span class="p">,</span> <span class="n">char</span><span class="o">*</span> <span class="n">argv</span><span class="p">[])</span> <span class="p">{</span>
