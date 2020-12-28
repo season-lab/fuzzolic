@@ -203,3 +203,7 @@ def test_model_memchr(fuzzy):
 
 def test_symbolic_index(fuzzy):
     run("symbolic_index", expected_inputs=1, use_fuzzy=fuzzy, use_memory_slice=True)
+
+
+def test_symbolic_read(fuzzy):
+    run("symbolic_read", expected_inputs=2, match_output=True, use_fuzzy=fuzzy, use_memory_slice=True)
