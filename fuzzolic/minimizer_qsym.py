@@ -100,11 +100,11 @@ class TestcaseMinimizer(object):
 
     def initialize_bitmap(self, filename, map_size):
         if os.path.exists(filename):
-            print("Importing existing bitmap for minimizer")
+            # print("Importing existing bitmap for minimizer")
             bitmap = read_bitmap_file(filename)
             assert len(bitmap) == map_size
         else:
-            print("Initializing bitmap for minimizer")
+            # print("Initializing bitmap for minimizer")
             bitmap = [0] * map_size
             write_bitmap_file(filename, bitmap)
         return bitmap

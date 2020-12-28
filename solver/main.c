@@ -3870,11 +3870,11 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             }
             uintptr_t n_bytes = CONST(query->op2);
             if (concretized_sloads[id]) {
-                printf("Slice input %lu is concretized\n", id);
+                // printf("Slice input %lu is concretized\n", id);
                 r = smt_new_const(CONST(query->op3), 8 * n_bytes);
             } else if (concretized_iloads[id]) {
                 // should be in the cache!
-                printf("Expr ID: %lu\n", GET_EXPR_IDX(query));
+                // printf("Expr ID: %lu\n", GET_EXPR_IDX(query));
                 ABORT();
             } else {
                 r          = smt_new_symbol_int(id, 8 * n_bytes, query);
@@ -5182,7 +5182,7 @@ static void smt_branch_query(Query* q)
     const char* z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
     SAYF("%s", z3_query_str);
 #endif
-#if 0
+#if 1
     // if (GET_QUERY_IDX(q) == 54) {
     print_z3_ast(z3_neg_query);
     // ABORT();
