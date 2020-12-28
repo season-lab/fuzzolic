@@ -174,7 +174,7 @@ If we check the content of the generated test case using `xxd`:
 $ xxd workdir/tests/test_case_000_000.dat
 00000000: efbe adde 0a 
 ```
-we can see that it contaisn the little endian representation of `0xdeadbeef`.
+we can see that it contains five bytes, where the first four bytes are the little endian representation of `0xdeadbeef`.
 To test that fuzzolic has indeed found the correct input, we can run again the example program on the generated test case:
 ```
 $ ./tests/example/example workdir/tests/test_case_000_000.dat 
