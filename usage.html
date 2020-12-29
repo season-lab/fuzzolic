@@ -86,8 +86,12 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Usage</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#fuzzy-sat-cli">Fuzzy-SAT (cli)</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#text-ui">Text UI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#fuzzy-sat">Fuzzy-SAT</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#command-line-interface">Command-line interface</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#text-ui">Text UI</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#c-c-bindings">C/C++ Bindings</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#concolic-execution-standalone-mode">Concolic execution (standalone mode)</a><ul>
@@ -173,8 +177,10 @@
             
   <div class="section" id="usage">
 <h1>Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h1>
-<div class="section" id="fuzzy-sat-cli">
-<h2>Fuzzy-SAT (cli)<a class="headerlink" href="#fuzzy-sat-cli" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="fuzzy-sat">
+<h2>Fuzzy-SAT<a class="headerlink" href="#fuzzy-sat" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="command-line-interface">
+<h3>Command-line interface<a class="headerlink" href="#command-line-interface" title="Permalink to this headline">¶</a></h3>
 <p>The program <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> can be used to solve SMT queries using the Fuzzy-SAT algorithm:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ fuzzy-solver --help
 
@@ -212,7 +218,7 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 </pre></div>
 </div>
 <div class="section" id="text-ui">
-<h3>Text UI<a class="headerlink" href="#text-ui" title="Permalink to this headline">¶</a></h3>
+<h4>Text UI<a class="headerlink" href="#text-ui" title="Permalink to this headline">¶</a></h4>
 <p>By default, <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> uses a text UI where it prints useful statistics about the solving process:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>   <span class="n">query</span> <span class="mi">992</span><span class="o">/</span><span class="mi">992</span>
  <span class="n">o</span><span class="o">-------------------------------------------------------------</span><span class="n">o</span>
@@ -235,6 +241,10 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 </pre></div>
 </div>
 <p>[…]</p>
+</div>
+</div>
+<div class="section" id="c-c-bindings">
+<h3>C/C++ Bindings<a class="headerlink" href="#c-c-bindings" title="Permalink to this headline">¶</a></h3>
 </div>
 </div>
 <div class="section" id="concolic-execution-standalone-mode">
