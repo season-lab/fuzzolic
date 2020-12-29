@@ -1,6 +1,8 @@
 # Usage
 
-## Fuzzy-SAT (cli)
+## Fuzzy-SAT
+
+### Command-line interface
 
 The program `fuzzy-solver` can be used to solve SMT queries using the Fuzzy-SAT algorithm:
 
@@ -69,6 +71,8 @@ By default, `fuzzy-solver` uses a text UI where it prints useful statistics abou
 ```
 
 [...]
+
+### C/C++ Bindings
 
 ## Concolic execution (standalone mode)
 
