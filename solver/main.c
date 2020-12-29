@@ -842,9 +842,11 @@ static void smt_dump_testcase(const uint8_t* data, size_t size, size_t stride,
     FILE* fp = fopen(testcase_name, "w");
     for (size_t i = 0; i < size * stride; i += stride) {
         uint8_t byte = data[i];
+#if 0
         if (byte != testcase.data[i / stride]) {
-            // printf("Solution[%ld]: 0x%x\n", i / stride, byte);
+            printf("Solution[%ld]: 0x%x\n", i / stride, byte);
         }
+#endif
         fwrite(&byte, sizeof(char), 1, fp);
     }
     fclose(fp);
@@ -5182,7 +5184,7 @@ static void smt_branch_query(Query* q)
     const char* z3_query_str = Z3_ast_to_string(smt_solver.ctx, z3_query);
     SAYF("%s", z3_query_str);
 #endif
-#if 1
+#if 0
     // if (GET_QUERY_IDX(q) == 54) {
     print_z3_ast(z3_neg_query);
     // ABORT();
@@ -5645,7 +5647,7 @@ static fuzzy_findall_res_t gd_solution(const uint8_t* out_bytes,
                 printf("Boundaries: [%lu, %lu] - solution: %lu\n", gd_solution_info->start, gd_solution_info->end, solution);
             }
 #endif
-            smt_dump_testcase(out_bytes, testcase.size, 8,
+            smt_dump_testcase(out_bytes, testcase.size, 1,
                                 gd_solution_info->dump_idx,
                                 g_hash_table_size(gd_solution_info->set) - 1);
         }
@@ -5669,6 +5671,10 @@ static int gd_solutions(GHashTable* inputs, Z3_ast z3_query,
     };
     gd_solution_info = &info;
     Z3_ast deps = get_deps(inputs);
+#if 0
+    print_z3_ast(z3_query);
+    print_z3_ast(deps);
+#endif
     z3fuzz_find_all_values(&smt_solver.fuzzy_ctx, z3_query, deps, &gd_solution);
     z3fuzz_find_all_values_gd(&smt_solver.fuzzy_ctx, z3_query, deps, 0, &gd_solution);
     z3fuzz_find_all_values_gd(&smt_solver.fuzzy_ctx, z3_query, deps, 1, &gd_solution);
@@ -5685,7 +5691,7 @@ static int fuzz_query_eval(GHashTable* inputs, Z3_ast expr,
     gpointer       key, value;
 
     Z3_ast query = get_deps(inputs);
-    // print_z3_ast(query);
+    // 
 
     for (size_t i = 0; i < testcase.size; i++) {
         eval_data[i] = testcase.data[i];
@@ -6204,7 +6210,7 @@ static void smt_slice_query(Query* q)
 static int count_addr_testcase = 0;
 static void smt_expr_query(Query* q, OPKIND opkind)
 {
-#if 0
+#if 1
     SAYF("\nTranslating %s %lu (0x%lx) to Z3...\n", opkind_to_str(opkind),
          GET_QUERY_IDX(q), (uintptr_t)q->query->op2);
 #endif
@@ -6217,7 +6223,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
         return;
     }
 
-#if 0
+#if 1
     print_z3_ast(z3_query);
 #endif
 
@@ -6257,8 +6263,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
 
 #if 1
     if (inputs_are_concretized) {
-        // printf("Address is likely to be already concretized. Skipping
-        // it.\n");
+        // printf("Address is likely to be already concretized. Skipping it.\n");
         return;
     }
 #endif

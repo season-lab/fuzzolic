@@ -23,7 +23,8 @@ def run(test,
         match_output=False, 
         use_lib_models=False, 
         use_fuzzy=False,
-        use_memory_slice=False):
+        use_memory_slice=False,
+        use_address_reasoning=False):
 
     initial_input = "%s/%s_0.dat" % (SCRIPT_DIR, test)
     assert os.path.exists(initial_input)
@@ -62,6 +63,7 @@ def run(test,
                             + (['-l'] if use_lib_models else [])
                             + (['-f'] if use_fuzzy else [])
                             + (['-s'] if use_memory_slice else [])
+                            + (['-r'] if use_address_reasoning else [])
                             + [
                                 SCRIPT_DIR + "/driver", test
                             ],
@@ -207,3 +209,7 @@ def test_symbolic_index(fuzzy):
 
 def test_symbolic_read(fuzzy):
     run("symbolic_read", expected_inputs=2, match_output=True, use_fuzzy=fuzzy, use_memory_slice=True)
+
+
+def test_switch(fuzzy):
+    run("switch", expected_inputs=7, match_output=True, use_fuzzy=fuzzy, use_address_reasoning=True)

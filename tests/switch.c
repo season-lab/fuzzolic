@@ -1,20 +1,34 @@
 int switchf(int v) {
+    int res = -1;
     switch (v) {
         case 0:
-            return 1111;
+            res = 1111;
+            break;
         case 1:
-            return 2111;
+            res = 2111;
+            break;
         case 2:
-            return 3333;
+            res = 3333;
+            break;
         case 3:
-            return 4444;
+            res = 4444;
+            break;
         case 4:
-            return 5555;
+            res = 5555;
+            break;
         case 5:
-            return 6666;
+            res = 6666;
+            break;
         case 6:
-            return 7777;
+            res = 7777;
+            break;
         default:
-            return 0;
+            res = 0;
     }
+    if (res == 5555)
+        res = 1;
+    else
+        res = 0;
+
+    return res;
 }

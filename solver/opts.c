@@ -63,7 +63,7 @@ void parse_opts(int argc, char* argv[], Config* config)
     }
 
     char * var = getenv("EXPR_POOL_SHM_KEY");
-    printf("%s\n", var);
+    // printf("%s\n", var);
     if (var) {
         config->expr_pool_shm_key = (uintptr_t)strtoull(var, NULL, 16);
         assert(config->expr_pool_shm_key != ULLONG_MAX);
