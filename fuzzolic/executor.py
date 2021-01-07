@@ -25,7 +25,7 @@ SOLVER_SMT_BIN = SCRIPT_DIR + '/../solver/solver-smt'
 SOLVER_FUZZY_BIN = SCRIPT_DIR + '/../solver/solver-fuzzy'
 TRACER_BIN = SCRIPT_DIR + '/../tracer/x86_64-linux-user/qemu-x86_64'
 
-if not os.environ['AFL_PATH']:
+if 'AFL_PATH' not in os.environ:
     AFL_PATH = SCRIPT_DIR + '/../../AFLplusplus/'
 else:
     AFL_PATH = os.environ['AFL_PATH']
