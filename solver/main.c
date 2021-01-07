@@ -6210,7 +6210,7 @@ static void smt_slice_query(Query* q)
 static int count_addr_testcase = 0;
 static void smt_expr_query(Query* q, OPKIND opkind)
 {
-#if 1
+#if 0
     SAYF("\nTranslating %s %lu (0x%lx) to Z3...\n", opkind_to_str(opkind),
          GET_QUERY_IDX(q), (uintptr_t)q->query->op2);
 #endif
@@ -6223,7 +6223,7 @@ static void smt_expr_query(Query* q, OPKIND opkind)
         return;
     }
 
-#if 1
+#if 0
     print_z3_ast(z3_query);
 #endif
 
