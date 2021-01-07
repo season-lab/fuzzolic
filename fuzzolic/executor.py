@@ -467,8 +467,8 @@ class Executor(object):
             if shm_id > 0:
                 r = self.libc.shmctl(ctypes.c_int(
                     shm_id), ctypes.c_int(IPC_RMID), ctypes.c_int(0))
-                print("Shared memory detach on (%s, %s): %s" %
-                      (shm_key, shm_id, r))
+                #print("Shared memory detach on (%s, %s): %s" %
+                #      (shm_key, shm_id, r))
 
         # parse tracer logs for known errors/warnings
         input_timeout = False

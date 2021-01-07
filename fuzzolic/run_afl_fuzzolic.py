@@ -115,6 +115,8 @@ if filename:
 if "USE_MODELS" in os.environ:
     fuzzolic_args += ["-l"]
     print("Enabling lib models")
+if "KEEP_DIRS" in os.environ:
+    fuzzolic_args += ["-k"]
 
 fuzzolic_args += [ '-a', run_dir + '/afl-slave/', '-i', run_dir + '/afl-slave/queue/', '-o', run_dir + '/fuzzolic', '--'] + program_args
 fuzzolic = subprocess.Popen(fuzzolic_args, stdout=None, stderr=None)
