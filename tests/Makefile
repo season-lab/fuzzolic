@@ -3,7 +3,7 @@ all: switch.o div3.o
 		addw.s addb.s simple_if.c mystrcmp.c all_concrete.c switch.o \
 		nested_if.c symbolic_index.c symbolic_read.c div3.o \
 		model_strcmp.c model_strncmp.c model_strlen.c model_memcmp.c \
-		model_memchr.c \
+		model_memchr.c model_malloc.c \
 		-o driver
 	echo "SYMBOLIC_INJECT_INPUT_MODE=READ_FD_0" > driver.fuzzolic
 	echo "SYMBOLIC_EXEC_START_ADDR=0x"`objdump -d driver | awk -v RS= '/^[[:xdigit:]]+ <foo>/' | head -n 2 | tail -n 1 | cut -f1 -d':' | tr -d '[:space:]'` >> driver.fuzzolic
@@ -30,3 +30,6 @@ run:
 
 run-verbose:
 	python3 -m pytest -v -s run.py
+
+list:
+	find workdir/fuzzolic-00000/ -name test* -type f -print | xargs -I '{}' xxd '{}'

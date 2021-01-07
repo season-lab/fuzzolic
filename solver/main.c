@@ -6566,9 +6566,9 @@ static void strcmp_s1_symbolic(Query* q,
 static void smt_model_expr(Query* q)
 {
     uintptr_t pc = q->address;
-    printf("\n%s query (id=%lu) at %lx\n", opkind_to_str(q->query->opkind), GET_QUERY_IDX(q), pc);
+    printf("\n%s query (id=%lu) at %lx\n", model_to_str(q->model), GET_QUERY_IDX(q), pc);
 
-    if (q->query->opkind == MODEL_STRCMP) {
+    if (q->model == MODEL_STRCMP) {
 
         int res = UNPACK_0(CONST(q->query->op3));
 #if BRANCH_COVERAGE == QSYM
@@ -6638,7 +6638,7 @@ static void smt_model_expr(Query* q)
             strcmp_s1_symbolic(q, s2_expr, s1_expr, s2_len, s1_len, s2_inputs, s1_inputs, is_interesting > 0 ? 0 : -1);
         }
 
-    } else if (q->query->opkind == MODEL_STRLEN) {
+    } else if (q->model == MODEL_STRLEN) {
 
         int s1_len = UNPACK_0(CONST(q->query->op2));
         size_t n = UNPACK_1(CONST(q->query->op2));
@@ -6729,7 +6729,7 @@ static void smt_model_expr(Query* q)
             perform_mutations(GET_QUERY_IDX(q), 999, testcase.data, testcase.size, 1);
         }
 
-    } else if (q->query->opkind == MODEL_MEMCHR) {
+    } else if (q->model == MODEL_MEMCHR) {
 
         uintptr_t offset = UNPACK_0(CONST(q->query->op2));
         uintptr_t len    = UNPACK_1(CONST(q->query->op2));
@@ -6815,7 +6815,7 @@ static void smt_model_expr(Query* q)
         z3_ast_exprs[GET_QUERY_IDX(q)] = cc;
         update_and_add_deps_to_solver(p_inputs, GET_QUERY_IDX(q), NULL, NULL);
 
-    } else if (q->query->opkind == MODEL_MEMCMP) {
+    } else if (q->model == MODEL_MEMCMP) {
 
         int res = UNPACK_0(CONST(q->query->op3));
 #if BRANCH_COVERAGE == QSYM
@@ -6892,6 +6892,49 @@ static void smt_model_expr(Query* q)
         } else {
             update_and_add_deps_to_solver(inputs, GET_QUERY_IDX(q), NULL, NULL);
         }
+    } else if (q->model == MODEL_MALLOC) {
+
+        uint64_t size = UNPACK_0(CONST(q->query->op2));
+
+#if BRANCH_COVERAGE == QSYM
+        int is_interesting = is_interesting_branch(q->address, size == 0, 1);
+#elif BRANCH_COVERAGE == AFL
+#error "Not yet implemented"
+#elif BRANCH_COVERAGE == FUZZOLIC
+#error "Not yet implemented"
+#endif
+
+        if (is_interesting) {
+
+            Expr*       s = q->query->op1;
+            GHashTable* inputs = NULL;
+            Z3_ast      z3_query   = smt_query_to_z3_wrapper(s, 0, 0, &inputs);
+            
+            printf("Running query...\n");
+            GHashTable* solutions = f_hash_table_new(NULL, NULL);
+            g_hash_table_add(solutions, (gpointer) size);
+#if ADDRESS_REASONING == FUZZ_GD
+            gd_solution_info_t info = {
+                .set = solutions,
+                .dump_idx = GET_QUERY_IDX(q),
+                .start = 0,
+                .end = 0
+            };
+            gd_solution_info = &info;
+            Z3_ast deps = get_deps(inputs);
+            z3fuzz_find_all_values(&smt_solver.fuzzy_ctx, z3_query, deps, &gd_solution);
+            z3fuzz_find_all_values_gd(&smt_solver.fuzzy_ctx, z3_query, deps, 0, &gd_solution);
+            z3fuzz_find_all_values_gd(&smt_solver.fuzzy_ctx, z3_query, deps, 1, &gd_solution);
+            gd_solution_info = NULL;
+#else
+            int r = fuzz_query_eval(inputs, z3_query, solutions, GET_QUERY_IDX(q), 0, 0);
+#endif
+            int n_solutions = g_hash_table_size(solutions);
+            printf("Found %d solution for %s expr.\n", n_solutions - 1,
+                model_to_str(q->model));
+            f_hash_table_destroy(solutions);
+        }        
+    
     } else {
         ABORT("Not yet implemented");
     }
@@ -6936,10 +6979,7 @@ static void smt_query(Query* q)
         case CONSISTENCY_CHECK:
             smt_consistency_expr(q);
             break;
-        case MODEL_STRCMP:
-        case MODEL_STRLEN:
-        case MODEL_MEMCHR:
-        case MODEL_MEMCMP:
+        case MODEL:
             smt_model_expr(q);
             break;
         default:

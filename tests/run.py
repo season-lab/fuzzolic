@@ -80,8 +80,11 @@ def run(test,
         print("Slowdown: %s" % round(slowdown, 1))
         assert slowdown < 50
 
-    testcases = glob.glob(WORKDIR + "/tests/test_*.dat") 
-    assert len(testcases) == expected_inputs
+    if expected_inputs > 0:
+        testcases = glob.glob(WORKDIR + "/tests/test_*.dat") 
+        assert len(testcases) == expected_inputs
+    else:
+        testcases = glob.glob(WORKDIR + "/fuzzolic-00000/test_*.dat")
 
     match = False
 
@@ -170,12 +173,10 @@ def test_adcb(fuzzy):
 
 
 def test_model_strcmp(fuzzy):
-    # FixMe: this model does not extend the input
     run("model_strcmp", expected_inputs=1, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
 
 
 def test_model_strncmp(fuzzy):
-    # FixMe: this model does not extend the input
     run("model_strncmp", expected_inputs=1, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
 
 
@@ -213,3 +214,19 @@ def test_symbolic_read(fuzzy):
 
 def test_switch(fuzzy):
     run("switch", expected_inputs=7, match_output=True, use_fuzzy=fuzzy, use_address_reasoning=True)
+
+
+def test_model_malloc_min(fuzzy):
+    run("model_malloc_min", expected_inputs=0, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
+
+
+def test_model_malloc_max(fuzzy):
+    run("model_malloc_max", expected_inputs=0, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
+
+
+def test_model_realloc_min(fuzzy):
+    run("model_realloc_min", expected_inputs=0, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
+
+
+def test_model_realloc_max(fuzzy):
+    run("model_realloc_max", expected_inputs=0, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)

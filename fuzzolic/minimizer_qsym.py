@@ -21,7 +21,7 @@ NEW = 0
 OLD = 1
 CRASH = 2
 
-TIMEOUT = 5 * 1000
+TIMEOUT = 3 * 1000
 MAP_SIZE = 65536
 AT_FILE = "@@"
 

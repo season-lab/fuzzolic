@@ -40,6 +40,10 @@ int model_strnlen_v1(const char* s1);
 int model_memcmp_v0(const char* s1);
 int model_memcmp_v1(const char* s1);
 int model_memchr(const char* s1);
+int model_malloc_min(uint32_t);
+int model_malloc_max(uint32_t);
+int model_realloc_min(uint32_t);
+int model_realloc_max(uint32_t);
 
 typedef enum TestcaseInputMode {
     FIXED_SIZE,
@@ -185,6 +189,26 @@ Testcase tests[] = {
      .f          = F(model_memchr),
      .input_type = BUFFER,
      .input_size = 128},
+    {.name       = "model_malloc_min",
+     .f          = F(model_malloc_min),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 8},
+    {.name       = "model_malloc_max",
+     .f          = F(model_malloc_max),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 8},
+    {.name       = "model_realloc_min",
+     .f          = F(model_realloc_min),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 8},
+    {.name       = "model_realloc_max",
+     .f          = F(model_realloc_max),
+     .input_type = VAR,
+     .input_mode = FIXED_SIZE,
+     .input_size = 8},
 };
 
 void foo(Testcase* t)

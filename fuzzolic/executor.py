@@ -361,8 +361,7 @@ class Executor(object):
                                     )
         RUNNING_PROCESSES.append(p_tracer)
 
-        # print()
-        # print("Tracer started")
+        # print("\n Tracer started")
 
         # emit testcate on stdin
         if self.debug != 'gdb_tracer':
@@ -433,6 +432,7 @@ class Executor(object):
                     p_solver.wait(SOLVER_TIMEOUT / 1000)
                     break
                 except subprocess.TimeoutExpired:
+                    # print("Elapsed %s secs (timeout: %s, elapsed: %s)"  % ((SOLVER_TIMEOUT / 1000), self.timeout, elapsed)) 
                     pass
                 elapsed += SOLVER_TIMEOUT
                 if self.timeout > 0 and elapsed > (self.timeout + 10000):
@@ -440,6 +440,7 @@ class Executor(object):
                     break
 
             if SHUTDOWN or timeout:
+                print('[FUZZOLIC] Solver is taking to long. Let us stop it.')
                 p_solver.send_signal(signal.SIGUSR2)
                 try:
                     p_solver.wait(SOLVER_TIMEOUT)
