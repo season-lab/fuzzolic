@@ -59,7 +59,7 @@ def main():
     parser.add_argument(
         '-t', '--timeout', type=int, help='set timeout on the solving time (ms)')
     parser.add_argument(
-        '-f', '--fuzzy', action='store_true', help='use fuzzy solver')
+        '-f', '--fuzzy', action='store_true', help='use Fuzzy-SAT solver')
     parser.add_argument(
         '-m', '--mixed', action='store_true', help='use fuzzy solver, then Z3 when empty queue [experimental]')
     parser.add_argument(

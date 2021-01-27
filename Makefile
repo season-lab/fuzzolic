@@ -111,4 +111,6 @@ ci-local:
 
 .PHONY: docker
 docker:
-	docker run -ti --rm -v `pwd`:/home/ubuntu/fuzzolic ercoppa/fuzzolic-runner-v1 bash
+	docker run -ti --rm -v `pwd`:/home/ubuntu/fuzzolic \
+		-v `pwd`/../fuzzolic-evaluation/benchmarks/:/home/ubuntu/benchmarks \
+		ercoppa/fuzzolic-runner-v1 bash
