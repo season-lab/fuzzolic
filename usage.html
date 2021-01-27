@@ -3,9 +3,9 @@
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" >
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
   <title>Usage &mdash; Fuzzolic  documentation</title>
   
@@ -16,7 +16,10 @@
 
   
   
+
   
+  
+
   
 
   
@@ -51,7 +54,7 @@
           
 
           
-            <a href="index.html" class="icon icon-home" alt="Documentation Home"> Fuzzolic
+            <a href="index.html" class="icon icon-home"> Fuzzolic
           
 
           
@@ -150,6 +153,8 @@
 
 
 
+
+
 <div role="navigation" aria-label="breadcrumbs navigation">
 
   <ul class="wy-breadcrumbs">
@@ -161,7 +166,7 @@
     
       <li class="wy-breadcrumbs-aside">
         
-            
+          
             <a href="_sources/usage.md.txt" rel="nofollow"> View page source</a>
           
         
@@ -260,13 +265,13 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 </div>
 <p>Several other options can be set to enable additional features:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">--afl</span> <span class="pre">AFL_WORKDIR</span></code>: this enables the AFL mode, see <a class="reference external" href="#hybrid-fuzzing-afl-mode">next section</a>;</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--timeout</span> <span class="pre">TIMEOUT</span></code>: maximum cumulative solving time (ms) within one path exploration;</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--optimistic-solving</span></code>: this enables optimistic solving;</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--single-path</span></code>: fuzzolic will perform a single-path exploration (first input from the seed directory)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-a,</span> <span class="pre">--afl</span> <span class="pre">AFL_WORKDIR</span></code>: this enables the AFL mode, see <a class="reference external" href="#hybrid-fuzzing-afl-mode">next section</a>;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-t,</span> <span class="pre">--timeout</span> <span class="pre">TIMEOUT</span></code>: maximum cumulative solving time (ms) within one path exploration;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-p,</span> <span class="pre">--optimistic-solving</span></code>: this enables optimistic solving;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-k,</span> <span class="pre">--single-path</span></code>: fuzzolic will perform a single-path exploration (first input from the seed directory)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">--keep-run-dirs</span></code>: intermediate run directories (<code class="docutils literal notranslate"><span class="pre">workdir/fuzzolic-XXXXX</span></code>), containing tracer/solver logs and generated testcases (before discarding uninteresting ones), will not be deleted when this option is set;</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--address-reasoning</span></code>: fuzzolic will try to generate testcases that cover different memory addresses when detecting a symbolic pointer during the exploration;</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--symbolic-models</span></code>: fuzzolic will use models to reason over known libc functions (e.g., <code class="docutils literal notranslate"><span class="pre">memcpy</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-r,</span> <span class="pre">--address-reasoning</span></code>: fuzzolic will try to generate testcases that cover different memory addresses when detecting a symbolic pointer during the exploration;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-l,</span> <span class="pre">--symbolic-models</span></code>: fuzzolic will use models to reason over known libc functions (e.g., <code class="docutils literal notranslate"><span class="pre">memcpy</span></code>).</p></li>
 </ul>
 <p>The full list of fuzzolic options can be seen using <code class="docutils literal notranslate"><span class="pre">./fuzzolic/fuzzolic.py</span> <span class="pre">--help</span></code>.</p>
 <p>After (and during) an exploration, the workdir will typically contain the following files:</p>
@@ -382,6 +387,63 @@ Correct value [deadbeef] :)
 </div>
 <div class="section" id="hybrid-fuzzing-afl-mode">
 <h2>Hybrid fuzzing (AFL mode)<a class="headerlink" href="#hybrid-fuzzing-afl-mode" title="Permalink to this headline">¶</a></h2>
+<p>To run fuzzolic in parallel with AFL++, you can use the scrupt <code class="docutils literal notranslate"><span class="pre">fuzzolic/run_afl_fuzzolic.py</span></code> which supports most features from fuzzolic. For instance, to fuzz a program <code class="docutils literal notranslate"><span class="pre">lodepng</span></code> which takes as argument the input file to process, then:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ ./fuzzolic/run_afl_fuzzolic.py --address-reasoning --optimistic-solving --fuzzy -o workdir/ -i ../benchmarks/lodepng/seeds/ -- ../benchmarks/lodepng/lodepng @
+</pre></div>
+</div>
+<p>The output should be similar to:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Running</span><span class="p">:</span> <span class="o">/</span><span class="n">home</span><span class="o">/</span><span class="n">ubuntu</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">/</span><span class="n">utils</span><span class="o">/</span><span class="n">AFLplusplus</span><span class="o">/</span><span class="n">afl</span><span class="o">-</span><span class="n">fuzz</span> <span class="o">-</span><span class="n">c</span> <span class="mi">0</span> <span class="o">-</span><span class="n">M</span> <span class="n">afl</span><span class="o">-</span><span class="n">master</span> <span class="o">-</span><span class="n">o</span> <span class="n">workdir</span><span class="o">/</span> <span class="o">-</span><span class="n">i</span> <span class="o">../</span><span class="n">benchmarks</span><span class="o">/</span><span class="n">lodepng</span><span class="o">/</span><span class="n">seeds</span><span class="o">/</span> <span class="o">-</span><span class="n">Q</span> <span class="o">--</span> <span class="o">../</span><span class="n">benchmarks</span><span class="o">/</span><span class="n">lodepng</span><span class="o">/</span><span class="n">lodepng</span> <span class="o">@@</span>
+<span class="n">Waiting</span> <span class="mi">30</span> <span class="n">seconds</span> <span class="n">before</span> <span class="n">starting</span> <span class="n">slave</span><span class="o">.</span>
+<span class="n">Running</span><span class="p">:</span> <span class="o">/</span><span class="n">home</span><span class="o">/</span><span class="n">ubuntu</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">/</span><span class="n">utils</span><span class="o">/</span><span class="n">AFLplusplus</span><span class="o">/</span><span class="n">afl</span><span class="o">-</span><span class="n">fuzz</span> <span class="o">-</span><span class="n">S</span> <span class="n">afl</span><span class="o">-</span><span class="n">slave</span> <span class="o">-</span><span class="n">o</span> <span class="n">workdir</span><span class="o">/</span> <span class="o">-</span><span class="n">i</span> <span class="o">../</span><span class="n">benchmarks</span><span class="o">/</span><span class="n">lodepng</span><span class="o">/</span><span class="n">seeds</span><span class="o">/</span> <span class="o">-</span><span class="n">Q</span> <span class="o">../</span><span class="n">benchmarks</span><span class="o">/</span><span class="n">lodepng</span><span class="o">/</span><span class="n">lodepng</span> <span class="o">@@</span>
+<span class="n">Waiting</span> <span class="mi">30</span> <span class="n">seconds</span> <span class="n">before</span> <span class="n">starting</span> <span class="n">fuzzolic</span><span class="o">.</span>
+<span class="n">Running</span><span class="p">:</span> <span class="o">/</span><span class="n">home</span><span class="o">/</span><span class="n">ubuntu</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">.</span><span class="n">py</span> <span class="o">-</span><span class="n">f</span> <span class="o">-</span><span class="n">p</span> <span class="o">-</span><span class="n">r</span> <span class="o">-</span><span class="n">a</span> <span class="n">workdir</span><span class="o">//</span><span class="n">afl</span><span class="o">-</span><span class="n">slave</span><span class="o">/</span> <span class="o">-</span><span class="n">i</span> <span class="n">workdir</span><span class="o">//</span><span class="n">afl</span><span class="o">-</span><span class="n">slave</span><span class="o">/</span><span class="n">queue</span><span class="o">/</span> <span class="o">-</span><span class="n">o</span> <span class="n">workdir</span><span class="o">//</span><span class="n">fuzzolic</span> <span class="o">--</span> <span class="o">../</span><span class="n">benchmarks</span><span class="o">/</span><span class="n">lodepng</span><span class="o">/</span><span class="n">lodepng</span> <span class="o">@@</span>
+<span class="n">Configuration</span> <span class="n">file</span> <span class="k">for</span> <span class="o">/</span><span class="n">home</span><span class="o">/</span><span class="n">ubuntu</span><span class="o">/</span><span class="n">benchmarks</span><span class="o">/</span><span class="n">lodepng</span><span class="o">/</span><span class="n">lodepng_decode_cg_nocksm</span> <span class="ow">is</span> <span class="n">missing</span><span class="o">.</span> <span class="n">Using</span> <span class="n">default</span> <span class="n">configuration</span><span class="o">.</span>
+
+<span class="n">Running</span> <span class="n">directory</span><span class="p">:</span> <span class="o">/</span><span class="n">home</span><span class="o">/</span><span class="n">ubuntu</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">/</span><span class="n">workdir</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">-</span><span class="mi">00000</span>
+<span class="n">Using</span> <span class="n">Fuzzy</span><span class="o">-</span><span class="n">SAT</span> <span class="n">solver</span>
+<span class="n">Run</span> <span class="n">took</span> <span class="mf">0.2</span> <span class="n">secs</span>
+
+<span class="n">Running</span> <span class="n">directory</span><span class="p">:</span> <span class="o">/</span><span class="n">home</span><span class="o">/</span><span class="n">ubuntu</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">/</span><span class="n">workdir</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">-</span><span class="mi">00001</span>
+<span class="n">Using</span> <span class="n">Fuzzy</span><span class="o">-</span><span class="n">SAT</span> <span class="n">solver</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_6_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_11_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">-</span><span class="p">]</span> <span class="n">Discarding</span> <span class="n">test_case_13_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_3_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_12_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_14_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_15_666</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_1_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">-</span><span class="p">]</span> <span class="n">Discarding</span> <span class="n">test_case_9_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_10_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_8_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_4_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_7_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_2_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="p">[</span><span class="o">+</span><span class="p">]</span> <span class="n">Keeping</span> <span class="n">test_case_5_0</span><span class="o">.</span><span class="n">dat</span>
+<span class="n">Run</span> <span class="n">took</span> <span class="mf">0.2</span> <span class="n">secs</span>
+
+<span class="p">[</span><span class="o">...</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>The generated inputs can be found in <code class="docutils literal notranslate"><span class="pre">&lt;output_dir&gt;/*/queue/</span></code>, i.e.:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">&lt;output_dir&gt;/afl-master/queue/</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&lt;output_dir&gt;/afl-slave/queue/</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&lt;output_dir&gt;/fuzzolic/queue/</span></code></p></li>
+</ul>
+<p>while crashing inputs under <code class="docutils literal notranslate"><span class="pre">&lt;output_dir&gt;/*//crashes/</span></code></p>
+<p>To run AFL++ with additional flags, you can use <code class="docutils literal notranslate"><span class="pre">-g,</span> <span class="pre">--afl-args</span> <span class="pre">&quot;&lt;args&gt;&quot;</span></code>. E.g.:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">fuzzolic</span><span class="o">/</span><span class="n">run_afl_fuzzolic</span><span class="o">.</span><span class="n">py</span> <span class="o">-</span><span class="n">o</span> <span class="n">workdir</span><span class="o">/</span> <span class="o">-</span><span class="n">i</span> <span class="o">../</span><span class="n">benchmarks</span><span class="o">/</span><span class="n">lodepng</span><span class="o">/</span><span class="n">seeds</span><span class="o">/</span> <span class="o">-</span><span class="n">g</span> <span class="s2">&quot;-m 1G&quot;</span> <span class="o">--</span> <span class="o">../</span><span class="n">benchmarks</span><span class="o">/</span><span class="n">lodepng</span><span class="o">/</span><span class="n">lodepng</span> <span class="o">@@</span>
+</pre></div>
+</div>
+<p>will set the additional arguments <code class="docutils literal notranslate"><span class="pre">-m</span> <span class="pre">1G</span></code> for AFL++:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Running</span><span class="p">:</span> <span class="o">/</span><span class="n">home</span><span class="o">/</span><span class="n">ubuntu</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">/</span><span class="n">utils</span><span class="o">/</span><span class="n">AFLplusplus</span><span class="o">/</span><span class="n">afl</span><span class="o">-</span><span class="n">fuzz</span> <span class="o">-</span><span class="n">c</span> <span class="mi">0</span> <span class="o">-</span><span class="n">M</span> <span class="n">afl</span><span class="o">-</span><span class="n">master</span> <span class="o">-</span><span class="n">o</span> <span class="n">workdir</span><span class="o">/</span> <span class="o">-</span><span class="n">i</span> <span class="o">../</span><span class="n">benchmarks</span><span class="o">/</span><span class="n">lodepng</span><span class="o">/</span><span class="n">seeds</span><span class="o">/</span> <span class="o">-</span><span class="n">m</span> <span class="mi">1</span><span class="n">G</span> <span class="o">-</span><span class="n">Q</span> <span class="o">--</span> <span class="o">../</span><span class="n">benchmarks</span><span class="o">/</span><span class="n">lodepng</span><span class="o">/</span><span class="n">lodepng</span> <span class="o">@@</span>
+<span class="n">Waiting</span> <span class="mi">30</span> <span class="n">seconds</span> <span class="n">before</span> <span class="n">starting</span> <span class="n">slave</span><span class="o">.</span>
+<span class="n">Running</span><span class="p">:</span> <span class="o">/</span><span class="n">home</span><span class="o">/</span><span class="n">ubuntu</span><span class="o">/</span><span class="n">fuzzolic</span><span class="o">/</span><span class="n">utils</span><span class="o">/</span><span class="n">AFLplusplus</span><span class="o">/</span><span class="n">afl</span><span class="o">-</span><span class="n">fuzz</span> <span class="o">-</span><span class="n">S</span> <span class="n">afl</span><span class="o">-</span><span class="n">slave</span> <span class="o">-</span><span class="n">o</span> <span class="n">workdir</span><span class="o">/</span> <span class="o">-</span><span class="n">i</span> <span class="o">../</span><span class="n">benchmarks</span><span class="o">/</span><span class="n">lodepng</span><span class="o">/</span><span class="n">seeds</span><span class="o">/</span> <span class="o">-</span><span class="n">m</span> <span class="mi">1</span><span class="n">G</span> <span class="o">-</span><span class="n">Q</span> <span class="o">../</span><span class="n">benchmarks</span><span class="o">/</span><span class="n">lodepng</span><span class="o">/</span><span class="n">lodepng</span> <span class="o">@@</span>
+<span class="n">Waiting</span> <span class="mi">30</span> <span class="n">seconds</span> <span class="n">before</span> <span class="n">starting</span> <span class="n">fuzzolic</span><span class="o">.</span>
+<span class="p">[</span><span class="o">...</span><span class="p">]</span>
+</pre></div>
+</div>
 </div>
 </div>
 
@@ -390,37 +452,29 @@ Correct value [deadbeef] :)
            
           </div>
           <footer>
-  
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-        <a href="internals.html" class="btn btn-neutral float-right" title="Internals" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
-      
-      
-        <a href="install.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
-      
+        <a href="internals.html" class="btn btn-neutral float-right" title="Internals" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="install.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
-  
 
   <hr/>
 
   <div role="contentinfo">
     <p>
-        
-        &copy; Copyright 2021, Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu
+        &#169; Copyright 2021, Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu.
 
     </p>
   </div>
     
     
     
-    Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
     
-    <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a>
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
     
     provided by <a href="https://readthedocs.org">Read the Docs</a>. 
 
 </footer>
-
         </div>
       </div>
 
