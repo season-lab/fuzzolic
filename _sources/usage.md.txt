@@ -202,7 +202,7 @@ and see that the input is accepted by the program.
 
 ## Hybrid fuzzing (AFL mode)
 
-To run fuzzolic in parallel with AFL++, you can use the scrupt `fuzzolic/run_afl_fuzzolic.py` which supports most features from fuzzolic. For instance, to fuzz a program `lodepng` which takes as argument the input file to process, then:
+To run fuzzolic in parallel with AFL++, you can use the script `fuzzolic/run_afl_fuzzolic.py` which supports most features from fuzzolic. For instance, to fuzz a program `lodepng` which takes as argument the input file to process, then:
 ```
 $ ./fuzzolic/run_afl_fuzzolic.py --address-reasoning --optimistic-solving --fuzzy -o workdir/ -i ../benchmarks/lodepng/seeds/ -- ../benchmarks/lodepng/lodepng @
 ```
