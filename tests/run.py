@@ -78,7 +78,7 @@ def run(test,
     if perf_run:
         slowdown = emulated_time / native_time
         print("Slowdown: %s" % round(slowdown, 1))
-        assert slowdown < 50
+        assert slowdown < 70
 
     if expected_inputs > 0:
         testcases = glob.glob(WORKDIR + "/tests/test_*.dat") 
