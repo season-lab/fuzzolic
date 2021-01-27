@@ -7,6 +7,13 @@ fuzzing + concolic = fuzzolic :)
 
     <p><img src="https://circleci.com/gh/ercoppa-bot/fuzzolic-builder-ci.svg?style=shield&circle-token=d8cf8057b9bcee4923bdb611402eb5d7a7b8f0fe" /><br /></p>
 
+News
+------------
+
+* We are currently finalizing a journal manuscript that covers the internals of fuzzolic.
+* The preprint of paper accepted at ICSE will be available on February 12 (camera-ready deadline).
+* The code of Fuzzolic and Fuzzy-SAT will be released immediately after the talk at ICSE 2021.
+
 Publications
 ------------
 
