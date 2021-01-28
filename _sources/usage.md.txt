@@ -75,7 +75,7 @@ By default, `fuzzy-solver` uses a text UI where it prints useful statistics abou
 ### C/C++ Bindings
 We designed FuzzySAT as a library to be integrated into a concolic executor, the APIs of the library are:
 
-### z3fuzz_init
+## z3fuzz_init
 ```
 void z3fuzz_init(fuzzy_ctx_t* ctx, Z3_context z3_ctx, char*   seed_filename,
                  void* /* NULL */, void* /* NULL */, unsigned timeout)
@@ -86,20 +86,20 @@ It initializes the context of the solver:
 - `seed_filename`: The filename of the seed.
 - `timeout`: Timeout for trying to solve a query in ms. If zero, no timeout.
 
-### z3fuzz_free
+## z3fuzz_free
 ```
 void z3fuzz_free(fuzzy_ctx_t* ctx);
 ```
 It releases all the memory allocated by `z3fuzz_init`.
 
-### z3fuzz_evaluate_expression
+## z3fuzz_evaluate_expression
 ```
 unsigned long z3fuzz_evaluate_expression(fuzzy_ctx_t* ctx, Z3_ast expr,
                                          unsigned char* values);
 ```
 It evaluates the expression `expr` using as assignments the values in the array `values`.
 
-### z3fuzz_query_check_light
+## z3fuzz_query_check_light
 ```
 int z3fuzz_query_check_light(fuzzy_ctx_t* ctx, Z3_ast pi,
                              Z3_ast                branch_condition,
@@ -114,7 +114,7 @@ It tries to solve the query `branch_condition ^ pi` using the FuzzySAT algorithm
 - `proof_size`: Output value that contains the resulting length of assignment if the function returns `1`.
 The function succeeds if it returns `1`.
 
-### z3fuzz_get_optimistic_sol
+## z3fuzz_get_optimistic_sol
 ```
 int z3fuzz_get_optimistic_sol(fuzzy_ctx_t* ctx, unsigned char const** proof,
                               unsigned long* proof_size);
@@ -125,7 +125,7 @@ If the last call to `z3fuzz_query_check_light` failed, this function tries to fi
 - `proof_size`: Output value that contains the resulting length of assignment if the function returns `1`.
 The function succeeds if it returns `1`.
 
-### z3fuzz_maximize and z3fuzz_minimize
+## z3fuzz_maximize and z3fuzz_minimize
 ```
 unsigned long z3fuzz_maximize(fuzzy_ctx_t* ctx, Z3_ast pi, Z3_ast to_maximize,
                               unsigned char const** out_values,
@@ -141,7 +141,7 @@ They try to minimize/maximize the expression given the constraints in `pi`. The 
 - `out_len`: Output variable that contains the size of the `out_values` buffer.
 The function always succeeds (but it is not guaranteed that it finds a global minimum/maximum) and returns the value of the maximized/minimized expression.
 
-### z3fuzz_find_all_values and z3fuzz_find_all_values_gd
+## z3fuzz_find_all_values and z3fuzz_find_all_values_gd
 ```
 typedef enum fuzzy_findall_res_t {
     Z3FUZZ_GIVE_NEXT,
@@ -164,13 +164,13 @@ The user must define a `callback` that is called every time the function generat
 
 The only difference between `z3fuzz_find_all_values_gd` and `z3fuzz_find_all_values` is that the former uses gradient descent to generate the values, and has an additional parameter (`to_min`) that specify the direction (towards the maximum or the minimum).
 
-### z3fuzz_notify_constraint
+## z3fuzz_notify_constraint
 ```
 void z3fuzz_notify_constraint(fuzzy_ctx_t* ctx, Z3_ast constraint);
 ```
 It notifies the solver that a new constraint has been added to `pi`.
 
-### z3fuzz_dump_proof
+## z3fuzz_dump_proof
 ```
 void z3fuzz_dump_proof(fuzzy_ctx_t* ctx, const char* filename,
                        unsigned char const* proof, unsigned long proof_size);
