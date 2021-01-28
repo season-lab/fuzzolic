@@ -20,7 +20,7 @@ Usage: ./build/bin/fuzzy-solver [OPTIONS]
   --notui                   no text UI
 ```
 
-It takes as mandatory command line arguments an smt2 query file with `--query` and a seed file with `--seed`. Optionally, the user can specify an output folder (`--out`) where it dumps the sat queries (`--dsat`) and the assignments for sat queries (`--dproofs`).
+It takes as mandatory command-line arguments an smt2 query file with `--query` and a seed file with `--seed`. Optionally, the user can specify an output folder (`--out`) where it dumps the sat queries (`--dsat`) and the assignments for sat queries (`--dproofs`).
 
 `fuzzy-solver` will try to solve every _assert_ contained in the _smt2_ file.
 Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and they must be named `k!<i>`, where `<i>` is the index of the i-th byte in the seed that represents the initial assignment for that symbol. This is an example of smt2 query and seed file:
@@ -73,6 +73,109 @@ By default, `fuzzy-solver` uses a text UI where it prints useful statistics abou
 [...]
 
 ### C/C++ Bindings
+We designed FuzzySAT as a library to be integrated into a concolic executor, the APIs of the library are:
+
+### z3fuzz_init
+```
+void z3fuzz_init(fuzzy_ctx_t* ctx, Z3_context z3_ctx, char*   seed_filename,
+                 void* /* NULL */, void* /* NULL */, unsigned timeout)
+```
+It initializes the context of the solver:
+- `ctx`: The context of the solver to be initialized.
+- `z3_ctx`: The z3 context (already initialized).
+- `seed_filename`: The filename of the seed.
+- `timeout`: Timeout for trying to solve a query in ms. If zero, no timeout.
+
+### z3fuzz_free
+```
+void z3fuzz_free(fuzzy_ctx_t* ctx);
+```
+It releases all the memory allocated by `z3fuzz_init`.
+
+### z3fuzz_evaluate_expression
+```
+unsigned long z3fuzz_evaluate_expression(fuzzy_ctx_t* ctx, Z3_ast expr,
+                                         unsigned char* values);
+```
+It evaluates the expression `expr` using as assignments the values in the array `values`.
+
+### z3fuzz_query_check_light
+```
+int z3fuzz_query_check_light(fuzzy_ctx_t* ctx, Z3_ast pi,
+                             Z3_ast                branch_condition,
+                             unsigned char const** proof,
+                             unsigned long*        proof_size);
+```
+It tries to solve the query `branch_condition ^ pi` using the FuzzySAT algorithm.
+- `ctx`: The context of the solver.
+- `pi`: The path constraint.
+- `branch_condition`: The branch condition.
+- `proof`: Output buffer that contains the resulting assignment if the function returns `1`.
+- `proof_size`: Output value that contains the resulting length of assignment if the function returns `1`.
+The function succeeds if it returns `1`.
+
+### z3fuzz_get_optimistic_sol
+```
+int z3fuzz_get_optimistic_sol(fuzzy_ctx_t* ctx, unsigned char const** proof,
+                              unsigned long* proof_size);
+```
+If the last call to `z3fuzz_query_check_light` failed, this function tries to find an assignment for the `branch_condition` of the last query, ignoring `pi`.
+- `ctx`: The context of the solver.
+- `proof`: Output buffer that contains the resulting assignment if the function returns `1`.
+- `proof_size`: Output value that contains the resulting length of assignment if the function returns `1`.
+The function succeeds if it returns `1`.
+
+### z3fuzz_maximize and z3fuzz_minimize
+```
+unsigned long z3fuzz_maximize(fuzzy_ctx_t* ctx, Z3_ast pi, Z3_ast to_maximize,
+                              unsigned char const** out_values,
+                              unsigned long*        out_len);
+unsigned long z3fuzz_minimize(fuzzy_ctx_t* ctx, Z3_ast pi, Z3_ast to_minimize,
+                              unsigned char const** out_values,
+                              unsigned long*        out_len);
+```
+They try to minimize/maximize the expression given the constraints in `pi`. The functions assume that `pi` evaluates as True in the seed.
+- `ctx`: The context of the solver.
+- `to_maximize` / `to_minimize`: The expression to maximize/minimize. It must be a bitvector.
+- `out_values`: Output buffer that contains the assignments that maximize/minimize the expression.
+- `out_len`: Output variable that contains the size of the `out_values` buffer.
+The function always succeeds (but it is not guaranteed that it finds a global minimum/maximum) and returns the value of the maximized/minimized expression.
+
+### z3fuzz_find_all_values and z3fuzz_find_all_values_gd
+```
+typedef enum fuzzy_findall_res_t {
+    Z3FUZZ_GIVE_NEXT,
+    Z3FUZZ_STOP
+} fuzzy_findall_res_t;
+
+void z3fuzz_find_all_values(
+    fuzzy_ctx_t* ctx, Z3_ast expr, Z3_ast pi,
+    fuzzy_findall_res_t (*callback)(unsigned char const* out_bytes,
+                                    unsigned long        out_bytes_len,
+                                    unsigned long        val));
+void z3fuzz_find_all_values_gd(
+    fuzzy_ctx_t* ctx, Z3_ast expr, Z3_ast pi, int to_min,
+    fuzzy_findall_res_t (*callback)(unsigned char const* out_bytes,
+                                    unsigned long        out_bytes_len,
+                                    unsigned long        val));
+```
+They generate valid assignments for the expression `expr` given the path constraint `pi`.
+The user must define a `callback` that is called every time the function generates a new assignment. The callback can return `Z3FUZZ_GIVE_NEXT` to ask for another value or `Z3FUZZ_STOP` to stop.
+
+The only difference between `z3fuzz_find_all_values_gd` and `z3fuzz_find_all_values` is that the former uses gradient descent to generate the values, and has an additional parameter (`to_min`) that specify the direction (towards the maximum or the minimum).
+
+### z3fuzz_notify_constraint
+```
+void z3fuzz_notify_constraint(fuzzy_ctx_t* ctx, Z3_ast constraint);
+```
+It notifies the solver that a new constraint has been added to `pi`.
+
+### z3fuzz_dump_proof
+```
+void z3fuzz_dump_proof(fuzzy_ctx_t* ctx, const char* filename,
+                       unsigned char const* proof, unsigned long proof_size);
+```
+It dumps a proof returned by `z3fuzz_query_check_light` or `z3fuzz_get_optimistic_sol` and dumps it on the file specified in `filename`.
 
 ## Concolic execution (standalone mode)
 

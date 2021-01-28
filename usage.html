@@ -95,6 +95,15 @@
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#c-c-bindings">C/C++ Bindings</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#z3fuzz-init">z3fuzz_init</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#z3fuzz-free">z3fuzz_free</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#z3fuzz-evaluate-expression">z3fuzz_evaluate_expression</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#z3fuzz-query-check-light">z3fuzz_query_check_light</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#z3fuzz-get-optimistic-sol">z3fuzz_get_optimistic_sol</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#z3fuzz-maximize-and-z3fuzz-minimize">z3fuzz_maximize and z3fuzz_minimize</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd">z3fuzz_find_all_values and z3fuzz_find_all_values_gd</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#z3fuzz-notify-constraint">z3fuzz_notify_constraint</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#z3fuzz-dump-proof">z3fuzz_dump_proof</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#concolic-execution-standalone-mode">Concolic execution (standalone mode)</a><ul>
@@ -200,7 +209,7 @@ Usage: ./build/bin/fuzzy-solver [OPTIONS]
   --notui                   no text UI
 </pre></div>
 </div>
-<p>It takes as mandatory command line arguments an smt2 query file with <code class="docutils literal notranslate"><span class="pre">--query</span></code> and a seed file with <code class="docutils literal notranslate"><span class="pre">--seed</span></code>. Optionally, the user can specify an output folder (<code class="docutils literal notranslate"><span class="pre">--out</span></code>) where it dumps the sat queries (<code class="docutils literal notranslate"><span class="pre">--dsat</span></code>) and the assignments for sat queries (<code class="docutils literal notranslate"><span class="pre">--dproofs</span></code>).</p>
+<p>It takes as mandatory command-line arguments an smt2 query file with <code class="docutils literal notranslate"><span class="pre">--query</span></code> and a seed file with <code class="docutils literal notranslate"><span class="pre">--seed</span></code>. Optionally, the user can specify an output folder (<code class="docutils literal notranslate"><span class="pre">--out</span></code>) where it dumps the sat queries (<code class="docutils literal notranslate"><span class="pre">--dsat</span></code>) and the assignments for sat queries (<code class="docutils literal notranslate"><span class="pre">--dproofs</span></code>).</p>
 <p><code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> will try to solve every <em>assert</em> contained in the <em>smt2</em> file.
 Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and they must be named <code class="docutils literal notranslate"><span class="pre">k!&lt;i&gt;</span></code>, where <code class="docutils literal notranslate"><span class="pre">&lt;i&gt;</span></code> is the index of the i-th byte in the seed that represents the initial assignment for that symbol. This is an example of smt2 query and seed file:</p>
 <p><em>query.smt2</em></p>
@@ -250,6 +259,125 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 </div>
 <div class="section" id="c-c-bindings">
 <h3>C/C++ Bindings<a class="headerlink" href="#c-c-bindings" title="Permalink to this headline">¶</a></h3>
+<p>We designed FuzzySAT as a library to be integrated into a concolic executor, the APIs of the library are:</p>
+</div>
+<div class="section" id="z3fuzz-init">
+<h3>z3fuzz_init<a class="headerlink" href="#z3fuzz-init" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_init</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_context</span> <span class="n">z3_ctx</span><span class="p">,</span> <span class="n">char</span><span class="o">*</span>   <span class="n">seed_filename</span><span class="p">,</span>
+                 <span class="n">void</span><span class="o">*</span> <span class="o">/*</span> <span class="n">NULL</span> <span class="o">*/</span><span class="p">,</span> <span class="n">void</span><span class="o">*</span> <span class="o">/*</span> <span class="n">NULL</span> <span class="o">*/</span><span class="p">,</span> <span class="n">unsigned</span> <span class="n">timeout</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>It initializes the context of the solver:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ctx</span></code>: The context of the solver to be initialized.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">z3_ctx</span></code>: The z3 context (already initialized).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">seed_filename</span></code>: The filename of the seed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">timeout</span></code>: Timeout for trying to solve a query in ms. If zero, no timeout.</p></li>
+</ul>
+</div>
+<div class="section" id="z3fuzz-free">
+<h3>z3fuzz_free<a class="headerlink" href="#z3fuzz-free" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_free</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>It releases all the memory allocated by <code class="docutils literal notranslate"><span class="pre">z3fuzz_init</span></code>.</p>
+</div>
+<div class="section" id="z3fuzz-evaluate-expression">
+<h3>z3fuzz_evaluate_expression<a class="headerlink" href="#z3fuzz-evaluate-expression" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">unsigned</span> <span class="n">long</span> <span class="n">z3fuzz_evaluate_expression</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">expr</span><span class="p">,</span>
+                                         <span class="n">unsigned</span> <span class="n">char</span><span class="o">*</span> <span class="n">values</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>It evaluates the expression <code class="docutils literal notranslate"><span class="pre">expr</span></code> using as assignments the values in the array <code class="docutils literal notranslate"><span class="pre">values</span></code>.</p>
+</div>
+<div class="section" id="z3fuzz-query-check-light">
+<h3>z3fuzz_query_check_light<a class="headerlink" href="#z3fuzz-query-check-light" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span> <span class="n">z3fuzz_query_check_light</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">pi</span><span class="p">,</span>
+                             <span class="n">Z3_ast</span>                <span class="n">branch_condition</span><span class="p">,</span>
+                             <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">**</span> <span class="n">proof</span><span class="p">,</span>
+                             <span class="n">unsigned</span> <span class="n">long</span><span class="o">*</span>        <span class="n">proof_size</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>It tries to solve the query <code class="docutils literal notranslate"><span class="pre">branch_condition</span> <span class="pre">^</span> <span class="pre">pi</span></code> using the FuzzySAT algorithm.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ctx</span></code>: The context of the solver.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pi</span></code>: The path constraint.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">branch_condition</span></code>: The branch condition.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proof</span></code>: Output buffer that contains the resulting assignment if the function returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proof_size</span></code>: Output value that contains the resulting length of assignment if the function returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.
+The function succeeds if it returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p></li>
+</ul>
+</div>
+<div class="section" id="z3fuzz-get-optimistic-sol">
+<h3>z3fuzz_get_optimistic_sol<a class="headerlink" href="#z3fuzz-get-optimistic-sol" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span> <span class="n">z3fuzz_get_optimistic_sol</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">**</span> <span class="n">proof</span><span class="p">,</span>
+                              <span class="n">unsigned</span> <span class="n">long</span><span class="o">*</span> <span class="n">proof_size</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>If the last call to <code class="docutils literal notranslate"><span class="pre">z3fuzz_query_check_light</span></code> failed, this function tries to find an assignment for the <code class="docutils literal notranslate"><span class="pre">branch_condition</span></code> of the last query, ignoring <code class="docutils literal notranslate"><span class="pre">pi</span></code>.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ctx</span></code>: The context of the solver.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proof</span></code>: Output buffer that contains the resulting assignment if the function returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proof_size</span></code>: Output value that contains the resulting length of assignment if the function returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.
+The function succeeds if it returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p></li>
+</ul>
+</div>
+<div class="section" id="z3fuzz-maximize-and-z3fuzz-minimize">
+<h3>z3fuzz_maximize and z3fuzz_minimize<a class="headerlink" href="#z3fuzz-maximize-and-z3fuzz-minimize" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">unsigned</span> <span class="n">long</span> <span class="n">z3fuzz_maximize</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">pi</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">to_maximize</span><span class="p">,</span>
+                              <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">**</span> <span class="n">out_values</span><span class="p">,</span>
+                              <span class="n">unsigned</span> <span class="n">long</span><span class="o">*</span>        <span class="n">out_len</span><span class="p">);</span>
+<span class="n">unsigned</span> <span class="n">long</span> <span class="n">z3fuzz_minimize</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">pi</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">to_minimize</span><span class="p">,</span>
+                              <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">**</span> <span class="n">out_values</span><span class="p">,</span>
+                              <span class="n">unsigned</span> <span class="n">long</span><span class="o">*</span>        <span class="n">out_len</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>They try to minimize/maximize the expression given the constraints in <code class="docutils literal notranslate"><span class="pre">pi</span></code>. The functions assume that <code class="docutils literal notranslate"><span class="pre">pi</span></code> evaluates as True in the seed.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ctx</span></code>: The context of the solver.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">to_maximize</span></code> / <code class="docutils literal notranslate"><span class="pre">to_minimize</span></code>: The expression to maximize/minimize. It must be a bitvector.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">out_values</span></code>: Output buffer that contains the assignments that maximize/minimize the expression.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">out_len</span></code>: Output variable that contains the size of the <code class="docutils literal notranslate"><span class="pre">out_values</span></code> buffer.
+The function always succeeds (but it is not guaranteed that it finds a global minimum/maximum) and returns the value of the maximized/minimized expression.</p></li>
+</ul>
+</div>
+<div class="section" id="z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd">
+<h3>z3fuzz_find_all_values and z3fuzz_find_all_values_gd<a class="headerlink" href="#z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">typedef</span> <span class="n">enum</span> <span class="n">fuzzy_findall_res_t</span> <span class="p">{</span>
+    <span class="n">Z3FUZZ_GIVE_NEXT</span><span class="p">,</span>
+    <span class="n">Z3FUZZ_STOP</span>
+<span class="p">}</span> <span class="n">fuzzy_findall_res_t</span><span class="p">;</span>
+
+<span class="n">void</span> <span class="n">z3fuzz_find_all_values</span><span class="p">(</span>
+    <span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">expr</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">pi</span><span class="p">,</span>
+    <span class="n">fuzzy_findall_res_t</span> <span class="p">(</span><span class="o">*</span><span class="n">callback</span><span class="p">)(</span><span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">*</span> <span class="n">out_bytes</span><span class="p">,</span>
+                                    <span class="n">unsigned</span> <span class="n">long</span>        <span class="n">out_bytes_len</span><span class="p">,</span>
+                                    <span class="n">unsigned</span> <span class="n">long</span>        <span class="n">val</span><span class="p">));</span>
+<span class="n">void</span> <span class="n">z3fuzz_find_all_values_gd</span><span class="p">(</span>
+    <span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">expr</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">pi</span><span class="p">,</span> <span class="nb">int</span> <span class="n">to_min</span><span class="p">,</span>
+    <span class="n">fuzzy_findall_res_t</span> <span class="p">(</span><span class="o">*</span><span class="n">callback</span><span class="p">)(</span><span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">*</span> <span class="n">out_bytes</span><span class="p">,</span>
+                                    <span class="n">unsigned</span> <span class="n">long</span>        <span class="n">out_bytes_len</span><span class="p">,</span>
+                                    <span class="n">unsigned</span> <span class="n">long</span>        <span class="n">val</span><span class="p">));</span>
+</pre></div>
+</div>
+<p>They generate valid assignments for the expression <code class="docutils literal notranslate"><span class="pre">expr</span></code> given the path constraint <code class="docutils literal notranslate"><span class="pre">pi</span></code>.
+The user must define a <code class="docutils literal notranslate"><span class="pre">callback</span></code> that is called every time the function generates a new assignment. The callback can return <code class="docutils literal notranslate"><span class="pre">Z3FUZZ_GIVE_NEXT</span></code> to ask for another value or <code class="docutils literal notranslate"><span class="pre">Z3FUZZ_STOP</span></code> to stop.</p>
+<p>The only difference between <code class="docutils literal notranslate"><span class="pre">z3fuzz_find_all_values_gd</span></code> and <code class="docutils literal notranslate"><span class="pre">z3fuzz_find_all_values</span></code> is that the former uses gradient descent to generate the values, and has an additional parameter (<code class="docutils literal notranslate"><span class="pre">to_min</span></code>) that specify the direction (towards the maximum or the minimum).</p>
+</div>
+<div class="section" id="z3fuzz-notify-constraint">
+<h3>z3fuzz_notify_constraint<a class="headerlink" href="#z3fuzz-notify-constraint" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_notify_constraint</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">constraint</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>It notifies the solver that a new constraint has been added to <code class="docutils literal notranslate"><span class="pre">pi</span></code>.</p>
+</div>
+<div class="section" id="z3fuzz-dump-proof">
+<h3>z3fuzz_dump_proof<a class="headerlink" href="#z3fuzz-dump-proof" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_dump_proof</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">const</span> <span class="n">char</span><span class="o">*</span> <span class="n">filename</span><span class="p">,</span>
+                       <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">*</span> <span class="n">proof</span><span class="p">,</span> <span class="n">unsigned</span> <span class="n">long</span> <span class="n">proof_size</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>It dumps a proof returned by <code class="docutils literal notranslate"><span class="pre">z3fuzz_query_check_light</span></code> or <code class="docutils literal notranslate"><span class="pre">z3fuzz_get_optimistic_sol</span></code> and dumps it on the file specified in <code class="docutils literal notranslate"><span class="pre">filename</span></code>.</p>
 </div>
 </div>
 <div class="section" id="concolic-execution-standalone-mode">
