@@ -94,18 +94,20 @@
 <li class="toctree-l4"><a class="reference internal" href="#text-ui">Text UI</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#c-c-bindings">C/C++ Bindings</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#c-c-bindings">C/C++ Bindings</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#z3fuzz-init">z3fuzz_init</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#z3fuzz-free">z3fuzz_free</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#z3fuzz-evaluate-expression">z3fuzz_evaluate_expression</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#z3fuzz-query-check-light">z3fuzz_query_check_light</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#z3fuzz-get-optimistic-sol">z3fuzz_get_optimistic_sol</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#z3fuzz-maximize-and-z3fuzz-minimize">z3fuzz_maximize and z3fuzz_minimize</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd">z3fuzz_find_all_values and z3fuzz_find_all_values_gd</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#z3fuzz-notify-constraint">z3fuzz_notify_constraint</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#z3fuzz-dump-proof">z3fuzz_dump_proof</a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="#z3fuzz-init">z3fuzz_init</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#z3fuzz-free">z3fuzz_free</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#z3fuzz-evaluate-expression">z3fuzz_evaluate_expression</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#z3fuzz-query-check-light">z3fuzz_query_check_light</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#z3fuzz-get-optimistic-sol">z3fuzz_get_optimistic_sol</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#z3fuzz-maximize-and-z3fuzz-minimize">z3fuzz_maximize and z3fuzz_minimize</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd">z3fuzz_find_all_values and z3fuzz_find_all_values_gd</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#z3fuzz-notify-constraint">z3fuzz_notify_constraint</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#z3fuzz-dump-proof">z3fuzz_dump_proof</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="#concolic-execution-standalone-mode">Concolic execution (standalone mode)</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#example">Example</a></li>
 </ul>
@@ -260,10 +262,8 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 <div class="section" id="c-c-bindings">
 <h3>C/C++ Bindings<a class="headerlink" href="#c-c-bindings" title="Permalink to this headline">¶</a></h3>
 <p>We designed FuzzySAT as a library to be integrated into a concolic executor, the APIs of the library are:</p>
-</div>
-</div>
 <div class="section" id="z3fuzz-init">
-<h2>z3fuzz_init<a class="headerlink" href="#z3fuzz-init" title="Permalink to this headline">¶</a></h2>
+<h4>z3fuzz_init<a class="headerlink" href="#z3fuzz-init" title="Permalink to this headline">¶</a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_init</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_context</span> <span class="n">z3_ctx</span><span class="p">,</span> <span class="n">char</span><span class="o">*</span>   <span class="n">seed_filename</span><span class="p">,</span>
                  <span class="n">void</span><span class="o">*</span> <span class="o">/*</span> <span class="n">NULL</span> <span class="o">*/</span><span class="p">,</span> <span class="n">void</span><span class="o">*</span> <span class="o">/*</span> <span class="n">NULL</span> <span class="o">*/</span><span class="p">,</span> <span class="n">unsigned</span> <span class="n">timeout</span><span class="p">)</span>
 </pre></div>
@@ -277,14 +277,14 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 </ul>
 </div>
 <div class="section" id="z3fuzz-free">
-<h2>z3fuzz_free<a class="headerlink" href="#z3fuzz-free" title="Permalink to this headline">¶</a></h2>
+<h4>z3fuzz_free<a class="headerlink" href="#z3fuzz-free" title="Permalink to this headline">¶</a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_free</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>It releases all the memory allocated by <code class="docutils literal notranslate"><span class="pre">z3fuzz_init</span></code>.</p>
 </div>
 <div class="section" id="z3fuzz-evaluate-expression">
-<h2>z3fuzz_evaluate_expression<a class="headerlink" href="#z3fuzz-evaluate-expression" title="Permalink to this headline">¶</a></h2>
+<h4>z3fuzz_evaluate_expression<a class="headerlink" href="#z3fuzz-evaluate-expression" title="Permalink to this headline">¶</a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">unsigned</span> <span class="n">long</span> <span class="n">z3fuzz_evaluate_expression</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">expr</span><span class="p">,</span>
                                          <span class="n">unsigned</span> <span class="n">char</span><span class="o">*</span> <span class="n">values</span><span class="p">);</span>
 </pre></div>
@@ -292,7 +292,7 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 <p>It evaluates the expression <code class="docutils literal notranslate"><span class="pre">expr</span></code> using as assignments the values in the array <code class="docutils literal notranslate"><span class="pre">values</span></code>.</p>
 </div>
 <div class="section" id="z3fuzz-query-check-light">
-<h2>z3fuzz_query_check_light<a class="headerlink" href="#z3fuzz-query-check-light" title="Permalink to this headline">¶</a></h2>
+<h4>z3fuzz_query_check_light<a class="headerlink" href="#z3fuzz-query-check-light" title="Permalink to this headline">¶</a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span> <span class="n">z3fuzz_query_check_light</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">pi</span><span class="p">,</span>
                              <span class="n">Z3_ast</span>                <span class="n">branch_condition</span><span class="p">,</span>
                              <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">**</span> <span class="n">proof</span><span class="p">,</span>
@@ -310,7 +310,7 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 <p>The function succeeds if it returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p>
 </div>
 <div class="section" id="z3fuzz-get-optimistic-sol">
-<h2>z3fuzz_get_optimistic_sol<a class="headerlink" href="#z3fuzz-get-optimistic-sol" title="Permalink to this headline">¶</a></h2>
+<h4>z3fuzz_get_optimistic_sol<a class="headerlink" href="#z3fuzz-get-optimistic-sol" title="Permalink to this headline">¶</a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span> <span class="n">z3fuzz_get_optimistic_sol</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">**</span> <span class="n">proof</span><span class="p">,</span>
                               <span class="n">unsigned</span> <span class="n">long</span><span class="o">*</span> <span class="n">proof_size</span><span class="p">);</span>
 </pre></div>
@@ -324,7 +324,7 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 <p>The function succeeds if it returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p>
 </div>
 <div class="section" id="z3fuzz-maximize-and-z3fuzz-minimize">
-<h2>z3fuzz_maximize and z3fuzz_minimize<a class="headerlink" href="#z3fuzz-maximize-and-z3fuzz-minimize" title="Permalink to this headline">¶</a></h2>
+<h4>z3fuzz_maximize and z3fuzz_minimize<a class="headerlink" href="#z3fuzz-maximize-and-z3fuzz-minimize" title="Permalink to this headline">¶</a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">unsigned</span> <span class="n">long</span> <span class="n">z3fuzz_maximize</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">pi</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">to_maximize</span><span class="p">,</span>
                               <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">**</span> <span class="n">out_values</span><span class="p">,</span>
                               <span class="n">unsigned</span> <span class="n">long</span><span class="o">*</span>        <span class="n">out_len</span><span class="p">);</span>
@@ -343,7 +343,7 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 <p>The function always succeeds (but it is not guaranteed that it finds a global minimum/maximum) and returns the value of the maximized/minimized expression.</p>
 </div>
 <div class="section" id="z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd">
-<h2>z3fuzz_find_all_values and z3fuzz_find_all_values_gd<a class="headerlink" href="#z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd" title="Permalink to this headline">¶</a></h2>
+<h4>z3fuzz_find_all_values and z3fuzz_find_all_values_gd<a class="headerlink" href="#z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd" title="Permalink to this headline">¶</a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">typedef</span> <span class="n">enum</span> <span class="n">fuzzy_findall_res_t</span> <span class="p">{</span>
     <span class="n">Z3FUZZ_GIVE_NEXT</span><span class="p">,</span>
     <span class="n">Z3FUZZ_STOP</span>
@@ -366,19 +366,21 @@ The user must define a <code class="docutils literal notranslate"><span class="p
 <p>The only difference between <code class="docutils literal notranslate"><span class="pre">z3fuzz_find_all_values_gd</span></code> and <code class="docutils literal notranslate"><span class="pre">z3fuzz_find_all_values</span></code> is that the former uses gradient descent to generate the values, and has an additional parameter (<code class="docutils literal notranslate"><span class="pre">to_min</span></code>) that specify the direction (towards the maximum or the minimum).</p>
 </div>
 <div class="section" id="z3fuzz-notify-constraint">
-<h2>z3fuzz_notify_constraint<a class="headerlink" href="#z3fuzz-notify-constraint" title="Permalink to this headline">¶</a></h2>
+<h4>z3fuzz_notify_constraint<a class="headerlink" href="#z3fuzz-notify-constraint" title="Permalink to this headline">¶</a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_notify_constraint</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">constraint</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>It notifies the solver that a new constraint has been added to <code class="docutils literal notranslate"><span class="pre">pi</span></code>.</p>
 </div>
 <div class="section" id="z3fuzz-dump-proof">
-<h2>z3fuzz_dump_proof<a class="headerlink" href="#z3fuzz-dump-proof" title="Permalink to this headline">¶</a></h2>
+<h4>z3fuzz_dump_proof<a class="headerlink" href="#z3fuzz-dump-proof" title="Permalink to this headline">¶</a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_dump_proof</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">const</span> <span class="n">char</span><span class="o">*</span> <span class="n">filename</span><span class="p">,</span>
                        <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">*</span> <span class="n">proof</span><span class="p">,</span> <span class="n">unsigned</span> <span class="n">long</span> <span class="n">proof_size</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>It dumps a proof returned by <code class="docutils literal notranslate"><span class="pre">z3fuzz_query_check_light</span></code> or <code class="docutils literal notranslate"><span class="pre">z3fuzz_get_optimistic_sol</span></code> and dumps it on the file specified in <code class="docutils literal notranslate"><span class="pre">filename</span></code>.</p>
+</div>
+</div>
 </div>
 <div class="section" id="concolic-execution-standalone-mode">
 <h2>Concolic execution (standalone mode)<a class="headerlink" href="#concolic-execution-standalone-mode" title="Permalink to this headline">¶</a></h2>
