@@ -305,9 +305,9 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 <li><p><code class="docutils literal notranslate"><span class="pre">pi</span></code>: The path constraint.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">branch_condition</span></code>: The branch condition.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">proof</span></code>: Output buffer that contains the resulting assignment if the function returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proof_size</span></code>: Output value that contains the resulting length of assignment if the function returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.
-The function succeeds if it returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proof_size</span></code>: Output value that contains the resulting length of assignment if the function returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p></li>
 </ul>
+<p>The function succeeds if it returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p>
 </div>
 <div class="section" id="z3fuzz-get-optimistic-sol">
 <h2>z3fuzz_get_optimistic_sol<a class="headerlink" href="#z3fuzz-get-optimistic-sol" title="Permalink to this headline">¶</a></h2>
@@ -319,9 +319,9 @@ The function succeeds if it returns <code class="docutils literal notranslate"><
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">ctx</span></code>: The context of the solver.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">proof</span></code>: Output buffer that contains the resulting assignment if the function returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proof_size</span></code>: Output value that contains the resulting length of assignment if the function returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.
-The function succeeds if it returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proof_size</span></code>: Output value that contains the resulting length of assignment if the function returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p></li>
 </ul>
+<p>The function succeeds if it returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p>
 </div>
 <div class="section" id="z3fuzz-maximize-and-z3fuzz-minimize">
 <h2>z3fuzz_maximize and z3fuzz_minimize<a class="headerlink" href="#z3fuzz-maximize-and-z3fuzz-minimize" title="Permalink to this headline">¶</a></h2>
@@ -338,9 +338,9 @@ The function succeeds if it returns <code class="docutils literal notranslate"><
 <li><p><code class="docutils literal notranslate"><span class="pre">ctx</span></code>: The context of the solver.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">to_maximize</span></code> / <code class="docutils literal notranslate"><span class="pre">to_minimize</span></code>: The expression to maximize/minimize. It must be a bitvector.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">out_values</span></code>: Output buffer that contains the assignments that maximize/minimize the expression.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">out_len</span></code>: Output variable that contains the size of the <code class="docutils literal notranslate"><span class="pre">out_values</span></code> buffer.
-The function always succeeds (but it is not guaranteed that it finds a global minimum/maximum) and returns the value of the maximized/minimized expression.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">out_len</span></code>: Output variable that contains the size of the <code class="docutils literal notranslate"><span class="pre">out_values</span></code> buffer.</p></li>
 </ul>
+<p>The function always succeeds (but it is not guaranteed that it finds a global minimum/maximum) and returns the value of the maximized/minimized expression.</p>
 </div>
 <div class="section" id="z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd">
 <h2>z3fuzz_find_all_values and z3fuzz_find_all_values_gd<a class="headerlink" href="#z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd" title="Permalink to this headline">¶</a></h2>

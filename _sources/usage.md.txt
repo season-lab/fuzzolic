@@ -112,6 +112,7 @@ It tries to solve the query `branch_condition ^ pi` using the FuzzySAT algorithm
 - `branch_condition`: The branch condition.
 - `proof`: Output buffer that contains the resulting assignment if the function returns `1`.
 - `proof_size`: Output value that contains the resulting length of assignment if the function returns `1`.
+
 The function succeeds if it returns `1`.
 
 ## z3fuzz_get_optimistic_sol
@@ -123,6 +124,7 @@ If the last call to `z3fuzz_query_check_light` failed, this function tries to fi
 - `ctx`: The context of the solver.
 - `proof`: Output buffer that contains the resulting assignment if the function returns `1`.
 - `proof_size`: Output value that contains the resulting length of assignment if the function returns `1`.
+
 The function succeeds if it returns `1`.
 
 ## z3fuzz_maximize and z3fuzz_minimize
@@ -139,6 +141,7 @@ They try to minimize/maximize the expression given the constraints in `pi`. The 
 - `to_maximize` / `to_minimize`: The expression to maximize/minimize. It must be a bitvector.
 - `out_values`: Output buffer that contains the assignments that maximize/minimize the expression.
 - `out_len`: Output variable that contains the size of the `out_values` buffer.
+
 The function always succeeds (but it is not guaranteed that it finds a global minimum/maximum) and returns the value of the maximized/minimized expression.
 
 ## z3fuzz_find_all_values and z3fuzz_find_all_values_gd
