@@ -261,7 +261,12 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 </div>
 <div class="section" id="c-c-bindings">
 <h3>C/C++ Bindings<a class="headerlink" href="#c-c-bindings" title="Permalink to this headline">¶</a></h3>
-<p>We designed FuzzySAT as a library to be integrated into a concolic executor, the APIs of the library are:</p>
+<p>We designed FuzzySAT as a library to be integrated into a concolic executor. Before detailing the various APIs, let us clarify some details on the usage of the library:</p>
+<ul class="simple">
+<li><p>The APIs that take an AST as input expect as symbols only 8-bit bitvectors whose symbol name has been created using <code class="docutils literal notranslate"><span class="pre">Z3_mk_int_symbol</span></code>. This allows the library to easily map a symbol to its assignment.</p></li>
+<li><p>The context of Z3 can be created either with <code class="docutils literal notranslate"><span class="pre">Z3_mk_context</span></code> or <code class="docutils literal notranslate"><span class="pre">Z3_mk_context_rc</span></code>, allowing the lib to be used with both the C and the C++ APIs of Z3.</p></li>
+<li><p>At the moment, the library is NOT thread-safe.</p></li>
+</ul>
 <div class="section" id="z3fuzz-init">
 <h4>z3fuzz_init<a class="headerlink" href="#z3fuzz-init" title="Permalink to this headline">¶</a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_init</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_context</span> <span class="n">z3_ctx</span><span class="p">,</span> <span class="n">char</span><span class="o">*</span>   <span class="n">seed_filename</span><span class="p">,</span>
@@ -378,7 +383,7 @@ The user must define a <code class="docutils literal notranslate"><span class="p
                        <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">*</span> <span class="n">proof</span><span class="p">,</span> <span class="n">unsigned</span> <span class="n">long</span> <span class="n">proof_size</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>It dumps a proof returned by <code class="docutils literal notranslate"><span class="pre">z3fuzz_query_check_light</span></code> or <code class="docutils literal notranslate"><span class="pre">z3fuzz_get_optimistic_sol</span></code> and dumps it on the file specified in <code class="docutils literal notranslate"><span class="pre">filename</span></code>.</p>
+<p>It dumps a proof returned by <code class="docutils literal notranslate"><span class="pre">z3fuzz_query_check_light</span></code> or <code class="docutils literal notranslate"><span class="pre">z3fuzz_get_optimistic_sol</span></code> on the file specified in <code class="docutils literal notranslate"><span class="pre">filename</span></code>.</p>
 </div>
 </div>
 </div>
