@@ -73,7 +73,11 @@ By default, `fuzzy-solver` uses a text UI where it prints useful statistics abou
 [...]
 
 ### C/C++ Bindings
-We designed FuzzySAT as a library to be integrated into a concolic executor, the APIs of the library are:
+We designed FuzzySAT as a library to be integrated into a concolic executor. Before detailing the various APIs, let us clarify some details on the usage of the library:
+
+- The APIs that take an AST as input expect as symbols only 8-bit bitvectors whose symbol name has been created using `Z3_mk_int_symbol`. This allows the library to easily map a symbol to its assignment.
+- The context of Z3 can be created either with `Z3_mk_context` or `Z3_mk_context_rc`, allowing the lib to be used with both the C and the C++ APIs of Z3.
+- At the moment, the library is NOT thread-safe.
 
 #### z3fuzz_init
 ```
@@ -178,7 +182,7 @@ It notifies the solver that a new constraint has been added to `pi`.
 void z3fuzz_dump_proof(fuzzy_ctx_t* ctx, const char* filename,
                        unsigned char const* proof, unsigned long proof_size);
 ```
-It dumps a proof returned by `z3fuzz_query_check_light` or `z3fuzz_get_optimistic_sol` and dumps it on the file specified in `filename`.
+It dumps a proof returned by `z3fuzz_query_check_light` or `z3fuzz_get_optimistic_sol` on the file specified in `filename`.
 
 ## Concolic execution (standalone mode)
 
