@@ -12,7 +12,7 @@ News
 
 * We are currently finalizing a journal manuscript that covers the internals of fuzzolic.
 * The preprint of paper accepted at ICSE will be available on February 12 (camera-ready deadline).
-* The code of Fuzzolic and Fuzzy-SAT will be released immediately after the talk at ICSE 2021.
+* **The code of Fuzzolic and Fuzzy-SAT will be released immediately after the talk at ICSE 2021.**
 
 Publications
 ------------
