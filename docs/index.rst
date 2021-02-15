@@ -17,7 +17,8 @@ News
 Publications
 ------------
 
-* Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu. Fuzzing Symbolic Expressions. Proceedings of the 43rd International Conference on Software Engineering (ICSE 2021), 2021
+* Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu. Fuzzing Symbolic Expressions. Proceedings of the 43rd International Conference on Software Engineering (ICSE 2021), 2021. `[PDF]
+<https://arxiv.org/pdf/2102.06580>`
 
 .. code-block:: latex
 
