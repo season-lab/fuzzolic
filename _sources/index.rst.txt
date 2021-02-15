@@ -11,14 +11,13 @@ News
 ------------
 
 * We are currently finalizing a journal manuscript that covers the internals of fuzzolic.
-* The preprint of paper accepted at ICSE will be available on February 12 (camera-ready deadline).
+* The preprint of paper accepted at ICSE is available on `ArXiv <https://arxiv.org/pdf/2102.06580>`_.
 * **The code of Fuzzolic and Fuzzy-SAT will be released immediately after the talk at ICSE 2021.**
 
 Publications
 ------------
 
-* Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu. Fuzzing Symbolic Expressions. Proceedings of the 43rd International Conference on Software Engineering (ICSE 2021), 2021. `[PDF]
-<https://arxiv.org/pdf/2102.06580>`
+* Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu. Fuzzing Symbolic Expressions. Proceedings of the 43rd International Conference on Software Engineering (ICSE 2021), 2021. `[PDF] <https://arxiv.org/pdf/2102.06580>`_
 
 .. code-block:: latex
 
