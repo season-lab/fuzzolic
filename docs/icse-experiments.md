@@ -37,7 +37,11 @@ To use the script, download the [queries](https://drive.google.com/file/d/1aTBMc
 
 #### Fuzzy-SAT vs JSF experiment
 
-This experiment can be executed similarly to the previous one, but you need to download [queries splitted](https://drive.google.com/file/d/1MirAWRtEZmDubAsQrAUW62Woi5hnCwCy/view?usp=sharing), use the [run_batch_fuzzy_jfs.sh](https://github.com/season-lab/fuzzy-sat/blob/master/scripts/run_batch_fuzzy_jfs.sh) to run the actual experiment, and parse the results using [parse_fuzzy_jfs.py](https://github.com/season-lab/fuzzy-sat/blob/master/scripts/parse_fuzzy_jfs.py).
+This experiment can be executed similarly to the previous one, but you need to:
+- Download [queries splitted](https://drive.google.com/file/d/1MirAWRtEZmDubAsQrAUW62Woi5hnCwCy/view?usp=sharing).
+- Pull the JFS docker image (`docker pull delcypher/jfs_build:fse_2019`).
+- Use the [run_batch_fuzzy_jfs.sh](https://github.com/season-lab/fuzzy-sat/blob/master/scripts/run_batch_fuzzy_jfs.sh) script to run the actual experiment (setting `QUERIES_PATH` and `SEED_PATH`).
+- Parse the results using [parse_fuzzy_jfs.py](https://github.com/season-lab/fuzzy-sat/blob/master/scripts/parse_fuzzy_jfs.py).
 
 ## Configurations for benchmarks in Section V-C
 
