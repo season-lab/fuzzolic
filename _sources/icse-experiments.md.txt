@@ -4,7 +4,10 @@
 
 We executed the experiments in Section IV-A using the following:
 * [queries](https://drive.google.com/file/d/1aTBMcWr6pzPNkVyJQnHqpxi2_xz8qgeu/view?usp=sharing)
+* [queries splitted](https://drive.google.com/file/d/1MirAWRtEZmDubAsQrAUW62Woi5hnCwCy/view?usp=sharing)
 * [seeds](https://drive.google.com/file/d/1x9da_dbbaI6DOPScbWzfl5K_WzStLy3L/view?usp=sharing)
+
+**NOTE:** The queries in *queries* and *queries_splitted* are exactly the same, but in the former each query resides in a single file.
 
 We collected the queries using QSYM by dumping the branch conditions of each benchmark when executed on a seed input (see Table below). In particular, we dumped the path constraints when the execution reached the `Solver::negatePath` function. We also deactivated the query simplification in the `Solver::add` function.
 
@@ -30,11 +33,11 @@ This table summarizes the benchmarks:
 
 The [run_batch_fuzzy_z3.sh](https://github.com/season-lab/fuzzy-sat/blob/dev/scripts/run_batch_fuzzy_z3.sh) script can be used to run both `z3` and `fuzzy-solver` on the queries.
 
-To use the script, download the queries and the seeds, extract them, set accordingly `QUERIES_PATH`, `SEED_PATH` and `OUTPUT_DIR` in the script, and run it. It will create two CSV files for for each benchmark. The script [parse_info_query_splitted.py](https://github.com/season-lab/fuzzy-sat/blob/dev/scripts/parse_info_query_splitted.py) can be used to parse these CSV files and print a table about the number of queries proved sat by Fuzzy-SAT and Z3, and the elapsed time.
+To use the script, download the [queries](https://drive.google.com/file/d/1aTBMcWr6pzPNkVyJQnHqpxi2_xz8qgeu/view?usp=sharing) and the [seeds](https://drive.google.com/file/d/1x9da_dbbaI6DOPScbWzfl5K_WzStLy3L/view?usp=sharing), extract them, set accordingly `QUERIES_PATH`, `SEED_PATH` and `OUTPUT_DIR` in the script, and run it. It will create two CSV files for for each benchmark. The script [parse_info_query_splitted.py](https://github.com/season-lab/fuzzy-sat/blob/dev/scripts/parse_info_query_splitted.py) can be used to parse these CSV files and print a table about the number of queries proved sat by Fuzzy-SAT and Z3, and the elapsed time.
 
-#### Fuzzy vs JSF experiment
+#### Fuzzy-SAT vs JSF experiment
 
-[...]
+This experiment can be executed similarly to the previous one, but you need to download [queries splitted](https://drive.google.com/file/d/1MirAWRtEZmDubAsQrAUW62Woi5hnCwCy/view?usp=sharing), use the [run_batch_fuzzy_jfs.sh](https://github.com/season-lab/fuzzy-sat/blob/master/scripts/run_batch_fuzzy_jfs.sh) to run the actual experiment, and parse the results using [parse_fuzzy_jfs.py](https://github.com/season-lab/fuzzy-sat/blob/master/scripts/parse_fuzzy_jfs.py).
 
 ## Configurations for benchmarks in Section V-C
 
