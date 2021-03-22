@@ -267,7 +267,13 @@
 </div>
 <div class="section" id="fuzzy-sat-vs-jsf-experiment">
 <h3>Fuzzy-SAT vs JSF experiment<a class="headerlink" href="#fuzzy-sat-vs-jsf-experiment" title="Permalink to this headline">¶</a></h3>
-<p>This experiment can be executed similarly to the previous one, but you need to download <a class="reference external" href="https://drive.google.com/file/d/1MirAWRtEZmDubAsQrAUW62Woi5hnCwCy/view?usp=sharing">queries splitted</a>, use the <a class="reference external" href="https://github.com/season-lab/fuzzy-sat/blob/master/scripts/run_batch_fuzzy_jfs.sh">run_batch_fuzzy_jfs.sh</a> to run the actual experiment, and parse the results using <a class="reference external" href="https://github.com/season-lab/fuzzy-sat/blob/master/scripts/parse_fuzzy_jfs.py">parse_fuzzy_jfs.py</a>.</p>
+<p>This experiment can be executed similarly to the previous one, but you need to:</p>
+<ul class="simple">
+<li><p>Download <a class="reference external" href="https://drive.google.com/file/d/1MirAWRtEZmDubAsQrAUW62Woi5hnCwCy/view?usp=sharing">queries splitted</a>.</p></li>
+<li><p>Pull the JFS docker image (<code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">pull</span> <span class="pre">delcypher/jfs_build:fse_2019</span></code>).</p></li>
+<li><p>Use the <a class="reference external" href="https://github.com/season-lab/fuzzy-sat/blob/master/scripts/run_batch_fuzzy_jfs.sh">run_batch_fuzzy_jfs.sh</a> script to run the actual experiment (setting <code class="docutils literal notranslate"><span class="pre">QUERIES_PATH</span></code> and <code class="docutils literal notranslate"><span class="pre">SEED_PATH</span></code>).</p></li>
+<li><p>Parse the results using <a class="reference external" href="https://github.com/season-lab/fuzzy-sat/blob/master/scripts/parse_fuzzy_jfs.py">parse_fuzzy_jfs.py</a>.</p></li>
+</ul>
 </div>
 </div>
 <div class="section" id="configurations-for-benchmarks-in-section-v-c">
