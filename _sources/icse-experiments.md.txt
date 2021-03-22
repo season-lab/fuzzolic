@@ -2,7 +2,7 @@
 
 ## SMT queries used in Section V-A
 
-We executed the experiments in Section IV-A using the following:
+We executed the experiments in Section V-A using the following:
 * [queries](https://drive.google.com/file/d/1aTBMcWr6pzPNkVyJQnHqpxi2_xz8qgeu/view?usp=sharing)
 * [queries splitted](https://drive.google.com/file/d/1MirAWRtEZmDubAsQrAUW62Woi5hnCwCy/view?usp=sharing)
 * [seeds](https://drive.google.com/file/d/1x9da_dbbaI6DOPScbWzfl5K_WzStLy3L/view?usp=sharing)
