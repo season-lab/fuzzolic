@@ -35,7 +35,7 @@ The [run_batch_fuzzy_z3.sh](https://github.com/season-lab/fuzzy-sat/blob/dev/scr
 
 To use the script, download the [queries](https://drive.google.com/file/d/1aTBMcWr6pzPNkVyJQnHqpxi2_xz8qgeu/view?usp=sharing) and the [seeds](https://drive.google.com/file/d/1x9da_dbbaI6DOPScbWzfl5K_WzStLy3L/view?usp=sharing), extract them, set accordingly `QUERIES_PATH`, `SEED_PATH` and `OUTPUT_DIR` in the script, and run it. It will create two CSV files for for each benchmark. The script [parse_info_query_splitted.py](https://github.com/season-lab/fuzzy-sat/blob/dev/scripts/parse_info_query_splitted.py) can be used to parse these CSV files and print a table about the number of queries proved sat by Fuzzy-SAT and Z3, and the elapsed time.
 
-#### Fuzzy-SAT vs JSF experiment
+#### Fuzzy-SAT vs JFS experiment
 
 This experiment can be executed similarly to the previous one, but you need to:
 - Download [queries splitted](https://drive.google.com/file/d/1MirAWRtEZmDubAsQrAUW62Woi5hnCwCy/view?usp=sharing).
