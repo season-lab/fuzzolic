@@ -99,7 +99,7 @@
 <li class="toctree-l1 current"><a class="current reference internal" href="#">ICSE Experiments</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#smt-queries-used-in-section-v-a">SMT queries used in Section V-A</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#fuzzy-sat-vs-z3-experiment">Fuzzy-SAT vs Z3 experiment</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#fuzzy-sat-vs-jsf-experiment">Fuzzy-SAT vs JSF experiment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fuzzy-sat-vs-jfs-experiment">Fuzzy-SAT vs JFS experiment</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#configurations-for-benchmarks-in-section-v-c">Configurations for benchmarks in Section V-C</a></li>
@@ -265,8 +265,8 @@
 <p>The <a class="reference external" href="https://github.com/season-lab/fuzzy-sat/blob/dev/scripts/run_batch_fuzzy_z3.sh">run_batch_fuzzy_z3.sh</a> script can be used to run both <code class="docutils literal notranslate"><span class="pre">z3</span></code> and <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> on the queries.</p>
 <p>To use the script, download the <a class="reference external" href="https://drive.google.com/file/d/1aTBMcWr6pzPNkVyJQnHqpxi2_xz8qgeu/view?usp=sharing">queries</a> and the <a class="reference external" href="https://drive.google.com/file/d/1x9da_dbbaI6DOPScbWzfl5K_WzStLy3L/view?usp=sharing">seeds</a>, extract them, set accordingly <code class="docutils literal notranslate"><span class="pre">QUERIES_PATH</span></code>, <code class="docutils literal notranslate"><span class="pre">SEED_PATH</span></code> and <code class="docutils literal notranslate"><span class="pre">OUTPUT_DIR</span></code> in the script, and run it. It will create two CSV files for for each benchmark. The script <a class="reference external" href="https://github.com/season-lab/fuzzy-sat/blob/dev/scripts/parse_info_query_splitted.py">parse_info_query_splitted.py</a> can be used to parse these CSV files and print a table about the number of queries proved sat by Fuzzy-SAT and Z3, and the elapsed time.</p>
 </div>
-<div class="section" id="fuzzy-sat-vs-jsf-experiment">
-<h3>Fuzzy-SAT vs JSF experiment<a class="headerlink" href="#fuzzy-sat-vs-jsf-experiment" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="fuzzy-sat-vs-jfs-experiment">
+<h3>Fuzzy-SAT vs JFS experiment<a class="headerlink" href="#fuzzy-sat-vs-jfs-experiment" title="Permalink to this headline">¶</a></h3>
 <p>This experiment can be executed similarly to the previous one, but you need to:</p>
 <ul class="simple">
 <li><p>Download <a class="reference external" href="https://drive.google.com/file/d/1MirAWRtEZmDubAsQrAUW62Woi5hnCwCy/view?usp=sharing">queries splitted</a>.</p></li>
