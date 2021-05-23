@@ -5,3 +5,6 @@ build: # --force-rm
 
 push:
 	docker push ercoppa/fuzzolic-runner-v1
+
+patch-afl:
+	cd AFLplusplus && git diff > ../../../utils/afl-showmap.c.patch

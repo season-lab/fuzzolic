@@ -1,25 +1,24 @@
 diff --git a/src/afl-showmap.c b/src/afl-showmap.c
-index 7b46cd2..1f6ceac 100644
+index f4a7c336..69415d96 100644
 --- a/src/afl-showmap.c
 +++ b/src/afl-showmap.c
-@@ -230,13 +230,13 @@ static u32 write_results_to_file(afl_forkserver_t *fsrv, u8 *outfile) {
+@@ -278,12 +278,13 @@ static u32 write_results_to_file(afl_forkserver_t *fsrv, u8 *outfile) {
  
  /* Execute target application. */
  
--static void showmap_run_target_forkserver(afl_forkserver_t *fsrv, char **argv,
-+static fsrv_run_result_t showmap_run_target_forkserver(afl_forkserver_t *fsrv, char **argv,
-                                           u8 *mem, u32 len) {
+-static void showmap_run_target_forkserver(afl_forkserver_t *fsrv, u8 *mem,
++static fsrv_run_result_t showmap_run_target_forkserver(afl_forkserver_t *fsrv, u8 *mem,
+                                           u32 len) {
  
    afl_fsrv_write_to_testcase(fsrv, mem, len);
  
 -  if (afl_fsrv_run_target(fsrv, fsrv->exec_tmout, &stop_soon) ==
--      FSRV_RUN_ERROR) {
 +  fsrv_run_result_t res = afl_fsrv_run_target(fsrv, fsrv->exec_tmout, &stop_soon);
-+  if (res == FSRV_RUN_ERROR) {
++  if (res ==
+       FSRV_RUN_ERROR) {
  
      FATAL("Error running target");
- 
-@@ -251,6 +251,7 @@ static void showmap_run_target_forkserver(afl_forkserver_t *fsrv, char **argv,
+@@ -299,6 +300,7 @@ static void showmap_run_target_forkserver(afl_forkserver_t *fsrv, u8 *mem,
  
    }
  
@@ -27,7 +26,7 @@ index 7b46cd2..1f6ceac 100644
  }
  
  /* Read initial file. */
-@@ -867,8 +868,14 @@ int main(int argc, char **argv_orig, char **envp) {
+@@ -1011,8 +1013,14 @@ int main(int argc, char **argv_orig, char **envp) {
  
      }
  
@@ -43,21 +42,29 @@ index 7b46cd2..1f6ceac 100644
      unlink(stdin_file);
      atexit(at_exit_handler);
      fsrv->out_fd = open(stdin_file, O_RDWR | O_CREAT | O_EXCL, 0600);
-@@ -920,11 +927,14 @@ int main(int argc, char **argv_orig, char **envp) {
+@@ -1081,9 +1089,10 @@ int main(int argc, char **argv_orig, char **envp) {
        if (-1 == stat(infile, &statbuf) || !S_ISREG(statbuf.st_mode)) continue;
  #endif
  
--      snprintf(outfile, sizeof(outfile), "%s/%s", out_file, dir_ent->d_name);
++#if 0
+       if (!collect_coverage)
+         snprintf(outfile, sizeof(outfile), "%s/%s", out_file, dir_ent->d_name);
 -
++#endif
        if (read_file(infile)) {
  
--        showmap_run_target_forkserver(fsrv, use_argv, in_data, in_len);
-+        fsrv_run_result_t res = showmap_run_target_forkserver(fsrv, use_argv, in_data, in_len);
+         if (wait_for_gdb) {
+@@ -1094,7 +1103,12 @@ int main(int argc, char **argv_orig, char **envp) {
+ 
+         }
+ 
+-        showmap_run_target_forkserver(fsrv, in_data, in_len);
++        fsrv_run_result_t res = showmap_run_target_forkserver(fsrv, in_data, in_len);
 +        if (res == FSRV_RUN_CRASH) {
 +          snprintf(outfile, sizeof(outfile), "%s/%s.crash", out_file, dir_ent->d_name);
 +        } else {
 +          snprintf(outfile, sizeof(outfile), "%s/%s", out_file, dir_ent->d_name);
 +        }
          ck_free(in_data);
-         tcnt = write_results_to_file(fsrv, outfile);
- 
+         if (collect_coverage)
+           analyze_results(fsrv);

@@ -63,7 +63,7 @@ RUN cd solver && cmake . && make -j `nproc`
 
 # Build AFL++
 RUN cd utils && git clone https://github.com/AFLplusplus/AFLplusplus.git && \
-	cd AFLplusplus && git checkout 9dbace240d570f8eb938db5a152e31756922b2f3 && \
+	cd AFLplusplus && git checkout ee206da3897fd2d9f72206c3c5ea0e3fab109001 && \
 	git apply ../afl-showmap.c.patch && \
 	make -j `nproc` all && cd qemu_mode && ./build_qemu_support.sh
 ENV AFL_PATH=/home/ubuntu/fuzzolic/utils/AFLplusplus
