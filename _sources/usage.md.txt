@@ -46,6 +46,8 @@ _seed.bin_
 0000
 ```
 
+If you are using the `fuzzolic-runner` container, you can find the executable in `~/solver/fuzzy-solver-cli/build/bin/fuzzy-solver`.
+
 #### Text UI
 
 By default, `fuzzy-solver` uses a text UI where it prints useful statistics about the solving process:
@@ -69,8 +71,6 @@ By default, `fuzzy-solver` uses a text UI where it prints useful statistics abou
  | avg eval time: 1.293 usec                                   |
  o-------------------------------------------------------------o
 ```
-
-[...]
 
 ### C/C++ Bindings
 We designed FuzzySAT as a library to be integrated into a concolic executor. Before detailing the various APIs, let us clarify some details on the usage of the library:
