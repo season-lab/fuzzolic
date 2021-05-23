@@ -24,7 +24,7 @@ RUN apt update -y && \
         libtool-bin wget \
         automake autoconf \
         bison git gdb dumb-init valgrind \
-	time xxd python3-pip && \
+	time xxd python3-pip ninja-build && \
 	apt clean && \
 	rm -rf /var/lib/apt/lists/*
 
