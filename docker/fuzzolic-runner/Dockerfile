@@ -55,6 +55,20 @@ RUN echo "export C_INCLUDE_PATH=/home/ubuntu/fuzzolic/solver/fuzzy-sat/fuzzolic-
 RUN echo "export LIBRARY_PATH=/home/ubuntu/fuzzolic/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib" >> $BASH_ENV
 RUN echo "export LD_LIBRARY_PATH=/home/ubuntu/fuzzolic/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib" >> $BASH_ENV
 
+# Create fuzzy-sat-CLI folder
+RUN cd solver/fuzzy-sat && \
+	git checkout 6299dda173b2210b19f06048e7cb0d70bfca2a57 && \
+	git submodule update && \
+	cd ../.. && \
+	cp -r solver/fuzzy-sat solver/fuzzy-sat-cli && \
+	rm solver/fuzzy-sat-cli/.git && \
+	cd solver/fuzzy-sat && \
+	git checkout d64c9b47a2c410ed25a04b70010152d0fc4793c8 && \
+	git submodule update
+
+# Build fuzzy-sat-CLI
+RUN cd solver/fuzzy-sat-cli && make -j `nproc`
+
 # Build fuzzy-sat
 RUN cd solver/fuzzy-sat && make -j `nproc`
 
