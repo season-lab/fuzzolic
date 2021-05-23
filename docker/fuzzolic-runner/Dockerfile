@@ -23,7 +23,7 @@ RUN apt update -y && \
 	apt-transport-https libtool \
         libtool-bin wget \
         automake autoconf \
-        bison git gdb dumb-init valgrind \
+        bison git gdb dumb-init valgrind ninja-build \
 	time xxd python3-pip && \
 	apt clean && \
 	rm -rf /var/lib/apt/lists/*
@@ -63,7 +63,7 @@ RUN cd solver && cmake . && make -j `nproc`
 
 # Build AFL++
 RUN cd utils && git clone https://github.com/AFLplusplus/AFLplusplus.git && \
-	cd AFLplusplus && git checkout ee206da3897fd2d9f72206c3c5ea0e3fab109001 && \
+	cd AFLplusplus && git checkout 2dac4e7 && \
 	git apply ../afl-showmap.c.patch && \
 	make -j `nproc` all && cd qemu_mode && ./build_qemu_support.sh
 ENV AFL_PATH=/home/ubuntu/fuzzolic/utils/AFLplusplus

@@ -1,8 +1,8 @@
 diff --git a/src/afl-showmap.c b/src/afl-showmap.c
-index f4a7c336..69415d96 100644
+index 077c9248..7d2703c4 100644
 --- a/src/afl-showmap.c
 +++ b/src/afl-showmap.c
-@@ -278,12 +278,13 @@ static u32 write_results_to_file(afl_forkserver_t *fsrv, u8 *outfile) {
+@@ -304,14 +304,15 @@ static u32 write_results_to_file(afl_forkserver_t *fsrv, u8 *outfile) {
  
  /* Execute target application. */
  
@@ -12,13 +12,15 @@ index f4a7c336..69415d96 100644
  
    afl_fsrv_write_to_testcase(fsrv, mem, len);
  
+   if (!quiet_mode) { SAYF("-- Program output begins --\n" cRST); }
+ 
 -  if (afl_fsrv_run_target(fsrv, fsrv->exec_tmout, &stop_soon) ==
 +  fsrv_run_result_t res = afl_fsrv_run_target(fsrv, fsrv->exec_tmout, &stop_soon);
 +  if (res ==
        FSRV_RUN_ERROR) {
  
      FATAL("Error running target");
-@@ -299,6 +300,7 @@ static void showmap_run_target_forkserver(afl_forkserver_t *fsrv, u8 *mem,
+@@ -370,6 +371,7 @@ static void showmap_run_target_forkserver(afl_forkserver_t *fsrv, u8 *mem,
  
    }
  
@@ -26,26 +28,33 @@ index f4a7c336..69415d96 100644
  }
  
  /* Read initial file. */
-@@ -1011,8 +1013,14 @@ int main(int argc, char **argv_orig, char **envp) {
+@@ -1113,9 +1115,18 @@ int main(int argc, char **argv_orig, char **envp) {
  
      }
  
--    stdin_file =
-+    char* file_ext = get_afl_env("FILE_EXT");
-+    if (file_ext) {
-+      stdin_file =
-+        alloc_printf("%s/.afl-showmap-temp-%u.%s", use_dir, (u32)getpid(), file_ext);
-+    } else { 
-+      stdin_file =
-         alloc_printf("%s/.afl-showmap-temp-%u", use_dir, (u32)getpid());
+-    stdin_file = at_file ? strdup(at_file)
+-                         : (char *)alloc_printf("%s/.afl-showmap-temp-%u",
+-                                                use_dir, (u32)getpid());
++    stdin_file = at_file ? strdup(at_file) : NULL;
++    if (!at_file) {
++      char* file_ext = get_afl_env("FILE_EXT");
++      if (file_ext) {
++        stdin_file =
++          (char *)alloc_printf("%s/.afl-showmap-temp-%u.%s", use_dir, (u32)getpid(), file_ext);
++      } else { 
++        stdin_file =
++          alloc_printf("%s/.afl-showmap-temp-%u", use_dir, (u32)getpid());
++      }
 +    }
++                                              
      unlink(stdin_file);
      atexit(at_exit_handler);
-     fsrv->out_fd = open(stdin_file, O_RDWR | O_CREAT | O_EXCL, 0600);
-@@ -1081,9 +1089,10 @@ int main(int argc, char **argv_orig, char **envp) {
+     fsrv->out_file = stdin_file;
+@@ -1209,10 +1220,10 @@ int main(int argc, char **argv_orig, char **envp) {
+ #if !defined(DT_REG)                                          /* use stat() */
        if (-1 == stat(infile, &statbuf) || !S_ISREG(statbuf.st_mode)) continue;
  #endif
- 
+-
 +#if 0
        if (!collect_coverage)
          snprintf(outfile, sizeof(outfile), "%s/%s", out_file, dir_ent->d_name);
@@ -54,7 +63,7 @@ index f4a7c336..69415d96 100644
        if (read_file(infile)) {
  
          if (wait_for_gdb) {
-@@ -1094,7 +1103,12 @@ int main(int argc, char **argv_orig, char **envp) {
+@@ -1223,7 +1234,12 @@ int main(int argc, char **argv_orig, char **envp) {
  
          }
  
