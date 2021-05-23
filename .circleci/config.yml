@@ -78,7 +78,7 @@ jobs:
           command: |
             cmake . && make -j `nproc`
       - restore_cache:
-          key: fuzzolic-aflpp-v0-ee206d
+          key: fuzzolic-aflpp-v0-ee206da
       - run: 
           name: Building AFL++
           working_directory: utils
@@ -90,7 +90,7 @@ jobs:
               fi
             fi
             [[ -d AFLplusplus ]] || git clone https://github.com/AFLplusplus/AFLplusplus.git
-            [[ -f AFLplusplus/afl-showmap ]] || (cd AFLplusplus && git checkout 9dbace240d570f8eb938db5a152e31756922b2f3)
+            [[ -f AFLplusplus/afl-showmap ]] || (cd AFLplusplus && git checkout ee206da3897fd2d9f72206c3c5ea0e3fab109001)
             [[ -f AFLplusplus/afl-showmap ]] || (cd AFLplusplus && git apply ../afl-showmap.c.patch) # showmap crash detector
             [[ -f AFLplusplus/afl-showmap ]] || (cd AFLplusplus && make -j `nproc` all && cd qemu_mode && ./build_qemu_support.sh)
             # caching AFLplusplus when localbuild
@@ -104,7 +104,7 @@ jobs:
           command: |
             echo "export AFL_PATH=/home/ubuntu/project/utils/AFLplusplus" >> $BASH_ENV
       - save_cache:
-          key: fuzzolic-aflpp-v0-ee206d
+          key: fuzzolic-aflpp-v0-ee206da
           paths:
             - utils/AFLplusplus
       
