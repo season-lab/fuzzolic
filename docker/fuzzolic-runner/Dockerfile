@@ -57,13 +57,14 @@ RUN echo "export LD_LIBRARY_PATH=/home/ubuntu/fuzzolic/solver/fuzzy-sat/fuzzolic
 
 # Create fuzzy-sat-CLI folder
 RUN cd solver/fuzzy-sat && \
-	git checkout 6299dda173b2210b19f06048e7cb0d70bfca2a57 && \
+	git rev-parse HEAD > /tmp/revision && \
+	git checkout master && \
 	git submodule update && \
 	cd ../.. && \
 	cp -r solver/fuzzy-sat solver/fuzzy-sat-cli && \
 	rm solver/fuzzy-sat-cli/.git && \
 	cd solver/fuzzy-sat && \
-	git checkout d64c9b47a2c410ed25a04b70010152d0fc4793c8 && \
+	git checkout `cat /tmp/revision` && \
 	git submodule update
 
 # Build fuzzy-sat-CLI
