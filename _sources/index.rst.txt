@@ -42,7 +42,7 @@ Publications
    
    internals
    debug
-   `Source code <https://github.com/season-lab/fuzzolic>`_
+   Source code <https://github.com/season-lab/fuzzolic>
    
 .. toctree::
    :maxdepth: 1
