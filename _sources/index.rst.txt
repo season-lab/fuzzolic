@@ -42,7 +42,7 @@ Publications
    
    internals
    debug
-   :role:`source code <https://github.com/season-lab/fuzzolic>`
+   `source code <https://github.com/season-lab/fuzzolic>`
    
 .. toctree::
    :maxdepth: 1
