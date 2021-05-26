@@ -42,7 +42,8 @@ Publications
    
    internals
    debug
-   Source code <https://github.com/season-lab/fuzzolic>
+   Source code Fuzzolic <https://github.com/season-lab/fuzzolic>
+   Source code Fuzzy-SAT <https://github.com/season-lab/fuzzy-sat>
    
 .. toctree::
    :maxdepth: 1
