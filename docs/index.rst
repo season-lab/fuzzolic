@@ -11,8 +11,8 @@ News
 ------------
 
 * We are currently finalizing a journal manuscript that covers the internals of fuzzolic.
-* The preprint of paper accepted at ICSE is available on `ArXiv <https://arxiv.org/pdf/2102.06580>`_.
-* **The code of Fuzzolic and Fuzzy-SAT will be released immediately after the talk at ICSE 2021.**
+* The preprint of the paper accepted at ICSE is available on `ArXiv <https://arxiv.org/pdf/2102.06580>`_.
+* **The code of Fuzzolic and Fuzzy-SAT has been released.**
 
 Publications
 ------------
@@ -42,6 +42,7 @@ Publications
    
    internals
    debug
+   :role:`source code <https://github.com/season-lab/fuzzolic>`
    
 .. toctree::
    :maxdepth: 1
