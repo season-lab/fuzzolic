@@ -32,6 +32,6 @@ jobs:
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
-          github_token: c61ea64df65108b862bb21a235d9546261449609
+          token: ${{ secrets.GITHUB_TOKEN }}
           branch: ${{ github.ref }}
           repository: 'ercoppa-bot/fuzzolic-builder-ci'
