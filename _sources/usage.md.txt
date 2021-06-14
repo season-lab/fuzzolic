@@ -206,6 +206,10 @@ Several other options can be set to enable additional features:
  * `-l, --symbolic-models`: fuzzolic will use models to reason over known libc functions (e.g., `memcpy`).
  
  The full list of fuzzolic options can be seen using `./fuzzolic/fuzzolic.py --help`.
+ 
+The options used for the ICSE paper are:
+* when using FUZZY-SAT: `--fuzzy`, `--address-reasoning`, `--optimistic-solving`, `--timeout 90000`
+* when using Z3: `--address-reasoning`, `--optimistic-solving`, `--timeout 90000`
 
 After (and during) an exploration, the workdir will typically contain the following files:
 * `{afl-bitmap, afl-crash-bitmap, branch_bitmap, context_bitmap}`: bitmaps used by fuzzolic to evaluate whether a branch query is interesting;
@@ -274,7 +278,7 @@ Wrong value [41414141] :(
 
 Now, if we instead start the concolic exploration with fuzzolic:
 ```
-$ ./fuzzolic/fuzzolic.py -o ./workdir/ -i tests/example/inputs/ -- ./tests/example/example @@
+$ ./fuzzolic/fuzzolic.py --address-reasoning --optimistic-solving --timeout 90000 -o ./workdir/ -i tests/example/inputs/ -- ./tests/example/example @@
 ```
 The output should be similar to:
 ```

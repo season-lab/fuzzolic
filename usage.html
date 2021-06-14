@@ -411,6 +411,11 @@ The user must define a <code class="docutils literal notranslate"><span class="p
 <li><p><code class="docutils literal notranslate"><span class="pre">-l,</span> <span class="pre">--symbolic-models</span></code>: fuzzolic will use models to reason over known libc functions (e.g., <code class="docutils literal notranslate"><span class="pre">memcpy</span></code>).</p></li>
 </ul>
 <p>The full list of fuzzolic options can be seen using <code class="docutils literal notranslate"><span class="pre">./fuzzolic/fuzzolic.py</span> <span class="pre">--help</span></code>.</p>
+<p>The options used for the ICSE paper are:</p>
+<ul class="simple">
+<li><p>when using FUZZY-SAT: <code class="docutils literal notranslate"><span class="pre">--fuzzy</span></code>, <code class="docutils literal notranslate"><span class="pre">--address-reasoning</span></code>, <code class="docutils literal notranslate"><span class="pre">--optimistic-solving</span></code>, <code class="docutils literal notranslate"><span class="pre">--timeout</span> <span class="pre">90000</span></code></p></li>
+<li><p>when using Z3: <code class="docutils literal notranslate"><span class="pre">--address-reasoning</span></code>, <code class="docutils literal notranslate"><span class="pre">--optimistic-solving</span></code>, <code class="docutils literal notranslate"><span class="pre">--timeout</span> <span class="pre">90000</span></code></p></li>
+</ul>
 <p>After (and during) an exploration, the workdir will typically contain the following files:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">{afl-bitmap,</span> <span class="pre">afl-crash-bitmap,</span> <span class="pre">branch_bitmap,</span> <span class="pre">context_bitmap}</span></code>: bitmaps used by fuzzolic to evaluate whether a branch query is interesting;</p></li>
@@ -485,7 +490,7 @@ The user must define a <code class="docutils literal notranslate"><span class="p
 </pre></div>
 </div>
 <p>Now, if we instead start the concolic exploration with fuzzolic:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ ./fuzzolic/fuzzolic.py -o ./workdir/ -i tests/example/inputs/ -- ./tests/example/example @@
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ ./fuzzolic/fuzzolic.py --address-reasoning --optimistic-solving --timeout 90000 -o ./workdir/ -i tests/example/inputs/ -- ./tests/example/example @@
 </pre></div>
 </div>
 <p>The output should be similar to:</p>
