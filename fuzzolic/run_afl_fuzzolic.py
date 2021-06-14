@@ -157,7 +157,7 @@ def main():
     if args.memory_slice:
         fuzzolic_args += ["-s"]
     if args.timeout:
-        fuzzolic_args += ["-t", args.timeout]
+        fuzzolic_args += ["-t", str(args.timeout)]
     if args.symbolic_models:
         fuzzolic_args += ["-l"]
     if args.keep_run_dirs:
