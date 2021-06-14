@@ -530,7 +530,7 @@ Correct value [deadbeef] :)
 <div class="section" id="hybrid-fuzzing-afl-mode">
 <h2>Hybrid fuzzing (AFL mode)<a class="headerlink" href="#hybrid-fuzzing-afl-mode" title="Permalink to this headline">¶</a></h2>
 <p>To run fuzzolic in parallel with AFL++, you can use the script <code class="docutils literal notranslate"><span class="pre">fuzzolic/run_afl_fuzzolic.py</span></code> which supports most features from fuzzolic. For instance, to fuzz a program <code class="docutils literal notranslate"><span class="pre">lodepng</span></code> which takes as argument the input file to process, then:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ ./fuzzolic/run_afl_fuzzolic.py --address-reasoning --optimistic-solving --fuzzy -o workdir/ -i ../benchmarks/lodepng/seeds/ -- ../benchmarks/lodepng/lodepng @
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ ./fuzzolic/run_afl_fuzzolic.py --address-reasoning --optimistic-solving --timeout 90000 --fuzzy -o workdir/ -i ../benchmarks/lodepng/seeds/ -- ../benchmarks/lodepng/lodepng @
 </pre></div>
 </div>
 <p>The output should be similar to:</p>

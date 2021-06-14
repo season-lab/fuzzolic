@@ -318,7 +318,7 @@ and see that the input is accepted by the program.
 
 To run fuzzolic in parallel with AFL++, you can use the script `fuzzolic/run_afl_fuzzolic.py` which supports most features from fuzzolic. For instance, to fuzz a program `lodepng` which takes as argument the input file to process, then:
 ```
-$ ./fuzzolic/run_afl_fuzzolic.py --address-reasoning --optimistic-solving --fuzzy -o workdir/ -i ../benchmarks/lodepng/seeds/ -- ../benchmarks/lodepng/lodepng @
+$ ./fuzzolic/run_afl_fuzzolic.py --address-reasoning --optimistic-solving --timeout 90000 --fuzzy -o workdir/ -i ../benchmarks/lodepng/seeds/ -- ../benchmarks/lodepng/lodepng @
 ```
 The output should be similar to:
 ```
