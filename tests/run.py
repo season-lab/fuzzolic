@@ -205,6 +205,7 @@ def test_model_memchr(fuzzy):
 
 
 def test_symbolic_index(fuzzy):
+    pytest.skip("This test requires to build the tracer with memory slice support")
     run("symbolic_index", expected_inputs=1, use_fuzzy=fuzzy, use_memory_slice=True)
 
 
@@ -213,6 +214,7 @@ def test_symbolic_read(fuzzy):
 
 
 def test_switch(fuzzy):
+    pytest.skip("This test requires to build the tracer with memory slice support")
     run("switch", expected_inputs=7, match_output=True, use_fuzzy=fuzzy, use_address_reasoning=True)
 
 
