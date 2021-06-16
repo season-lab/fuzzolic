@@ -43,7 +43,7 @@ FUZZOLIC
 
    @article{FUZZOLIC-COSE21,
     author={Borzacchiello, Luca and Coppa, Emilio and Demetrescu, Camil},
-    title={{Fuzzing Symbolic Expressions}},
+    title={{FUZZOLIC: mixing fuzzing and concolic execution}},
     journal={Computers & Security},
     publisher={Elsevier},
     doi={10.1016/j.cose.2021.102368},
