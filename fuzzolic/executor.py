@@ -224,7 +224,9 @@ class Executor(object):
         env = os.environ.copy()
         for c in self.config:
             env[c] = self.config[c]
-        if not self.testcase_from_stdin:
+        if self.testcase_from_stdin:
+            env['SYMBOLIC_INJECT_INPUT_MODE'] = 'READ_FD_0'
+        else:
             env['SYMBOLIC_TESTCASE_NAME'] = testcase
 
         if self.debug == 'coverage':
