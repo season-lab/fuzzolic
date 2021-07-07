@@ -11,9 +11,10 @@ fuzzing + concolic = fuzzolic :)
 News
 =======
 
+* FUZZOLIC and FUZZY-SAT have been recently tested by FuzzBench: `report <https://www.fuzzbench.com/reports/experimental/2021-07-03-symbolic/index.html>`_.
 * Thr preprint of the article accepted at COSE is available `here <https://github.com/ecoppa/ecoppa.github.io/raw/master/assets/pdf/FUZZOLIC-PREPRINT-COSE21.pdf>`_.
 * The preprint of the paper accepted at ICSE is available on `ArXiv <https://arxiv.org/pdf/2102.06580>`_.
-* **The code of Fuzzolic and Fuzzy-SAT has been released.**
+* **The code of FUZZOLIC and FUZZY-SAT has been released.**
 
 Publications
 =======
