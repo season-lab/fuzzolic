@@ -11,7 +11,7 @@ fuzzing + concolic = fuzzolic :)
 News
 =======
 
-* We are currently finalizing a journal manuscript that covers the internals of fuzzolic.
+* Thr preprint of the article accepted at COSE is available `here <https://github.com/ecoppa/ecoppa.github.io/raw/master/assets/pdf/FUZZOLIC-PREPRINT-COSE21.pdf>`_.
 * The preprint of the paper accepted at ICSE is available on `ArXiv <https://arxiv.org/pdf/2102.06580>`_.
 * **The code of Fuzzolic and Fuzzy-SAT has been released.**
 
@@ -37,7 +37,7 @@ FUZZY-SAT
 FUZZOLIC
 -------------
 
-* Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu. FUZZOLIC: mixing fuzzing and concolic execution. Computers & Security (COSE 2021), Elsevier, 2021.
+* Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu. FUZZOLIC: mixing fuzzing and concolic execution. Computers & Security (COSE 2021), Elsevier, 2021.  `[PDF] <https://github.com/ecoppa/ecoppa.github.io/raw/master/assets/pdf/FUZZOLIC-PREPRINT-COSE21.pdf>`_
 
 .. code-block:: latex
 
