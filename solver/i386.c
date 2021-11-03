@@ -181,8 +181,10 @@ static inline Z3_ast eflags_c_binary(Z3_context ctx, Expr* query, size_t width,
 
     r = smt_to_bv(r);
 
-    Z3_ast zero = smt_new_const(0, (sizeof(uintptr_t) - width) * 8);
-    r           = Z3_mk_concat(ctx, zero, r);
+    if (width < sizeof(uintptr_t)) {
+        Z3_ast zero = smt_new_const(0, (sizeof(uintptr_t) - width) * 8);
+        r           = Z3_mk_concat(ctx, zero, r);
+    }
     return r;
 }
 #undef VERBOSE
