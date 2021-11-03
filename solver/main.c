@@ -4111,6 +4111,14 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             op2 = smt_query_to_z3(query->op2, query->op2_is_const, 0,
                                   &op2_inputs);
             assert(((ssize_t)query->op3) >= 0);
+
+            if (IS_BOOL(op1)) {
+                op1 = smt_to_bv(op1);
+            }
+            if (IS_BOOL(op2)) {
+                op2 = smt_to_bv(op2);
+            }
+
             smt_bv_resize(&op1, &op2, (ssize_t)query->op3);
 #if VERBOSE
             printf("OR\n");
