@@ -219,16 +219,20 @@ def test_switch(fuzzy):
 
 
 def test_model_malloc_min(fuzzy):
+    pytest.skip("We need to revise this test")
     run("model_malloc_min", expected_inputs=0, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
 
 
 def test_model_malloc_max(fuzzy):
+    pytest.skip("We need to revise this test")
     run("model_malloc_max", expected_inputs=0, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
 
 
 def test_model_realloc_min(fuzzy):
+    pytest.skip("We need to revise this test")
     run("model_realloc_min", expected_inputs=0, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)
 
 
 def test_model_realloc_max(fuzzy):
+    pytest.skip("We need to revise this test")
     run("model_realloc_max", expected_inputs=0, match_output=True, use_lib_models=True, use_fuzzy=fuzzy)

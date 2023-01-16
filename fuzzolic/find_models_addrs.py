@@ -66,10 +66,15 @@ def process_plt_libc(binary, outfile=None):
                 outfile.write("%s,%s,0x%x\n" % (os.path.basename(binary), name, addr))
 
 def process_plt(binary, outfile=None):
-    base_address = subprocess.check_output (
-        "readelf -l %s | grep LOAD | head -n 1" % binary, shell=True )
+    # base_address = subprocess.check_output (
+    #     "readelf -l %s | grep LOAD | head -n 1" % binary, shell=True )
+    # base_address = base_address.decode('ascii')
+    # base_address = int(list(filter(lambda x: x != '', base_address.split(" ")))[2], 16)
+
+    base_address = subprocess.check_output ("objdump -d %s | head | grep 0000" % binary, shell=True )
     base_address = base_address.decode('ascii')
-    base_address = int(list(filter(lambda x: x != '', base_address.split(" ")))[2], 16)
+    base_address = int(base_address.split(' ')[0], 16)
+
     try:
         res = subprocess.check_output (
             "objdump -d %s | grep \@plt\>\:" % binary, shell=True )
