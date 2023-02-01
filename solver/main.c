@@ -40,6 +40,12 @@
 #define DISABLE_SMT     0
 #define ASAN_GLIB       0
 
+#if DEBUG_CHECK_INPUTS
+static int debug_hash = 0;
+static int debug_count = 0;
+static int debug_taken = 0;
+#endif
+
 #define CHECK_FUZZY_MISPREDICTIONS 0
 
 static int go_signal        = 0;
@@ -775,9 +781,17 @@ static void smt_dump_solution(Z3_context ctx, Z3_model m, size_t idx,
 {
     size_t input_size = testcase.size;
 
+    char debug_testcase_name[128] = { 0 };
+#if DEBUG_CHECK_INPUTS
+    if (sub_idx + sub_idx_offset == 0) {
+        snprintf(debug_testcase_name, sizeof(debug_testcase_name),
+                     "-%x_%d_%d", debug_hash, debug_count, debug_taken);
+    }
+#endif
+
     char testcase_name[128];
     int  n = snprintf(testcase_name, sizeof(testcase_name),
-                     "test_case_%lu_%lu.dat", idx, sub_idx + sub_idx_offset);
+                     "test_case_%lu_%lu%s.dat", idx, sub_idx + sub_idx_offset, debug_testcase_name);
     assert(n > 0 && n < sizeof(testcase_name) && "test case name too long");
 
 #if 0
@@ -5235,6 +5249,63 @@ static void smt_branch_query(Query* q)
     }
 
     if (has_real_inputs) {
+
+#if DEBUG_CHECK_INPUTS
+        debug_count += 1;
+        debug_hash = debug_hash ^ q->address;
+        debug_taken =q->args8.arg0;
+
+        static int check_input = -1;
+        static uint32_t check_input_count = 0;
+        static uint32_t check_input_hash = 0;
+        static uint32_t check_input_taken = 0;
+        if (check_input == -1) {
+
+            if (getenv("DEBUG_CHECK_INPUT"))
+                check_input = 1;
+            else
+                check_input = 0;
+
+            if (check_input) {
+                if (getenv("DEBUG_CHECK_INPUT_COUNT"))
+                    check_input_count = atoi(getenv("DEBUG_CHECK_INPUT_COUNT"));
+                else
+                    abort();
+
+                if (getenv("DEBUG_CHECK_INPUT_HASH"))
+                    check_input_hash = strtol(getenv("DEBUG_CHECK_INPUT_HASH"), NULL, 16);
+                else
+                    abort();
+                
+                if (getenv("DEBUG_CHECK_INPUT_TAKEN"))
+                    check_input_taken = atoi(getenv("DEBUG_CHECK_INPUT_TAKEN"));
+                else
+                    abort();
+            }
+        }
+
+        if (check_input) {
+            // printf("Checking...\n");
+            if (debug_count == check_input_count) {
+                if (debug_hash == check_input_hash) {
+                    if (debug_taken != check_input_taken) {
+                        printf("Input is taking the expected direction!\n");
+                        exit(0);
+                    } else {
+                        printf("Input is divergent: it reaches the same branch but does not take the expected direction!\n");
+                        exit(66);
+                    }
+                } else {
+                    printf("Input is divergent: it does take the same path! [hash is different: %x vs expected=%x]\n", debug_hash, check_input_hash);
+                    exit(66);
+                }
+            } else if (debug_count > check_input_count) {
+                printf("Input is divergent: it does take the same path! [count is larger]\n");
+                exit(66);
+            }
+        } 
+#endif
+
 #if BRANCH_COVERAGE == QSYM
         int is_interesting = is_interesting_branch(q->address, q->args8.arg0, q->args8.arg1);
 #elif BRANCH_COVERAGE == AFL
@@ -5244,6 +5315,19 @@ static void smt_branch_query(Query* q)
                                   q->args16.index_inv, q->args16.count_inv,
                                   q->address);
 #endif
+
+#if DEBUG_SKIP_QUERIES
+        static int skip_query = -1;
+        if (skip_query == -1) {
+            if (getenv("DEBUG_SKIP_QUERIES"))
+                skip_query = 1;
+            else
+                skip_query = 0;
+        }
+        if (skip_query)
+            is_interesting = 0;
+#endif
+
         if (is_interesting) {
 
             printf("\nBranch at 0x%lx (id=%lu, taken=%u)\n", q->address,
