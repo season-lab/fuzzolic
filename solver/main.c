@@ -370,6 +370,10 @@ void print_z3_original(Z3_ast e)
     SAYF("\n%s\n", z3_query_str);
 }
 
+#if CHECK_SAT_PI
+static void check_pi_concrete(GHashTable* inputs, unsigned long query);
+#endif
+
 static inline void update_and_add_deps_to_solver(GHashTable* inputs,
                                                  size_t      query_idx,
                                                  Z3_solver solver, Z3_ast* deps)
@@ -481,6 +485,10 @@ static inline void update_and_add_deps_to_solver(GHashTable* inputs,
         free(dep);
     }
     f_hash_table_destroy(to_be_deallocated);
+
+#if CHECK_SAT_PI
+    check_pi_concrete(inputs, query_idx);
+#endif
 }
 
 static inline void add_deps_to_solver(GHashTable* inputs, Z3_solver solver, int skip_expr)
@@ -5305,20 +5313,7 @@ static void smt_branch_query(Query* q)
 #endif
 
 #if CHECK_SAT_PI
-    Z3_ast pi = get_deps(inputs);
-    for (size_t i = 0; i < testcase.size; i++) {
-        eval_data[i] = testcase.data[i];
-    }
-    uintptr_t solution = conc_query_eval_value(smt_solver.ctx, pi, eval_data,
-                                        symbols_sizes, symbols_count, NULL);
-
-    if (solution == 0) {
-        printf("PI is UNSAT\n");
-        print_z3_ast(z3_query);
-        print_expr(q->query);
-        // print_z3_ast(pi);
-        ABORT();
-    }
+    check_pi_concrete(inputs, GET_QUERY_IDX(q));
 #endif
 }
 
@@ -7271,3 +7266,24 @@ int main(int argc, char* argv[])
 
     return 0;
 }
+
+#if CHECK_SAT_PI
+static void check_pi_concrete(GHashTable* inputs, unsigned long query_idx)
+{
+    Z3_ast query = z3_ast_exprs[query_idx];
+    Z3_ast pi = get_deps(inputs);
+    for (size_t i = 0; i < testcase.size; i++) {
+        eval_data[i] = testcase.data[i];
+    }
+    uintptr_t solution = conc_query_eval_value(smt_solver.ctx, pi, eval_data,
+                                        symbols_sizes, symbols_count, NULL);
+
+    if (solution == 0) {
+        printf("PI is UNSAT\n");
+        print_z3_ast(query);
+        // print_expr(q->query);
+        // print_z3_ast(pi);
+        ABORT();
+    }
+}
+#endif
