@@ -13,6 +13,8 @@
 #include "i386.h"
 #include "fuzzy-sat/z3-fuzzy.h"
 
+#include "../../config.h"
+
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000
 #define SOLVER_TIMEOUT_Z3_MS         10000
@@ -33,8 +35,8 @@
 #endif
 
 #define DEBUG_FUZZ_EXPR 0
-#define DEBUG_EXPR_OPT  0
-#define CHECK_SAT_PI    0
+#define DEBUG_EXPR_OPT  DEBUG_CHECK_EXPR_OPTS
+#define CHECK_SAT_PI    DEBUG_CHECK_PI_SOLVER
 #define DISABLE_SMT     0
 #define ASAN_GLIB       0
 
