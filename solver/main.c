@@ -34,7 +34,7 @@
 #define ADDRESS_REASONING           FUZZ_INTERESTING
 #endif
 
-#define DEBUG_FUZZ_EXPR 0
+#define DEBUG_FUZZ_EXPR DEBUG_FUZZ_EXPRS
 #define DEBUG_EXPR_OPT  DEBUG_CHECK_EXPR_OPTS
 #define CHECK_SAT_PI    DEBUG_CHECK_PI_SOLVER
 #define DISABLE_SMT     0
@@ -6489,6 +6489,7 @@ static void smt_consistency_expr(Query* q)
 #endif
     GHashTable* inputs = NULL;
     Z3_ast      z3_e   = smt_query_to_z3_wrapper(e, 0, 0, &inputs);
+    // print_z3_ast(z3_e);
 
     for (size_t i = 0; i < testcase.size; i++) {
         eval_data[i] = testcase.data[i];
@@ -6519,7 +6520,7 @@ static void smt_consistency_expr(Query* q)
     if (inputs) {
         printf("Dumping query for debug fuzz expr\n");
         Z3_solver solver = smt_new_solver();
-        add_deps_to_solver(inputs, solver);
+        add_deps_to_solver(inputs, solver, -1);
         smt_dump_debug_query(solver, z3_e, GET_QUERY_IDX(q));
         smt_del_solver(solver);
     }
