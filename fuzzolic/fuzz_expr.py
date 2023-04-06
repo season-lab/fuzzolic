@@ -79,7 +79,7 @@ assert(os.path.exists(args.input))
 p_args  = [ SCRIPT_DIR + "/fuzzolic.py"]
 p_args += [ "-i",  args.input ]
 p_args += [ "-o",  args.output_dir ]
-p_args += [ "-s" ]
+p_args += [ "-k", "-l", "-d", "out" ]
 p_args += [ "--" ]
 p_args += [ args.binary ] + args.args
 
@@ -121,7 +121,7 @@ with open(args.input, "rb") as fp:
 
 symbolic_queries = 0
 processed_queries = 0
-queries = glob.glob(args.output_dir + "/fuzzolic-0/*.pi")
+queries = glob.glob(args.output_dir + "/fuzzolic-0*/*.pi")
 queries = sorted(queries, key=os.path.getmtime)
 i = 0
 for query in queries:
@@ -133,6 +133,10 @@ for query in queries:
 
     pi = z3.parse_smt2_file(query)
     expr = z3.parse_smt2_file(query.rstrip(".pi") + ".expr")
+    if type(expr) is z3.z3.AstVector:
+        assert len(expr) == 1
+        expr = expr[0]
+    
     assert(str(expr.decl()) == "==")
     expr = expr.arg(0)
 
@@ -279,7 +283,7 @@ for query in queries:
         p_args  = [ SCRIPT_DIR + "/fuzzolic.py"]
         p_args += [ "-i",  new_testcase ]
         p_args += [ "-o",  workdir ]
-        p_args += [ "--fuzz-expr" ]
+        p_args += [ "--fuzz-expr", "-l"]
         p_args += [ "--" ]
         p_args += [ args.binary ] + args.args
 

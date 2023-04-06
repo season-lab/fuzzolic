@@ -81,6 +81,9 @@ def fix_at_file(cmd, testcase):
 
     return cmd, stdin
 
+def is_afl_showmap_available():
+    return os.path.exists(os.path.join(SCRIPT_DIR, "../utils/afl-showmap"))
+
 class TestcaseMinimizer(object):
     def __init__(self, cmd, afl_path, out_dir, qemu_mode, fixed_name, map_size=MAP_SIZE):
         self.cmd = cmd
@@ -204,6 +207,7 @@ class TestcaseMinimizer(object):
                     proc.communicate(stdin)
         else:
             cmd, stdin = fix_at_file(cmd, input)
+            # print(cmd)
             with open(os.devnull, "wb") as devnull:
                 proc = sp.Popen(cmd, stdin=sp.PIPE, stdout=devnull, stderr=devnull, env=env)
                 proc.communicate(stdin)

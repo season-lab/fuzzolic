@@ -53,7 +53,7 @@ def main():
 
     # optional args
     parser.add_argument(
-        '-d', '--debug', choices=['coverage', 'gdb_trace', 'trace', 'out', 'no_solver', 'gdb_solver'], help='enable debug mode')
+        '-d', '--debug', choices=['coverage', 'gdb_tracer', 'trace', 'out', 'no_solver', 'gdb_solver'], help='enable debug mode')
     parser.add_argument(
         '-a', '--afl', help='path to afl workdir (it enables AFL mode); AFL_PATH must be set.')
     parser.add_argument(
@@ -74,6 +74,8 @@ def main():
         '-l', '--symbolic-models', action='store_true', help='Enable symbolic models')
     parser.add_argument(
         '--fuzz-expr', action='store_true', help='enable fuzz expression (debug) [experimental]')
+    parser.add_argument(
+        '--check-input', action='store_true', help='enable check of branch direction (debug) [experimental]')
     parser.add_argument(
         '-k', '--keep-run-dirs', action='store_true', help='keep run directories')
     parser.add_argument(
@@ -141,6 +143,9 @@ def main():
     fuzz_expr = args.fuzz_expr
     if fuzz_expr is None:
         fuzz_expr = False
+    check_input = args.check_input
+    if check_input is None:
+        check_input = False
     input_fixed_name = args.input_fixed_name
     symbolic_models = args.symbolic_models
     if symbolic_models is None:
@@ -161,7 +166,7 @@ def main():
         binary, input, output_dir, binary_args, debug, afl,
         timeout, fuzzy, optimistic_solving, memory_slice_reasoning,
         address_reasoning, fuzz_expr, input_fixed_name, use_smt_if_empty,
-        symbolic_models, keep_run_dirs, single_path)
+        symbolic_models, keep_run_dirs, single_path, check_input)
     fuzzolic_executor.run()
 
 

@@ -53,7 +53,8 @@ class Executor(object):
                  use_smt_if_empty=False,
                  use_symbolic_models=False,
                  keep_run_dirs=False,
-                 single_path=False):
+                 single_path=False,
+                 check_input=False):
 
         if not os.path.exists(binary):
             sys.exit('ERROR: invalid binary')
@@ -87,9 +88,11 @@ class Executor(object):
             #  self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
         else:
             self.afl = None
-            self.minimizer = minimizer_qsym.TestcaseMinimizer(
-                [binary] + binary_args, AFL_PATH, output_dir, True, input_fixed_name)
-            # self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
+            if minimizer_qsym.is_afl_showmap_available():
+                self.minimizer = minimizer_qsym.TestcaseMinimizer(
+                    [binary] + binary_args, AFL_PATH, output_dir, True, input_fixed_name)
+            else:
+                self.minimizer = minimizer.TestcaseMinimizer([binary] + binary_args, self.global_bitmap)
 
         self.afl_processed_testcases = set()
         self.afl_alt_processed_testcases = set()
@@ -106,6 +109,7 @@ class Executor(object):
         self.input_fixed_name = input_fixed_name
         self.keep_run_dirs = keep_run_dirs
         self.single_path = single_path
+        self.check_input = check_input
 
         self.__load_config()
         self.__warning_log = set()
@@ -128,8 +132,8 @@ class Executor(object):
                                     "-o", plt_info_file,
                                     binary
                                 ],
-                                stderr=subprocess.DEVNULL,
-                                stdin=subprocess.DEVNULL,
+                                # stderr=subprocess.DEVNULL,
+                                # stdin=subprocess.DEVNULL,
                                 )
             p.wait()
             self.plt_info = plt_info_file
@@ -331,9 +335,9 @@ class Executor(object):
 
         if self.debug != 'gdb_tracer':
             p_tracer_args += ['-symbolic'] # self.fuzz_expr or 
-            if (self.fuzz_expr or self.debug == 'trace'):  # or self.debug == 'no_solver':
+            if (self.debug == 'trace'):  # or self.debug == 'no_solver': # self.fuzz_expr or 
                 p_tracer_args += ['-d']
-                p_tracer_args += ['in_asm,op'] # 'in_asm,op_opt,out_asm'
+                p_tracer_args += ['in_asm,op,op_opt,out_asm'] # 'in_asm,op_opt,out_asm'
 
         args = self.binary_args
         if not self.testcase_from_stdin:
@@ -442,7 +446,7 @@ class Executor(object):
                     break
 
             if SHUTDOWN or timeout:
-                print('[FUZZOLIC] Solver is taking to long. Let us stop it.')
+                print('[FUZZOLIC] Solver is taking too long. Let us stop it.')
                 p_solver.send_signal(signal.SIGUSR2)
                 try:
                     p_solver.wait(SOLVER_TIMEOUT)
@@ -470,8 +474,8 @@ class Executor(object):
             if shm_id > 0:
                 r = self.libc.shmctl(ctypes.c_int(
                     shm_id), ctypes.c_int(IPC_RMID), ctypes.c_int(0))
-                #print("Shared memory detach on (%s, %s): %s" %
-                #      (shm_key, shm_id, r))
+                print("Shared memory detach on (%s, %s): %s" %
+                      (shm_key, shm_id, r))
 
         # parse tracer logs for known errors/warnings
         input_timeout = False
@@ -511,6 +515,8 @@ class Executor(object):
                     self.__import_test_case(run_dir + '/' + t, 'test_case_%03d_%03d_.dat' % (run_id, k))
                     k += 1
         else:
+            pass 
+            """
             file_extension = None
             if self.input_fixed_name:
                 _, file_extension = os.path.splitext(self.input_fixed_name)
@@ -531,11 +537,17 @@ class Executor(object):
                 else:
                     if self.afl:
                         os.unlink(run_dir + '/' + t)
+            """
 
         if not self.keep_run_dirs:
             shutil.rmtree(run_dir)
 
         os.unlink(global_bitmap_pre_run)
+
+        if p_tracer.returncode == -11:
+            sys.exit(-11)
+        if self.debug != 'no_solver' and self.debug != 'coverage' and p_solver.returncode == -6:
+            sys.exit(-11)
 
     def __check_testcase(self, t, run_id, k, target, global_bitmap_pre_run):
         if self.minimizer.check_testcase(t, global_bitmap_pre_run):
