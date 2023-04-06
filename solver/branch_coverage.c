@@ -1,5 +1,7 @@
 #include "solver.h"
 
+#include "../../config.h"
+
 extern Config config;
 
 #define XXH_STATIC_LINKING_ONLY
@@ -207,6 +209,19 @@ int is_interesting_branch(uintptr_t pc, uintptr_t taken, uint8_t is_lib)
 
     last_branch_hash           = h;
     last_branch_is_interesting = ret;
+
+#if DEBUG_SKIP_QUERIES
+    static int skip_query = -1;
+    if (skip_query == -1) {
+        if (getenv("DEBUG_SKIP_QUERIES"))
+            skip_query = 1;
+        else
+            skip_query = 0;
+    }
+    if (skip_query)
+        ret = 0;
+#endif
+
     return ret;
 }
 
@@ -325,6 +340,10 @@ int is_interesting_branch(uint16_t idx, uint16_t count, uint16_t idx_inv,
 
 int is_interesting_memory(uintptr_t addr)
 {
+#if DEBUG_SKIP_QUERIES
+    return 0;
+#endif    
+
     return last_branch_is_interesting;
 #if 0
     uintptr_t h   = hash_pc(addr, 0);

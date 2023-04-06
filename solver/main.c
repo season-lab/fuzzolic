@@ -36,15 +36,18 @@
 
 #define DEBUG_FUZZ_EXPR DEBUG_FUZZ_EXPRS
 #define DEBUG_EXPR_OPT  DEBUG_CHECK_EXPR_OPTS
-#define CHECK_SAT_PI    DEBUG_CHECK_PI_SOLVER
+#define CHECK_SAT_PI    (DEBUG_CHECK_PI_SOLVER + DEBUG_CHECK_PI_CONCRETE)
 #define DISABLE_SMT     0
 #define ASAN_GLIB       0
 
 #if DEBUG_CHECK_INPUTS
+static int check_input = -1;
 static int debug_hash = 0;
 static int debug_count = 0;
 static int debug_taken = 0;
 #endif
+
+static int debug_abort = -1;
 
 #define CHECK_FUZZY_MISPREDICTIONS 0
 
@@ -276,6 +279,13 @@ static void smt_init(void)
                 (char*)config.testcase_path, NULL, &conc_query_eval_value,
                 SOLVER_TIMEOUT_FUZZY_MS);
 #endif
+
+    if (debug_abort == -1) {
+        if (getenv("DEBUG_ABORT_ON_INCONSISTENCY")) 
+            debug_abort = 1;
+        else
+            debug_abort = 0;
+    }
 }
 
 static Z3_solver        cached_solver = NULL;
@@ -377,7 +387,7 @@ void print_z3_original(Z3_ast e)
 }
 
 #if CHECK_SAT_PI
-static void check_pi_concrete(GHashTable* inputs, unsigned long query);
+static void check_pi(GHashTable* inputs, unsigned long query);
 #endif
 
 static inline void update_and_add_deps_to_solver(GHashTable* inputs,
@@ -493,7 +503,7 @@ static inline void update_and_add_deps_to_solver(GHashTable* inputs,
     f_hash_table_destroy(to_be_deallocated);
 
 #if CHECK_SAT_PI
-    check_pi_concrete(inputs, query_idx);
+    check_pi(inputs, query_idx);
 #endif
 }
 
@@ -781,18 +791,19 @@ static void smt_dump_solution(Z3_context ctx, Z3_model m, size_t idx,
 {
     size_t input_size = testcase.size;
 
-    char debug_testcase_name[128] = { 0 };
-#if DEBUG_CHECK_INPUTS
-    if (sub_idx + sub_idx_offset == 0) {
-        snprintf(debug_testcase_name, sizeof(debug_testcase_name),
-                     "-%x_%d_%d", debug_hash, debug_count, debug_taken);
-    }
-#endif
-
     char testcase_name[128];
-    int  n = snprintf(testcase_name, sizeof(testcase_name),
-                     "test_case_%lu_%lu%s.dat", idx, sub_idx + sub_idx_offset, debug_testcase_name);
-    assert(n > 0 && n < sizeof(testcase_name) && "test case name too long");
+#if DEBUG_CHECK_INPUTS
+    if (check_input == 1) {
+        if (sub_idx + sub_idx_offset == 0) {
+            snprintf(testcase_name, sizeof(testcase_name),
+                        "input_%05d_%x_%d", debug_count, debug_hash, debug_taken);
+        } else {
+            return;
+        }
+    } else
+#endif
+    snprintf(testcase_name, sizeof(testcase_name),
+        "test_case_%lu_%lu.dat", idx, sub_idx + sub_idx_offset);
 
 #if 0
     SAYF("Dumping solution into %s\n", testcase_name);
@@ -966,26 +977,78 @@ static void inline smt_dump_solver_to_file(Z3_solver solver, char* path)
 }
 
 #if DEBUG_FUZZ_EXPR
-static void inline smt_dump_debug_query(Z3_solver pi, Z3_ast expr, uint64_t idx)
+static void inline smt_dump_debug_query(Z3_solver solver, Z3_ast expr, uint64_t value, uint64_t idx, GHashTable* inputs)
 {
-    Z3_string s_query = Z3_solver_to_string(smt_solver.ctx, pi);
-    char      test_case_name[128];
-    int       n =
-        snprintf(test_case_name, sizeof(test_case_name), "debug_%lu.pi", idx);
-    assert(n > 0 && n < sizeof(test_case_name) && "test case name too long");
-    FILE* fp = fopen(test_case_name, "w");
-    fwrite(s_query, strlen(s_query), 1, fp);
-    fclose(fp);
-    //
-    Z3_solver_reset(smt_solver.ctx, pi);
-    expr = Z3_mk_eq(smt_solver.ctx, expr, smt_new_const(0, SIZE(expr)));
-    Z3_solver_assert(smt_solver.ctx, pi, expr);
-    s_query = Z3_solver_to_string(smt_solver.ctx, pi);
-    n = snprintf(test_case_name, sizeof(test_case_name), "debug_%lu.expr", idx);
-    assert(n > 0 && n < sizeof(test_case_name) && "test case name too long");
-    fp = fopen(test_case_name, "w");
-    fwrite(s_query, strlen(s_query), 1, fp);
-    fclose(fp);
+    // printf("DEBUG: value=%lx\n", value);
+    Z3_sort sort = Z3_get_sort(smt_solver.ctx, expr);
+    Z3_ast not_e;
+    uint64_t current_value = value;
+    for (int i = 0; i < DEBUG_FUZZ_EXPRS_N; i++) {
+      int is_bool = 0;
+      if (Z3_get_sort_kind(smt_solver.ctx, sort) == Z3_BOOL_SORT) {
+        not_e = value == 1 ? Z3_mk_not(smt_solver.ctx, expr) : expr;
+        is_bool = 1;
+      } else
+        not_e = Z3_mk_not(smt_solver.ctx, Z3_mk_eq(smt_solver.ctx, expr, smt_new_const(current_value, SIZE(expr))));
+      Z3_solver_assert(smt_solver.ctx, solver, not_e);
+      // print_z3_ast(not_e);
+      Z3_lbool feasible = Z3_solver_check(smt_solver.ctx, solver);
+      if (feasible == Z3_L_TRUE) {
+        Z3_model model = Z3_solver_get_model(smt_solver.ctx, solver);
+        Z3_model_inc_ref(smt_solver.ctx, model);
+        Z3_ast solution = NULL;
+        Z3_model_eval(smt_solver.ctx, model, expr, Z3_TRUE, &solution);
+        uint64_t value = 0;
+        if (is_bool) {
+          Z3_lbool res = Z3_get_bool_value(smt_solver.ctx, solution);
+          if (res == Z3_L_TRUE)
+            value = 1;
+          else if (res == Z3_L_FALSE)
+            value = 0;
+          else
+            abort();
+        } else
+          Z3_get_numeral_uint64(smt_solver.ctx, solution, &value);
+        // printf("FEASIBLE: value=%lx current=%lx\n", value, current_value);
+        assert(current_value != value);
+        current_value = value;
+        
+        static char testcase_name[128];
+        snprintf(testcase_name, sizeof(testcase_name),
+            "debug_%05ld_%lx.dat", idx, current_value);
+
+        printf("DEBUG testcase: %s\n", testcase_name);
+
+        Z3_sort bv_sort = Z3_mk_bv_sort(smt_solver.ctx, 8);
+        FILE*   fp      = fopen(testcase_name, "w");
+        for (long i = 0; i < testcase.size; i++) {
+
+            Z3_ast input_slice = input_exprs[i];
+            int solution_byte = 0;
+            if (input_slice) {
+                // SAYF("input slice %ld\n", i);
+                Z3_ast  solution;
+                Z3_bool successfulEval = Z3_model_eval(smt_solver.ctx, model, input_slice,
+                                                    Z3_FALSE, // model_completion
+                                                    &solution);
+                assert(successfulEval && "Failed to evaluate model");
+                if (Z3_get_ast_kind(smt_solver.ctx, solution) == Z3_NUMERAL_AST) {
+                    Z3_get_numeral_int(smt_solver.ctx, solution, &solution_byte);
+                } else {
+                    solution_byte = i < testcase.size ? testcase.data[i] : 0;
+                }
+            } else {
+                // printf("Input slice is not used by the formula\n");
+                solution_byte = i < testcase.size ? testcase.data[i] : 0;
+            }
+            fwrite(&solution_byte, sizeof(char), 1, fp);
+        }
+        fclose(fp);
+
+        Z3_model_dec_ref(smt_solver.ctx, model);
+      } else break; 
+      if (is_bool) break;
+    }
 }
 #endif
 
@@ -4829,6 +4892,34 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                                      width, &op1_inputs);
             break;
 
+        case UNSIGNED_SATURATION:
+            op1 = smt_query_to_z3(query->op1, query->op1_is_const, 0,
+                                  &op1_inputs);
+            uint64_t packed_size = CONST(query->op2);
+            uint64_t idx = CONST(query->op3);
+            r = Z3_mk_extract(
+                smt_solver.ctx,
+                (idx + 1) * 8 - 1,
+                idx * 8,
+                Z3_mk_ite(
+                    smt_solver.ctx,
+                    Z3_mk_bvsge(smt_solver.ctx, op1, smt_new_const(FF_MASK(packed_size * 8), SIZE(op1))),
+                    smt_new_const(FF_MASK(packed_size * 8), packed_size * 8),
+                    Z3_mk_ite(
+                        smt_solver.ctx,
+                        Z3_mk_bvslt(smt_solver.ctx, op1, smt_new_const(0, SIZE(op1))),
+                        smt_new_const(0, packed_size * 8),
+                        Z3_mk_extract(
+                            smt_solver.ctx,
+                            packed_size * 8 - 1,
+                            0,
+                            op1
+                        )
+                    )
+                )
+            );
+            break;
+
         default:
             print_expr(query);
             ABORT("Unknown expr opkind: %s", opkind_to_str(query->opkind));
@@ -4843,6 +4934,21 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
 #endif
 
 #if DEBUG_EXPR_OPT
+
+    static int check_opt = -1;
+    if (check_opt == -1) {
+
+        char* s = getenv("DEBUG_CHECK_OPT");
+        if (s == NULL)
+            check_opt = 0;
+        else if (strcmp(s, "EVAL") == 0)
+            check_opt = 1;
+        else if (strcmp(s, "SMT") == 0)
+            check_opt = 2;
+        else
+            abort();
+    }
+
     // printf("\nOPT CHECK BEFORE\n");
     Z3_ast orig_r = r;
 #endif
@@ -4854,9 +4960,8 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
     // printf("END opkind: %s\n", opkind_to_str(query->opkind));
 
 #if DEBUG_EXPR_OPT
-    if (r != orig_r) { // && debug_translation
-#if 0
-        if (SIZE(r) != SIZE(orig_r)) {
+    if (r != orig_r && check_opt == 1) { 
+        if (!IS_BOOL(r) && SIZE(r) != SIZE(orig_r)) {
             printf("OPT CHECK: size=%u size=%u\n", SIZE(orig_r), SIZE(r));
             printf("BEFORE:\n");
             print_z3_ast(orig_r);
@@ -4865,25 +4970,47 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
             ABORT();
         }
 
-        if (SIZE(orig_r) <= 64) {
+        if (IS_BOOL(orig_r) || SIZE(orig_r) <= 64) {
+            printf("CHECKING OPT EVAL\n");
+
             for (size_t i = 0; i < testcase.size; i++) {
                 eval_data[i] = testcase.data[i];
             }
 
             uintptr_t before_value = conc_query_eval_value(smt_solver.ctx, orig_r, eval_data,
-                                                symbols_sizes, symbols_count);
+                                                symbols_sizes, symbols_count, NULL);
 
             for (size_t i = 0; i < testcase.size; i++) {
                 eval_data[i] = testcase.data[i];
             }
 
             uintptr_t after_value = conc_query_eval_value(smt_solver.ctx, r, eval_data,
-                                                symbols_sizes, symbols_count);
+                                                symbols_sizes, symbols_count, NULL);
 
             if (before_value == after_value) {
-                // printf("OPT CHECK: expected=%lx solution=%lx\n", before_value, after_value);
+                printf("CHECKING OPT EVAL: OK - expected=%lx solution=%lx\n", before_value, after_value);
             } else {
-                printf("OPT CHECK: expected=%lx solution=%lx\n", before_value, after_value);
+                printf("CHECKING OPT EVAL: KO expected=%lx solution=%lx\n", before_value, after_value);
+                if (debug_abort) {
+                    printf("BEFORE:\n");
+                    print_z3_ast(orig_r);
+                    printf("AFTER:\n");
+                    print_z3_ast(r);
+                    ABORT();
+                }
+            }
+        } 
+    }
+    
+    if (r != orig_r && check_opt == 2) { 
+        printf("CHECKING OPT SMT\n");
+        Z3_solver solver = smt_new_solver();
+        Z3_ast    c      = Z3_mk_eq(smt_solver.ctx, r, orig_r);
+        Z3_solver_assert(smt_solver.ctx, solver, Z3_mk_not(smt_solver.ctx, c));
+        Z3_lbool res = Z3_solver_check(smt_solver.ctx, solver);
+        if (res == Z3_L_TRUE) {
+            printf("CHECKING OPT SMT: KO\n");
+            if (debug_abort) {
                 printf("BEFORE:\n");
                 print_z3_ast(orig_r);
                 printf("AFTER:\n");
@@ -4891,20 +5018,7 @@ Z3_ast smt_query_to_z3(Expr* query, uintptr_t is_const_value, size_t width,
                 ABORT();
             }
         } else {
-            // ToDo: fallback to Z3
-        }
-#endif
-        Z3_solver solver = smt_new_solver();
-        Z3_ast    c      = Z3_mk_eq(smt_solver.ctx, r, orig_r);
-        Z3_solver_assert(smt_solver.ctx, solver, Z3_mk_not(smt_solver.ctx, c));
-        Z3_lbool res = Z3_solver_check(smt_solver.ctx, solver);
-        if (res == Z3_L_TRUE) {
-            printf("UNSAFE OPT\n");
-            printf("BEFORE:\n");
-            print_z3_ast(orig_r);
-            printf("AFTER:\n");
-            print_z3_ast(r);
-            ABORT();
+            printf("CHECKING OPT SMT: OK\n");
         }
         smt_del_solver(solver);
     }
@@ -5173,14 +5287,12 @@ static void smt_branch_query(Query* q)
     smt_stats(smt_solver.solver);
 #endif
 #if 0
-    if (GET_QUERY_IDX(q) >= 94) {
-        debug_translation = 1;
-    }
+    debug_translation = 1;
 #endif
 #if 0
     printf("\nBranch at 0x%lx (id=%lu, taken=%u)\n", q->address,
                    GET_QUERY_IDX(q), (uint16_t)q->args64);
-    // print_expr(q->query);
+    print_expr(q->query);
 #endif
     // SAYF("Translating query %lu to Z3...\n", GET_QUERY_IDX(q));
     GHashTable* inputs   = NULL;
@@ -5255,18 +5367,23 @@ static void smt_branch_query(Query* q)
         debug_hash = debug_hash ^ q->address;
         debug_taken =q->args8.arg0;
 
-        static int check_input = -1;
         static uint32_t check_input_count = 0;
         static uint32_t check_input_hash = 0;
         static uint32_t check_input_taken = 0;
         if (check_input == -1) {
 
-            if (getenv("DEBUG_CHECK_INPUT"))
-                check_input = 1;
-            else
+            char* s = getenv("DEBUG_CHECK_INPUT");
+            if (s) {
+                if (strcmp(s, "DUMP") == 0)
+                    check_input = 1;
+                else if (strcmp(s, "CHECK") == 0)
+                    check_input = 2;
+                else
+                    abort();
+            } else
                 check_input = 0;
 
-            if (check_input) {
+            if (check_input == 2) {
                 if (getenv("DEBUG_CHECK_INPUT_COUNT"))
                     check_input_count = atoi(getenv("DEBUG_CHECK_INPUT_COUNT"));
                 else
@@ -5284,7 +5401,7 @@ static void smt_branch_query(Query* q)
             }
         }
 
-        if (check_input) {
+        if (check_input == 2) {
             // printf("Checking...\n");
             if (debug_count == check_input_count) {
                 if (debug_hash == check_input_hash) {
@@ -5293,15 +5410,18 @@ static void smt_branch_query(Query* q)
                         exit(0);
                     } else {
                         printf("Input is divergent: it reaches the same branch but does not take the expected direction!\n");
-                        exit(66);
+                        if (debug_abort) abort();
+                        else exit(0);
                     }
                 } else {
                     printf("Input is divergent: it does take the same path! [hash is different: %x vs expected=%x]\n", debug_hash, check_input_hash);
-                    exit(66);
+                    if (debug_abort) abort();
+                        else exit(0);
                 }
             } else if (debug_count > check_input_count) {
                 printf("Input is divergent: it does take the same path! [count is larger]\n");
-                exit(66);
+                if (debug_abort) abort();
+                else exit(0);
             }
         } 
 #endif
@@ -5316,15 +5436,8 @@ static void smt_branch_query(Query* q)
                                   q->address);
 #endif
 
-#if DEBUG_SKIP_QUERIES
-        static int skip_query = -1;
-        if (skip_query == -1) {
-            if (getenv("DEBUG_SKIP_QUERIES"))
-                skip_query = 1;
-            else
-                skip_query = 0;
-        }
-        if (skip_query)
+#if DEBUG_CHECK_INPUTS
+        if (check_input == 2)
             is_interesting = 0;
 #endif
 
@@ -5397,7 +5510,7 @@ static void smt_branch_query(Query* q)
 #endif
 
 #if CHECK_SAT_PI
-    check_pi_concrete(inputs, GET_QUERY_IDX(q));
+    check_pi(inputs, GET_QUERY_IDX(q));
 #endif
 }
 
@@ -6456,73 +6569,73 @@ static void smt_mem_concr_query(Query* q, OPKIND opkind)
 #endif
 
 #if CHECK_SAT_PI
-    Z3_ast pi = get_deps(inputs);
-    for (size_t i = 0; i < testcase.size; i++) {
-        eval_data[i] = testcase.data[i];
-    }
-    uintptr_t solution = conc_query_eval_value(smt_solver.ctx, pi, eval_data,
-                                        symbols_sizes, symbols_count, NULL);
-
-    if (solution == 0) {
-
-        uintptr_t solution = conc_query_eval_value(smt_solver.ctx, memory_expr, eval_data,
-                                        symbols_sizes, symbols_count, NULL);
-
-        printf("PI is UNSAT: %lx\n", solution);
-        // print_z3_ast(c);
-        print_expr(q->query);
-        // print_z3_ast(pi);
-        ABORT();
-    }
+    check_pi(inputs, GET_QUERY_IDX(q));
 #endif
 }
 
 static void smt_consistency_expr(Query* q)
 {
+    static int check_expr_consistency = -1;
+    if (check_expr_consistency == -1) {
+        if (getenv("DEBUG_EXPR_CONSISTENCY"))
+            check_expr_consistency = 1;
+        else
+            check_expr_consistency = 0;
+    }
+
     Expr*     e              = q->query->op1;
     uintptr_t concrete_value = CONST(q->query->op2);
     uintptr_t pc             = q->address;
-#if 0
-    if (GET_QUERY_IDX(q) >= 91) {
-        debug_translation = 1;
-    }
-#endif
+
     GHashTable* inputs = NULL;
     Z3_ast      z3_e   = smt_query_to_z3_wrapper(e, 0, 0, &inputs);
     // print_z3_ast(z3_e);
 
-    for (size_t i = 0; i < testcase.size; i++) {
-        eval_data[i] = testcase.data[i];
+    if (check_expr_consistency) {
+        for (size_t i = 0; i < testcase.size; i++) {
+            eval_data[i] = testcase.data[i];
+        }
+        uintptr_t solution = conc_query_eval_value(smt_solver.ctx, z3_e, eval_data,
+                                                symbols_sizes, symbols_count, NULL);
+
+        if (concrete_value == solution) {
+            printf("\nConsistency check (id=%lu, pc=%lx): OK\n", GET_QUERY_IDX(q),
+                pc);
+            printf("CHECK_EXPR: SUCCESS expected=%lx solution=%lx\n", concrete_value, solution);
+        } else {
+            printf("\nConsistency check (id=%lu, pc=%lx): FAIL\n", GET_QUERY_IDX(q),
+                pc);
+            printf("CHECK_EXPR: FAILURE expected=%lx solution=%lx\n", concrete_value, solution);
+            if (debug_abort) {
+                print_z3_ast(z3_e);
+                print_expr(e);
+                ABORT();
+            }
+        }
     }
 
-    uintptr_t solution = conc_query_eval_value(smt_solver.ctx, z3_e, eval_data,
-                                               symbols_sizes, symbols_count, NULL);
-
-    if (concrete_value == solution) {
-        printf("\nConsistency check (id=%lu, pc=%lx): OK\n", GET_QUERY_IDX(q),
-               pc);
-        printf("CHECK: expected=%lx solution=%lx\n", concrete_value, solution);
-    } else {
-        printf("\nConsistency check (id=%lu, pc=%lx): FAIL\n", GET_QUERY_IDX(q),
-               pc);
-        printf("CHECK: expected=%lx solution=%lx\n", concrete_value, solution);
-        print_z3_ast(z3_e);
-        print_expr(e);
-        ABORT();
-    }
-#if 0
-    if (GET_QUERY_IDX(q) >= 48860) {
-        print_z3_ast(z3_e);
-        print_expr(e);
-    }
-#endif
 #if DEBUG_FUZZ_EXPR
-    if (inputs) {
-        printf("Dumping query for debug fuzz expr\n");
+
+    static int fuzz_expr = -1;
+    if (fuzz_expr == -1) {
+        char* s = getenv("DEBUG_FUZZ_EXPR");
+        if (s == NULL)
+            fuzz_expr = 0;
+        else if (strcmp(s, "DUMP") == 0)
+            fuzz_expr = 1;
+        else if (strcmp(s, "CHECK") == 0)
+            fuzz_expr = 2;
+        else
+            abort();
+    }
+
+    if (inputs && fuzz_expr == 1) {
+        // printf("Dumping query for debug fuzz expr\n");
         Z3_solver solver = smt_new_solver();
         add_deps_to_solver(inputs, solver, -1);
-        smt_dump_debug_query(solver, z3_e, GET_QUERY_IDX(q));
+        smt_dump_debug_query(solver, z3_e, concrete_value, GET_QUERY_IDX(q), inputs);
         smt_del_solver(solver);
+        // printf("Dumping query for debug fuzz expr: DONE\n");
     }
 #endif
 }
@@ -7090,14 +7203,16 @@ static void cleanup(void)
     smt_destroy();
 
     if (expr_pool_shm_id > 0) {
-        // printf("SHM: %lu %lu\n", config.expr_pool_shm_key, expr_pool_shm_id);
+        // printf("DELETING SHM: %u %lu\n", config.expr_pool_shm_key, expr_pool_shm_id);
         shmctl(expr_pool_shm_id, IPC_RMID, NULL);
     }
     if (query_shm_id > 0) {
+        // printf("DELETING SHM: %u %lu\n", config.query_shm_key, query_shm_id);
         shmctl(query_shm_id, IPC_RMID, NULL);
     }
 #if BRANCH_COVERAGE == FUZZOLIC
     if (bitmap_shm_id) {
+        // printf("DELETING SHM: %u %lu\n", config.bitmap_shm_key, bitmap_shm_id);
         shmctl(bitmap_shm_id, IPC_RMID, NULL);
     }
 #endif
@@ -7124,7 +7239,7 @@ void sig_segfault(int signo)
 
 void sig_usr1(int signo)
 {
-    printf("\n[SOLVER] Received SIGUSR1\n\n");
+    // printf("\n[SOLVER] Received SIGUSR1\n\n");
     go_signal = 1;
 }
 
@@ -7225,6 +7340,8 @@ int main(int argc, char* argv[])
                            IPC_CREAT | 0666); /*| IPC_EXCL */
     if (bitmap_shm_id < 0)
         PFATAL("shmget() failed");
+
+    printf("[SOLVER] Creating shared memory #3 (key=%lu)...\n", config.bitmap_shm_key);
 #endif
 
     // SAYF("POOL_SHM_ID=%d QUERY_SHM_ID=%d\n", expr_pool_shm_id,
@@ -7353,22 +7470,68 @@ int main(int argc, char* argv[])
 }
 
 #if CHECK_SAT_PI
-static void check_pi_concrete(GHashTable* inputs, unsigned long query_idx)
+static void check_pi(GHashTable* inputs, unsigned long query_idx)
 {
-    Z3_ast query = z3_ast_exprs[query_idx];
-    Z3_ast pi = get_deps(inputs);
-    for (size_t i = 0; i < testcase.size; i++) {
-        eval_data[i] = testcase.data[i];
-    }
-    uintptr_t solution = conc_query_eval_value(smt_solver.ctx, pi, eval_data,
-                                        symbols_sizes, symbols_count, NULL);
+    static int check_pi = -1;
+    if (check_pi == -1) {
 
-    if (solution == 0) {
-        printf("PI is UNSAT\n");
-        print_z3_ast(query);
-        // print_expr(q->query);
-        // print_z3_ast(pi);
-        ABORT();
+        char* s = getenv("DEBUG_CHECK_PI");
+        if (s == NULL)
+            check_pi = 0;
+        else if (strcmp(s, "EVAL") == 0)
+            check_pi = 1;
+        else if (strcmp(s, "SMT") == 0)
+            check_pi = 2;
+        else
+            abort();
     }
+
+    if (check_pi == 0) return;
+
+    Z3_ast pi = get_deps(inputs);
+
+    if (check_pi == 1) {
+        printf("CHECKING PI EVAL\n");
+
+        for (size_t i = 0; i < testcase.size; i++) {
+            eval_data[i] = testcase.data[i];
+        }
+        uintptr_t solution = conc_query_eval_value(smt_solver.ctx, pi, eval_data,
+                                            symbols_sizes, symbols_count, NULL);
+
+        if (solution == 0) {
+            printf("CHECKING PI EVAL: KO\n");
+            if (debug_abort) { 
+                print_z3_ast(pi);
+                // print_expr(q->query);
+                // print_z3_ast(pi);
+                ABORT();
+            }
+        } else {
+            printf("CHECKING PI EVAL: OK\n");
+        }
+    }
+
+    if (check_pi == 2) {
+        printf("CHECKING PI SMT\n");
+
+        Z3_solver solver = smt_new_solver();
+        Z3_solver_assert(smt_solver.ctx, solver, pi);
+        Z3_lbool res = Z3_solver_check(smt_solver.ctx, solver);
+        if (res == Z3_L_FALSE) {
+            printf("CHECKING PI SMT: KO\n");
+            if (debug_abort) {
+                print_z3_ast(pi);
+                // print_expr(q->query);
+                // print_z3_ast(pi);
+                ABORT();
+            }
+        } else {
+            printf("CHECKING PI SMT: OK\n");
+        }
+        smt_del_solver(solver);
+    }
+
+
 }
 #endif
