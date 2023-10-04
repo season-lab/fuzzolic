@@ -515,8 +515,6 @@ class Executor(object):
                     self.__import_test_case(run_dir + '/' + t, 'test_case_%03d_%03d_.dat' % (run_id, k))
                     k += 1
         else:
-            pass 
-            """
             file_extension = None
             if self.input_fixed_name:
                 _, file_extension = os.path.splitext(self.input_fixed_name)
@@ -537,7 +535,6 @@ class Executor(object):
                 else:
                     if self.afl:
                         os.unlink(run_dir + '/' + t)
-            """
 
         if not self.keep_run_dirs:
             shutil.rmtree(run_dir)
