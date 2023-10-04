@@ -1,7 +1,7 @@
 [submodule "tracer"]
 	path = tracer
 	url = https://github.com/season-lab/qemu.git
-	branch = symbolic
+	branch = debug-ce
 [submodule "solver/xxHash"]
 	path = solver/xxHash
 	url = https://github.com/Cyan4973/xxHash.git

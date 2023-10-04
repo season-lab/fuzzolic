@@ -6,7 +6,7 @@ import subprocess
 import argparse
 import re
 
-MODELS_LIBC = ["malloc", "free", "realloc", "calloc", "printf", "fprintf", "vfprintf", "fputc"]
+MODELS_LIBC = ["malloc", "free", "realloc", "calloc", "printf", "fprintf", "vfprintf", "fputc", "_IO_printf"]
 MODELS = [
     "strcmp",   # indirect call, offset in libc.so is not useful
     "strncmp",  # indirect call
@@ -37,10 +37,15 @@ def run(args):
 
 
 def process_plt_libc(binary, outfile=None):
-    base_address = subprocess.check_output (
-        "readelf -l %s | grep LOAD | head -n 1" % binary, shell=True )
+    # base_address = subprocess.check_output (
+    #     "readelf -l %s | grep LOAD | head -n 1" % binary, shell=True )
+    # base_address = base_address.decode('ascii')
+    # base_address = int(list(filter(lambda x: x != '', base_address.split(" ")))[2], 16)
+
+    base_address = subprocess.check_output ("objdump -d %s | head | grep 0000" % binary, shell=True )
     base_address = base_address.decode('ascii')
-    base_address = int(list(filter(lambda x: x != '', base_address.split(" ")))[2], 16)
+    base_address = int(base_address.split(' ')[0], 16)
+
     try:
         res = subprocess.check_output (
             "nm -D %s" % binary, shell=True )
@@ -59,6 +64,7 @@ def process_plt_libc(binary, outfile=None):
         type = split[1]
         if type not in ["T", "W"]:
             continue
+        # print(name)
         if name in MODELS_LIBC:
             if outfile is None:
                 print("%s,%s,0x%x" % (os.path.basename(binary), name, addr))
