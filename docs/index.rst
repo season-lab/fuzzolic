@@ -6,7 +6,7 @@ fuzzing + concolic = fuzzolic :)
 
 .. raw:: html
 
-    <p><img src="https://circleci.com/gh/ercoppa-bot/fuzzolic-builder-ci.svg?style=shield&circle-token=d8cf8057b9bcee4923bdb611402eb5d7a7b8f0fe" /><br /></p>
+    <p><img src="https://circleci.com/gh/season-lab/fuzzolic.svg?style=shield" /><br /></p>
 
 News
 =======
