@@ -1,90 +1,44 @@
-
-
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" >
 <head>
   <meta charset="utf-8" />
-  
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  
-  <title>Usage &mdash; Fuzzolic  documentation</title>
-  
-
-  
-  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
-  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
-
-  
-  
-
-  
-  
-
-  
-
-  
+  <title>Usage &mdash; Fuzzolic  documentation</title><link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
   <!--[if lt IE 9]>
     <script src="_static/js/html5shiv.min.js"></script>
   <![endif]-->
-  
-    
-      <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+  <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
         <script src="_static/jquery.js"></script>
         <script src="_static/underscore.js"></script>
         <script src="_static/doctools.js"></script>
         <script src="_static/language_data.js"></script>
-    
-    <script type="text/javascript" src="_static/js/theme.js"></script>
-
-    
+    <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Internals" href="internals.html" />
     <link rel="prev" title="Installation" href="install.html" /> 
 </head>
 
-<body class="wy-body-for-nav">
-
-   
+<body class="wy-body-for-nav"> 
   <div class="wy-grid-for-nav">
-    
     <nav data-toggle="wy-nav-shift" class="wy-nav-side">
       <div class="wy-side-scroll">
         <div class="wy-side-nav-search" >
-          
 
           
-            <a href="index.html" class="icon icon-home"> Fuzzolic
           
-
-          
+          <a href="index.html" class="icon icon-home">
+            Fuzzolic
           </a>
-
-          
-            
-            
-          
-
-          
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
-    <input type="text" name="q" placeholder="Search docs" />
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
     <input type="hidden" name="check_keywords" value="yes" />
     <input type="hidden" name="area" value="default" />
   </form>
 </div>
-
-          
-        </div>
-
-        
-        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
-          
-            
-            
-              
-            
-            
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption"><span class="caption-text">Getting Started</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
@@ -128,77 +82,36 @@
 <li class="toctree-l1"><a class="reference internal" href="icse-experiments.html">ICSE Experiments</a></li>
 </ul>
 
-            
-          
         </div>
-        
       </div>
     </nav>
 
-    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
-
-      
-      <nav class="wy-nav-top" aria-label="top navigation">
-        
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
           <a href="index.html">Fuzzolic</a>
-        
       </nav>
 
-
       <div class="wy-nav-content">
-        
         <div class="rst-content">
-        
-          
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<div role="navigation" aria-label="breadcrumbs navigation">
-
+          <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
-    
-      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
-        
-      <li>Usage</li>
-    
-    
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Usage</li>
       <li class="wy-breadcrumbs-aside">
-        
-          
             <a href="_sources/usage.md.txt" rel="nofollow"> View page source</a>
-          
-        
       </li>
-    
   </ul>
-
-  
   <hr/>
 </div>
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
-            
+             
   <div class="section" id="usage">
-<h1>Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h1>
+<h1>Usage<a class="headerlink" href="#usage" title="Permalink to this headline"></a></h1>
 <div class="section" id="fuzzy-sat">
-<h2>Fuzzy-SAT<a class="headerlink" href="#fuzzy-sat" title="Permalink to this headline">¶</a></h2>
+<h2>Fuzzy-SAT<a class="headerlink" href="#fuzzy-sat" title="Permalink to this headline"></a></h2>
 <div class="section" id="command-line-interface">
-<h3>Command-line interface<a class="headerlink" href="#command-line-interface" title="Permalink to this headline">¶</a></h3>
+<h3>Command-line interface<a class="headerlink" href="#command-line-interface" title="Permalink to this headline"></a></h3>
 <p>The program <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> can be used to solve SMT queries using the Fuzzy-SAT algorithm:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ fuzzy-solver --help
 
@@ -237,7 +150,7 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 </div>
 <p>If you are using the <code class="docutils literal notranslate"><span class="pre">fuzzolic-runner</span></code> container, you can find the executable in <code class="docutils literal notranslate"><span class="pre">~/solver/fuzzy-solver-cli/build/bin/fuzzy-solver</span></code>.</p>
 <div class="section" id="text-ui">
-<h4>Text UI<a class="headerlink" href="#text-ui" title="Permalink to this headline">¶</a></h4>
+<h4>Text UI<a class="headerlink" href="#text-ui" title="Permalink to this headline"></a></h4>
 <p>By default, <code class="docutils literal notranslate"><span class="pre">fuzzy-solver</span></code> uses a text UI where it prints useful statistics about the solving process:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>   <span class="n">query</span> <span class="mi">992</span><span class="o">/</span><span class="mi">992</span>
  <span class="n">o</span><span class="o">-------------------------------------------------------------</span><span class="n">o</span>
@@ -262,7 +175,7 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 </div>
 </div>
 <div class="section" id="c-c-bindings">
-<h3>C/C++ Bindings<a class="headerlink" href="#c-c-bindings" title="Permalink to this headline">¶</a></h3>
+<h3>C/C++ Bindings<a class="headerlink" href="#c-c-bindings" title="Permalink to this headline"></a></h3>
 <p>We designed FuzzySAT as a library to be integrated into a concolic executor. Before detailing the various APIs, let us clarify some details on the usage of the library:</p>
 <ul class="simple">
 <li><p>The APIs that take an AST as input expect as symbols only 8-bit bitvectors whose symbol name has been created using <code class="docutils literal notranslate"><span class="pre">Z3_mk_int_symbol</span></code>. This allows the library to easily map a symbol to its assignment.</p></li>
@@ -270,7 +183,7 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 <li><p>At the moment, the library is NOT thread-safe.</p></li>
 </ul>
 <div class="section" id="z3fuzz-init">
-<h4>z3fuzz_init<a class="headerlink" href="#z3fuzz-init" title="Permalink to this headline">¶</a></h4>
+<h4>z3fuzz_init<a class="headerlink" href="#z3fuzz-init" title="Permalink to this headline"></a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_init</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_context</span> <span class="n">z3_ctx</span><span class="p">,</span> <span class="n">char</span><span class="o">*</span>   <span class="n">seed_filename</span><span class="p">,</span>
                  <span class="n">void</span><span class="o">*</span> <span class="o">/*</span> <span class="n">NULL</span> <span class="o">*/</span><span class="p">,</span> <span class="n">void</span><span class="o">*</span> <span class="o">/*</span> <span class="n">NULL</span> <span class="o">*/</span><span class="p">,</span> <span class="n">unsigned</span> <span class="n">timeout</span><span class="p">)</span>
 </pre></div>
@@ -284,14 +197,14 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 </ul>
 </div>
 <div class="section" id="z3fuzz-free">
-<h4>z3fuzz_free<a class="headerlink" href="#z3fuzz-free" title="Permalink to this headline">¶</a></h4>
+<h4>z3fuzz_free<a class="headerlink" href="#z3fuzz-free" title="Permalink to this headline"></a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_free</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>It releases all the memory allocated by <code class="docutils literal notranslate"><span class="pre">z3fuzz_init</span></code>.</p>
 </div>
 <div class="section" id="z3fuzz-evaluate-expression">
-<h4>z3fuzz_evaluate_expression<a class="headerlink" href="#z3fuzz-evaluate-expression" title="Permalink to this headline">¶</a></h4>
+<h4>z3fuzz_evaluate_expression<a class="headerlink" href="#z3fuzz-evaluate-expression" title="Permalink to this headline"></a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">unsigned</span> <span class="n">long</span> <span class="n">z3fuzz_evaluate_expression</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">expr</span><span class="p">,</span>
                                          <span class="n">unsigned</span> <span class="n">char</span><span class="o">*</span> <span class="n">values</span><span class="p">);</span>
 </pre></div>
@@ -299,7 +212,7 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 <p>It evaluates the expression <code class="docutils literal notranslate"><span class="pre">expr</span></code> using as assignments the values in the array <code class="docutils literal notranslate"><span class="pre">values</span></code>.</p>
 </div>
 <div class="section" id="z3fuzz-query-check-light">
-<h4>z3fuzz_query_check_light<a class="headerlink" href="#z3fuzz-query-check-light" title="Permalink to this headline">¶</a></h4>
+<h4>z3fuzz_query_check_light<a class="headerlink" href="#z3fuzz-query-check-light" title="Permalink to this headline"></a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span> <span class="n">z3fuzz_query_check_light</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">pi</span><span class="p">,</span>
                              <span class="n">Z3_ast</span>                <span class="n">branch_condition</span><span class="p">,</span>
                              <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">**</span> <span class="n">proof</span><span class="p">,</span>
@@ -317,7 +230,7 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 <p>The function succeeds if it returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p>
 </div>
 <div class="section" id="z3fuzz-get-optimistic-sol">
-<h4>z3fuzz_get_optimistic_sol<a class="headerlink" href="#z3fuzz-get-optimistic-sol" title="Permalink to this headline">¶</a></h4>
+<h4>z3fuzz_get_optimistic_sol<a class="headerlink" href="#z3fuzz-get-optimistic-sol" title="Permalink to this headline"></a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span> <span class="n">z3fuzz_get_optimistic_sol</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">**</span> <span class="n">proof</span><span class="p">,</span>
                               <span class="n">unsigned</span> <span class="n">long</span><span class="o">*</span> <span class="n">proof_size</span><span class="p">);</span>
 </pre></div>
@@ -331,7 +244,7 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 <p>The function succeeds if it returns <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p>
 </div>
 <div class="section" id="z3fuzz-maximize-and-z3fuzz-minimize">
-<h4>z3fuzz_maximize and z3fuzz_minimize<a class="headerlink" href="#z3fuzz-maximize-and-z3fuzz-minimize" title="Permalink to this headline">¶</a></h4>
+<h4>z3fuzz_maximize and z3fuzz_minimize<a class="headerlink" href="#z3fuzz-maximize-and-z3fuzz-minimize" title="Permalink to this headline"></a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">unsigned</span> <span class="n">long</span> <span class="n">z3fuzz_maximize</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">pi</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">to_maximize</span><span class="p">,</span>
                               <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">**</span> <span class="n">out_values</span><span class="p">,</span>
                               <span class="n">unsigned</span> <span class="n">long</span><span class="o">*</span>        <span class="n">out_len</span><span class="p">);</span>
@@ -350,7 +263,7 @@ Note that the symbols in the smt2 file MUST be declared as 8-bit bitvectors, and
 <p>The function always succeeds (but it is not guaranteed that it finds a global minimum/maximum) and returns the value of the maximized/minimized expression.</p>
 </div>
 <div class="section" id="z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd">
-<h4>z3fuzz_find_all_values and z3fuzz_find_all_values_gd<a class="headerlink" href="#z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd" title="Permalink to this headline">¶</a></h4>
+<h4>z3fuzz_find_all_values and z3fuzz_find_all_values_gd<a class="headerlink" href="#z3fuzz-find-all-values-and-z3fuzz-find-all-values-gd" title="Permalink to this headline"></a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">typedef</span> <span class="n">enum</span> <span class="n">fuzzy_findall_res_t</span> <span class="p">{</span>
     <span class="n">Z3FUZZ_GIVE_NEXT</span><span class="p">,</span>
     <span class="n">Z3FUZZ_STOP</span>
@@ -373,14 +286,14 @@ The user must define a <code class="docutils literal notranslate"><span class="p
 <p>The only difference between <code class="docutils literal notranslate"><span class="pre">z3fuzz_find_all_values_gd</span></code> and <code class="docutils literal notranslate"><span class="pre">z3fuzz_find_all_values</span></code> is that the former uses gradient descent to generate the values, and has an additional parameter (<code class="docutils literal notranslate"><span class="pre">to_min</span></code>) that specify the direction (towards the maximum or the minimum).</p>
 </div>
 <div class="section" id="z3fuzz-notify-constraint">
-<h4>z3fuzz_notify_constraint<a class="headerlink" href="#z3fuzz-notify-constraint" title="Permalink to this headline">¶</a></h4>
+<h4>z3fuzz_notify_constraint<a class="headerlink" href="#z3fuzz-notify-constraint" title="Permalink to this headline"></a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_notify_constraint</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">Z3_ast</span> <span class="n">constraint</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>It notifies the solver that a new constraint has been added to <code class="docutils literal notranslate"><span class="pre">pi</span></code>.</p>
 </div>
 <div class="section" id="z3fuzz-dump-proof">
-<h4>z3fuzz_dump_proof<a class="headerlink" href="#z3fuzz-dump-proof" title="Permalink to this headline">¶</a></h4>
+<h4>z3fuzz_dump_proof<a class="headerlink" href="#z3fuzz-dump-proof" title="Permalink to this headline"></a></h4>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">z3fuzz_dump_proof</span><span class="p">(</span><span class="n">fuzzy_ctx_t</span><span class="o">*</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">const</span> <span class="n">char</span><span class="o">*</span> <span class="n">filename</span><span class="p">,</span>
                        <span class="n">unsigned</span> <span class="n">char</span> <span class="n">const</span><span class="o">*</span> <span class="n">proof</span><span class="p">,</span> <span class="n">unsigned</span> <span class="n">long</span> <span class="n">proof_size</span><span class="p">);</span>
 </pre></div>
@@ -390,7 +303,7 @@ The user must define a <code class="docutils literal notranslate"><span class="p
 </div>
 </div>
 <div class="section" id="concolic-execution-standalone-mode">
-<h2>Concolic execution (standalone mode)<a class="headerlink" href="#concolic-execution-standalone-mode" title="Permalink to this headline">¶</a></h2>
+<h2>Concolic execution (standalone mode)<a class="headerlink" href="#concolic-execution-standalone-mode" title="Permalink to this headline"></a></h2>
 <p>To run fuzzolic in standalone mode, you need to execute the script <code class="docutils literal notranslate"><span class="pre">./fuzzolic/fuzzolic.py</span></code>. For instance:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ ./fuzzolic/fuzzolic.py -o ./workdir -i ./seeds -- ./program [args] @@
 </pre></div>
@@ -441,7 +354,7 @@ The user must define a <code class="docutils literal notranslate"><span class="p
 </ul>
 <p>Hence, when looking for interesting test cases generated by fuzzolic, check the directory <code class="docutils literal notranslate"><span class="pre">tests</span></code> when using fuzzolic in standalone mode. On the other hand, when using fuzzolic in AFL mode check the directory <code class="docutils literal notranslate"><span class="pre">queue</span></code>.</p>
 <div class="section" id="example">
-<h3>Example<a class="headerlink" href="#example" title="Permalink to this headline">¶</a></h3>
+<h3>Example<a class="headerlink" href="#example" title="Permalink to this headline"></a></h3>
 <p>Let us consider the program <a class="reference external" href="https://github.com/season-lab/fuzzolic/blob/master/tests/example/example.c#L21"><code class="docutils literal notranslate"><span class="pre">tests/example/example.c</span></code></a>:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1">#include &lt;stdio.h&gt;</span>
 <span class="c1">#include &lt;stdlib.h&gt;</span>
@@ -528,7 +441,7 @@ Correct value [deadbeef] :)
 </div>
 </div>
 <div class="section" id="hybrid-fuzzing-afl-mode">
-<h2>Hybrid fuzzing (AFL mode)<a class="headerlink" href="#hybrid-fuzzing-afl-mode" title="Permalink to this headline">¶</a></h2>
+<h2>Hybrid fuzzing (AFL mode)<a class="headerlink" href="#hybrid-fuzzing-afl-mode" title="Permalink to this headline"></a></h2>
 <p>To run fuzzolic in parallel with AFL++, you can use the script <code class="docutils literal notranslate"><span class="pre">fuzzolic/run_afl_fuzzolic.py</span></code> which supports most features from fuzzolic. For instance, to fuzz a program <code class="docutils literal notranslate"><span class="pre">lodepng</span></code> which takes as argument the input file to process, then:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ ./fuzzolic/run_afl_fuzzolic.py --address-reasoning --optimistic-solving --timeout 90000 --fuzzy -o workdir/ -i ../benchmarks/lodepng/seeds/ -- ../benchmarks/lodepng/lodepng @
 </pre></div>
@@ -591,50 +504,33 @@ Correct value [deadbeef] :)
 
 
            </div>
-           
           </div>
-          <footer>
-    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-        <a href="internals.html" class="btn btn-neutral float-right" title="Internals" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="install.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="internals.html" class="btn btn-neutral float-right" title="Internals" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
 
   <div role="contentinfo">
-    <p>
-        &#169; Copyright 2021, Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu.
-
-    </p>
+    <p>&#169; Copyright 2021, Luca Borzacchiello, Emilio Coppa, and Camil Demetrescu.</p>
   </div>
-    
-    
-    
-    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
-    
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
     <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
-    
-    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
 
 </footer>
         </div>
       </div>
-
     </section>
-
   </div>
-  
-
-  <script type="text/javascript">
+  <script>
       jQuery(function () {
           SphinxRtdTheme.Navigation.enable(true);
       });
-  </script>
-
-  
-  
-    
-   
+  </script> 
 
 </body>
 </html>
