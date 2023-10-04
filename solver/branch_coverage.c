@@ -1,6 +1,6 @@
 #include "solver.h"
 
-#include "../../config.h"
+#include "debug-config.h"
 
 extern Config config;
 

@@ -9,11 +9,11 @@
 #include <execinfo.h>
 #include <string.h>
 
+#include "debug-config.h"
 #include "solver.h"
 #include "i386.h"
 #include "fuzzy-sat/z3-fuzzy.h"
 
-#include "../../config.h"
 
 #define EXPR_QUEUE_POLLING_TIME_SECS 0
 #define EXPR_QUEUE_POLLING_TIME_NS   5000

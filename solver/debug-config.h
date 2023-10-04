@@ -1,0 +1,13 @@
+#ifndef DEBUG_CE_H
+#define DEBUG_CE_H
+
+#define DEBUG_CONSISTENCY_CHECK 0
+#define DEBUG_CHECK_PI_SOLVER   0
+#define DEBUG_CHECK_PI_CONCRETE 0
+#define DEBUG_CHECK_INPUTS      0
+#define DEBUG_SKIP_QUERIES      0
+#define DEBUG_CHECK_EXPR_OPTS   0
+#define DEBUG_FUZZ_EXPRS        0
+#define DEBUG_FUZZ_EXPRS_N      16 // 16
+
+#endif
