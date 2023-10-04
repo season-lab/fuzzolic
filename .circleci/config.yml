@@ -1,58 +1,46 @@
-# localbuild: 
-# 1) locally fetch any private repo
-# 2) fix ownership (1000:1000) over files
-# 3) run:
-#   circleci local execute --job build --volume=`pwd`:"/repo"
 version: 2
 jobs:
   build:
     docker:
       - image: ercoppa/fuzzolic-ci-runner
     steps:
-      - checkout
-      - restore_cache:
-          key: fuzzolic-core-{{ checksum ".git/HEAD" }}
-      - run: 
-          name: Fetching submodules
+      - run:
+          name: Avoid hosts unknown for github
+          command: | 
+            mkdir ~/.ssh/ && echo -e "Host github.com\n\tStrictHostKeyChecking no\n" > ~/.ssh/config 
+      - run:
+          name: Fetching repo
           command: |
-            [[ -f tracer/.git ]] || (git submodule sync && git submodule update --init)
-      - save_cache:
-          key: fuzzolic-core-{{ checksum ".git/HEAD" }}
-          paths:
-            - /home/ubuntu/project
+            git config --global http.sslverify false
+            git clone git@github.com:season-lab/fuzzolic.git
+            sed -i -e 's#https://github.com/season-lab#git@github.com:season-lab#g' fuzzolic/.git/config
+            sed -i -e 's#https://github.com/season-lab#git@github.com:season-lab#g' fuzzolic/.gitmodules
+            # sed -Ei 's#https://git.qemu.org/git#https://gitlab.com/qemu-project#' fuzzolic/.git/modules/tracer/config
+            cd fuzzolic && git submodule sync && git submodule update --init
       - restore_cache:
-          key: fuzzolic-tracer-{{ checksum ".git/modules/tracer/HEAD" }}
+          key: fuzzolic-tracer-{{ checksum "fuzzolic/.git/modules/tracer/HEAD" }}
       - run: 
           name: Building tracer
-          working_directory: tracer
+          working_directory: fuzzolic/tracer
           command: |
             [[ -f x86_64-linux-user/qemu-x86_64 ]] || ./configure --prefix=`pwd`/../build --target-list=x86_64-linux-user
-            [[ -f x86_64-linux-user/qemu-x86_64 ]] || make -j 12
+            [[ -f x86_64-linux-user/qemu-x86_64 ]] || make -j `nproc`
       - save_cache:
-          key: fuzzolic-tracer-{{ checksum ".git/modules/tracer/HEAD" }}
+          key: fuzzolic-tracer-{{ checksum "fuzzolic/.git/modules/tracer/HEAD" }}
           paths:
-            - tracer
-      - restore_cache:
-          key: fuzzolic-fuzzy-v1
+            - fuzzolic/tracer
       - run: 
           name: Fetching fuzzy-sat
-          working_directory: solver
+          working_directory: fuzzolic/solver
           command: |
-            if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
-              cp -a /repo/solver/fuzzy-sat fuzzy-sat
-            fi
-            [[ -d fuzzy-sat ]] || (git clone git@github.com:season-lab/fuzzy-sat.git && cd fuzzy-sat && git submodule sync && git submodule update --init)
-      - save_cache:
-          key: fuzzolic-fuzzy-v1
-          paths:
-            - solver/fuzzy-sat
+            [[ -d fuzzolic-z3 ]] || (cd fuzzy-sat && sed -i -e 's#https://github.com/season-lab#git@github.com:season-lab#g' .gitmodules && git submodule sync && git submodule update --init)
       - restore_cache:
-          key: fuzzolic-z3-{{ checksum "solver/fuzzy-sat/.git/modules/fuzzolic-z3/HEAD" }}
+          key: fuzzolic-z3-{{ checksum "fuzzolic/.git/modules/solver/fuzzy-sat/modules/fuzzolic-z3/refs/heads/fuzzolic" }}
       - run: 
           name: Building Z3
-          working_directory: solver/fuzzy-sat
+          working_directory: fuzzolic/solver/fuzzy-sat
           command: |
-            [[ -d fuzzolic-z3/build/dist ]] || (cd fuzzolic-z3 && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=`pwd`/dist && make -j `nproc` && make install && cd ../..)
+            [[ -d fuzzolic-z3/build/dist ]] || (cd fuzzolic-z3 && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=`pwd`/dist && make -j 6 && make install && cd ../..)
             # caching Z3 build when localbuild
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
               if [[ -d fuzzolic-z3/build/dist ]]; then
@@ -61,66 +49,76 @@ jobs:
               fi
             fi
       - save_cache:
-          key: fuzzolic-z3-{{ checksum "solver/fuzzy-sat/.git/modules/fuzzolic-z3/HEAD" }}
+          key: fuzzolic-z3-{{ checksum "fuzzolic/.git/modules/solver/fuzzy-sat/modules/fuzzolic-z3/refs/heads/fuzzolic" }}
           paths:
-            - solver/fuzzy-sat/fuzzolic-z3
+            - fuzzolic/solver/fuzzy-sat/fuzzolic-z3
       - run:
           name: Setup Environment Variables Z3
           command: |
-            echo "export C_INCLUDE_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/include:$C_INCLUDE_PATH" >> $BASH_ENV
-            echo "export LIBRARY_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib:$LIBRARY_PATH" >> $BASH_ENV
-            echo "export LD_LIBRARY_PATH=/home/ubuntu/project/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib:$LD_LIBRARY_PATH" >> $BASH_ENV
+            echo "export C_INCLUDE_PATH=/home/ubuntu/project/fuzzolic/solver/fuzzy-sat/fuzzolic-z3/build/dist/include:$C_INCLUDE_PATH" >> $BASH_ENV
+            echo "export LIBRARY_PATH=/home/ubuntu/project/fuzzolic/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib:$LIBRARY_PATH" >> $BASH_ENV
+            echo "export LD_LIBRARY_PATH=/home/ubuntu/project/fuzzolic/solver/fuzzy-sat/fuzzolic-z3/build/dist/lib:$LD_LIBRARY_PATH" >> $BASH_ENV
       - restore_cache:
-          key: fuzzolic-fuzzy-build-{{ checksum "solver/fuzzy-sat/.git/HEAD" }}
+          key: fuzzolic-fuzzy-build-{{ checksum "fuzzolic/.git/modules/solver/fuzzy-sat/refs/heads/master" }}
       - run: 
           name: Building fuzzy-sat
-          working_directory: solver/fuzzy-sat
+          working_directory: fuzzolic/solver/fuzzy-sat
           command: |
             [[ -f libZ3Fuzzy.a ]] || make -j `nproc`
       - save_cache:
-          key: fuzzolic-fuzzy-build-{{ checksum "solver/fuzzy-sat/.git/HEAD" }}
+          key: fuzzolic-fuzzy-build-{{ checksum "fuzzolic/.git/modules/solver/fuzzy-sat/refs/heads/master" }}
           paths:
-            - solver/fuzzy-sat
+            - fuzzolic/solver/fuzzy-sat
       - run: 
           name: Building solver frontend
-          working_directory: solver
+          working_directory: fuzzolic/solver
           command: |
             cmake . && make -j `nproc`
       - restore_cache:
-          key: fuzzolic-aflpp-v0-9dbace2
+          key: fuzzolic-aflpp-v1-2dac4e7
       - run: 
           name: Building AFL++
-          working_directory: utils
+          working_directory: fuzzolic/utils
           command: |
             # caching AFLplusplus when localbuild
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
-              if [[ -d /repo/utils/AFLplusplus/afl-showmap ]]; then
+              if [[ -f /repo/utils/AFLplusplus/afl-showmap ]]; then
                 cp -a /repo/utils/AFLplusplus .
               fi
             fi
             [[ -d AFLplusplus ]] || git clone https://github.com/AFLplusplus/AFLplusplus.git
-            [[ -f AFLplusplus/afl-showmap ]] || (cd AFLplusplus && git checkout 9dbace240d570f8eb938db5a152e31756922b2f3)
+            [[ -f AFLplusplus/afl-showmap ]] || (cd AFLplusplus && git checkout 2dac4e7)
             [[ -f AFLplusplus/afl-showmap ]] || (cd AFLplusplus && git apply ../afl-showmap.c.patch) # showmap crash detector
             [[ -f AFLplusplus/afl-showmap ]] || (cd AFLplusplus && make -j `nproc` all && cd qemu_mode && ./build_qemu_support.sh)
             # caching AFLplusplus when localbuild
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
-              if [[ ! -d /repo/utils/AFLplusplus/afl-showmap ]]; then
+              if [[ ! -f /repo/utils/AFLplusplus/afl-showmap ]]; then
                 cp -a . /repo/utils/
               fi
             fi
       - run:
           name: Setup Environment Variable AFL_PATH
           command: |
-            echo "export AFL_PATH=/home/ubuntu/project/utils/AFLplusplus" >> $BASH_ENV
+            echo "export AFL_PATH=/home/ubuntu/project/fuzzolic/utils/AFLplusplus" >> $BASH_ENV
       - save_cache:
-          key: fuzzolic-aflpp-v0-9dbace2
+          key: fuzzolic-aflpp-v1-2dac4e7
           paths:
-            - utils/AFLplusplus
+            - fuzzolic/utils/AFLplusplus
+            
       - run:
           name: Running tests
+          working_directory: fuzzolic
           command: |
             if [[ ${CIRCLE_SHELL_ENV} =~ "localbuild" ]]; then
               cat /tmp/.bash_env-localbuild-* >> /home/ubuntu/.bashrc
             fi
+            cd tests && make && python3 -m pytest run.py --junitxml=test-results-smt/junit.xml ; python3 -m pytest --fuzzy run.py --junitxml=test-results-fuzzy/junit.xml
             # git clone git@github.com:season-lab/fuzzy-sat.git
-        
+      - store_test_results:
+          path: fuzzolic/tests/test-results-smt
+      - store_test_results:
+          path: fuzzolic/tests/test-results-fuzzy
+      - store_artifacts:
+          path: fuzzolic/tests/test-results-smt
+      - store_artifacts:
+          path: fuzzolic/tests/test-results-fuzzy  
