@@ -113,4 +113,4 @@ ci-local:
 docker:
 	docker run -ti --rm -v `pwd`:/home/ubuntu/fuzzolic \
 		-v `pwd`/../fuzzolic-evaluation/benchmarks/:/home/ubuntu/benchmarks \
-		ercoppa/fuzzolic-runner-v1 bash
+		ercoppa/fuzzolic-runner-v1:ubuntu2004 bash
