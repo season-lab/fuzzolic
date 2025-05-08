@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
+#include <unistd.h>
 #include <assert.h>
 
 int simple_if(uint32_t);
