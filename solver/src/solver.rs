@@ -2,11 +2,15 @@ use crate::expression::{Expr, OpKind, Query, QueryType};
 use crate::shared_memory::SharedMemoryManager;
 use crate::{Config, BranchCoverage, FuzzySolver};
 use crate::testcase::Testcase;
+use crate::dependency::{DependencyGraph, DependencyStats};
 use crate::i386;
 use z3::{ast::{Ast, BV, Bool, Dynamic}, Context, SatResult};
 use anyhow::{Result, Context as AnyhowContext};
-use log::{info, warn};
-use std::time::Instant;
+use log::{debug, info, warn};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 pub struct SMTSolver {
     ctx: Context,
@@ -24,6 +28,7 @@ pub struct SMTSolver {
     current_testcase: Option<Testcase>,
     symbols_sizes: Vec<u8>,
     symbols_count: usize,
+    dependency_graph: DependencyGraph,
     translation_time: u64,
     expr_visit_time: u64,
     slice_reasoning_time: u64,
@@ -105,6 +110,7 @@ impl SMTSolver {
             current_testcase: None,
             symbols_sizes: Vec::new(),
             symbols_count: 0,
+            dependency_graph: DependencyGraph::new(1024 * 1024), // MAX_INPUT_SIZE * 2
             translation_time: 0,
             expr_visit_time: 0,
             slice_reasoning_time: 0,
@@ -356,54 +362,56 @@ impl SMTSolver {
     }
     
     /// Update dependency graph with new dependencies
-    fn update_dependency_graph(&mut self, _query_id: usize, _dependencies: Vec<usize>) -> Result<()> {
-        // Placeholder implementation
-        // In full implementation, this would update the dependency tracking structures
+    fn update_dependency_graph(&mut self, query_id: usize, input_dependencies: Vec<usize>) -> Result<()> {
+        if input_dependencies.is_empty() {
+            return Ok(());
+        }
+        
+        let inputs: HashSet<usize> = input_dependencies.into_iter().collect();
+        let dep_id = self.dependency_graph.add_expression(&inputs, query_id)?;
+        
+        debug!("Updated dependency graph: query {} -> dependency {}", query_id, dep_id);
         Ok(())
     }
     
     /// Generate testcase from Z3 model
-    fn generate_testcase_from_model(&mut self, model: &z3::Model, _query: &Query) -> Result<()> {
+    fn generate_testcase_from_model(&mut self, _model: &z3::Model, _query: &Query) -> Result<()> {
         use crate::testcase::{Testcase, TestcaseMutation};
         
         // Extract model values and generate testcase
         let mut testcase_data = Vec::new();
         
-        // For now, create a simple testcase based on model
-        // In full implementation, this would extract actual variable assignments
-        for i in 0..256 {
-            let var_name = format!("input_{}", i);
+        // TODO: Implement proper model extraction when Z3 API is available
+        // For now, generate a simple placeholder testcase
+        testcase_data.extend_from_slice(b"placeholder_testcase_data");
+        
+        // Note: In the full implementation, this would:
+        // 1. Iterate through model variables
+        // 2. Extract concrete values for symbolic inputs
+        // 3. Convert Z3 bitvector values to bytes
+        // 4. Reconstruct the input file format
+        
+        // Create testcase from extracted data
+        if !testcase_data.is_empty() {
+            let testcase = Testcase::new(testcase_data);
             
-            // Try to get value from model (simplified approach)
-            // In real implementation, we'd have proper symbol mapping
-            testcase_data.push((i % 256) as u8);
-        }
-        
-        // Create testcase with mutations
-        let mut testcase = Testcase::new(testcase_data);
-        
-        // Add some basic mutations for fuzzing
-        testcase.add_mutation(TestcaseMutation::new_trim(10, 5));
-        testcase.add_mutation(TestcaseMutation::new_replace(20, vec![0xFF, 0xFE, 0xFD]));
-        testcase.add_mutation(TestcaseMutation::new_extend(50, vec![0x41, 0x42, 0x43]));
-        
-        // Save testcase to output directory if configured
-        if let Some(ref output_dir) = self.config.output_dir {
-            let output_path = std::path::Path::new(output_dir);
-            if let Err(e) = std::fs::create_dir_all(output_path) {
-                warn!("Failed to create output directory: {}", e);
-                return Ok(());
-            }
-            
-            match testcase.save_to_file(output_path) {
-                Ok(saved_files) => {
-                    info!("Generated {} testcase files", saved_files.len());
-                    for file in saved_files {
-                        info!("Saved testcase: {}", file.display());
+            // Save the testcase
+            if let Some(ref output_dir) = self.config.output_dir {
+                let testcase_path = format!("{}/testcase_{}.bin", output_dir.display(), self.sat_count);
+                testcase.save_to_file(std::path::Path::new(&testcase_path))?;
+                info!("Generated testcase: {}", testcase_path);
+                
+                // Generate mutations if requested
+                let generate_mutations = true; // TODO: Add to config
+                if generate_mutations {
+                    for i in 0..5 { // Generate 5 mutations
+                        let mutation = TestcaseMutation::new_trim(0, 1); // Simple trim mutation
+                        let mutated_data = testcase.apply_mutation(&mutation)?;
+                        let mutated = Testcase::new(mutated_data);
+                        
+                        let mutation_path = format!("{}/testcase_{}_mut_{}.bin", output_dir.display(), self.sat_count, i);
+                        mutated.save_to_file(std::path::Path::new(&mutation_path))?;
                     }
-                }
-                Err(e) => {
-                    warn!("Failed to save testcase: {}", e);
                 }
             }
         }

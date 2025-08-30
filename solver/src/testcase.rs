@@ -108,7 +108,7 @@ impl Testcase {
         Ok(())
     }
     
-    fn apply_mutation(&self, mutation: &TestcaseMutation) -> Result<Vec<u8>> {
+    pub fn apply_mutation(&self, mutation: &TestcaseMutation) -> Result<Vec<u8>> {
         let mut result = Vec::new();
         
         match mutation.mutation_type {
