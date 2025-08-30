@@ -1,9 +1,7 @@
 use crate::config::Config;
 use crate::expression::Expr;
-use anyhow::{Result, Context as AnyhowContext};
-use log::{debug, info, warn};
-use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int, c_void};
+use anyhow::Result;
+use log::{debug, warn};
 use z3::Context;
 
 // FFI declarations for the libZ3Fuzzy.a library - only if fuzzy solver is available
@@ -220,9 +218,9 @@ mod tests {
             ..Default::default()
         };
         
-        let mut solver = FuzzySolver::new(&config).unwrap();
+        let _solver = FuzzySolver::new(&config).unwrap();
         let z3_config = z3::Config::new();
-        let z3_ctx = z3::Context::new(&z3_config);
+        let _z3_ctx = z3::Context::new(&z3_config);
         
         // This test would require the actual libZ3Fuzzy.a library
         // let result = solver.init(&z3_ctx);

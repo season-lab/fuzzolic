@@ -148,9 +148,9 @@ impl BranchCoverage {
     pub fn is_interesting_branch_fuzzolic(
         &mut self,
         idx: u16,
-        local_count_idx: u16,
+        _local_count_idx: u16,
         idx_inv: u16,
-        local_count_idx_inv: u16,
+        _local_count_idx_inv: u16,
         addr: u64,
     ) -> bool {
         // This would implement the Fuzzolic-specific branch coverage logic
@@ -208,7 +208,6 @@ const COUNT_CLASS_BINARY: [u8; 257] = [
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     
     #[test]
     fn test_branch_coverage_creation() {

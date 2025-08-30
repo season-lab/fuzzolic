@@ -1,12 +1,15 @@
+pub mod solver;
+pub mod shared_memory;
 pub mod branch_coverage;
-pub mod config;
 pub mod dependency;
 pub mod expression;
-pub mod fuzzy_solver;
-pub mod i386;
-pub mod shared_memory;
-pub mod solver;
 pub mod testcase;
+pub mod fuzzy_solver;
+pub mod z3_cache;
+pub mod concrete_eval;
+pub mod testcase_loader;
+pub mod i386;
+pub mod config;
 
 pub use config::Config;
 pub use expression::{Expr, OpKind, Query, QueryType};

@@ -2,15 +2,16 @@ use crate::expression::{Expr, OpKind, Query, QueryType};
 use crate::shared_memory::SharedMemoryManager;
 use crate::{Config, BranchCoverage, FuzzySolver};
 use crate::testcase::Testcase;
-use crate::dependency::{DependencyGraph, DependencyStats};
+use crate::dependency::DependencyGraph;
+use crate::z3_cache::Z3Optimizer;
+use crate::concrete_eval::ConcreteEvaluator;
+use crate::testcase_loader::TestcaseInitializer;
 use crate::i386;
 use z3::{ast::{Ast, BV, Bool, Dynamic}, Context, SatResult};
+use std::time::Instant;
 use anyhow::{Result, Context as AnyhowContext};
 use log::{debug, info, warn};
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::collections::HashSet;
 
 pub struct SMTSolver {
     ctx: Context,
@@ -29,6 +30,8 @@ pub struct SMTSolver {
     symbols_sizes: Vec<u8>,
     symbols_count: usize,
     dependency_graph: DependencyGraph,
+    z3_optimizer: Z3Optimizer,
+    concrete_evaluator: ConcreteEvaluator,
     translation_time: u64,
     expr_visit_time: u64,
     slice_reasoning_time: u64,
@@ -94,6 +97,8 @@ impl SMTSolver {
             None
         };
         
+        let z3_optimizer = Z3Optimizer::new(&ctx);
+        
         Ok(SMTSolver {
             ctx,
             config: config.clone(),
@@ -111,6 +116,8 @@ impl SMTSolver {
             symbols_sizes: Vec::new(),
             symbols_count: 0,
             dependency_graph: DependencyGraph::new(1024 * 1024), // MAX_INPUT_SIZE * 2
+            z3_optimizer,
+            concrete_evaluator: ConcreteEvaluator::new(),
             translation_time: 0,
             expr_visit_time: 0,
             slice_reasoning_time: 0,
@@ -162,7 +169,7 @@ impl SMTSolver {
     /// Process branch queries (symbolic PC conditions)
     pub fn process_branch_query(&mut self, query: &Query) -> Result<()> {
         // Extract query expression from args
-        let query_expr = self.extract_query_expression(query)?;
+        let query_expr = self.generate_expression(query)?;
         
         // Create a new context for this query to avoid borrowing conflicts
         let ctx = Context::new(&z3::Config::new());
@@ -270,7 +277,7 @@ impl SMTSolver {
     
     /// Process model queries (get concrete values for expressions)
     pub fn process_model_query(&mut self, query: &Query) -> Result<()> {
-        let query_expr = self.extract_query_expression(query)?;
+        let query_expr = self.generate_expression(query)?;
         
         // Find all possible solutions for the expression
         let solutions = self.find_all_solutions(&query_expr)?;
@@ -285,7 +292,7 @@ impl SMTSolver {
     
     /// Process dependency queries (track expression dependencies)
     pub fn process_dependency_query(&mut self, query: &Query) -> Result<()> {
-        let query_expr = self.extract_query_expression(query)?;
+        let query_expr = self.generate_expression(query)?;
         
         // Extract input dependencies from the expression
         let dependencies = self.extract_dependencies(&query_expr)?;
@@ -297,7 +304,7 @@ impl SMTSolver {
     }
     
     /// Extract query expression from Query structure
-    fn extract_query_expression(&self, query: &Query) -> Result<Expr> {
+    fn generate_expression(&self, _query: &Query) -> Result<Expr> {
         // For now, create a placeholder expression
         // In full implementation, this would extract the actual expression from query data
         Ok(Expr::new_const(42))
@@ -361,7 +368,7 @@ impl SMTSolver {
         Ok(vec![])
     }
     
-    /// Update dependency graph with new dependencies
+    /// Update dependency graph with new query dependencies
     fn update_dependency_graph(&mut self, query_id: usize, input_dependencies: Vec<usize>) -> Result<()> {
         if input_dependencies.is_empty() {
             return Ok(());
@@ -369,9 +376,79 @@ impl SMTSolver {
         
         let inputs: HashSet<usize> = input_dependencies.into_iter().collect();
         let dep_id = self.dependency_graph.add_expression(&inputs, query_id)?;
-        
         debug!("Updated dependency graph: query {} -> dependency {}", query_id, dep_id);
+        
         Ok(())
+    }
+
+    /// Evaluate query concretely using current testcase data
+    pub fn evaluate_query_concrete(&mut self, query: &Dynamic, testcase_data: &[u8]) -> Result<u64> {
+        // Convert testcase bytes to u64 values for evaluation
+        let mut input_data = Vec::new();
+        for chunk in testcase_data.chunks(8) {
+            let mut bytes = [0u8; 8];
+            bytes[..chunk.len()].copy_from_slice(chunk);
+            input_data.push(u64::from_le_bytes(bytes));
+        }
+
+        // Use concrete evaluator with current symbols configuration
+        self.concrete_evaluator.eval_query(
+            &self.ctx,
+            query,
+            &input_data,
+            &self.symbols_sizes,
+            1000, // max depth
+        )
+    }
+
+    /// Get concrete evaluation statistics
+    pub fn get_concrete_eval_stats(&self) -> String {
+        format!("{}", self.concrete_evaluator.stats())
+    }
+
+    /// Initialize solver with testcases from various sources
+    pub fn initialize_testcases(&mut self) -> Result<Vec<Testcase>> {
+        let testcases = TestcaseInitializer::initialize_testcases(
+            self.config.testcase_dir.clone(),
+            self.config.testcase_path.clone(),
+            64, // default size
+            1024 * 1024, // max size
+        )?;
+
+        // Set current testcase to the first one if available
+        if let Some(first_testcase) = testcases.first() {
+            self.current_testcase = Some(first_testcase.clone());
+            self.symbols_count = first_testcase.data.len();
+            self.symbols_sizes = vec![1u8; self.symbols_count]; // Default to byte symbols
+            
+            info!("Initialized with testcase of {} bytes", first_testcase.data.len());
+        }
+
+        Ok(testcases)
+    }
+
+    /// Load specific testcase and set as current
+    pub fn load_testcase(&mut self, testcase: Testcase) -> Result<()> {
+        // Validate testcase
+        TestcaseInitializer::validate_testcase(
+            &testcase, 
+            1024 * 1024
+        )?;
+
+        // Update solver state
+        self.symbols_count = testcase.data.len();
+        self.symbols_sizes = vec![1u8; self.symbols_count];
+        self.current_testcase = Some(testcase);
+
+        info!("Loaded testcase with {} symbols", self.symbols_count);
+        Ok(())
+    }
+
+    /// Get current testcase data prepared for symbolic execution
+    pub fn get_symbolic_input(&self) -> Option<Vec<u8>> {
+        self.current_testcase.as_ref().map(|testcase| {
+            TestcaseInitializer::prepare_symbolic_input(testcase, self.symbols_count)
+        })
     }
     
     /// Generate testcase from Z3 model
@@ -429,7 +506,7 @@ impl SMTSolver {
     /// Load initial testcase from file
     pub fn load_initial_testcase(&mut self) -> Result<()> {
         if let Some(ref testcase_path) = self.config.testcase_path {
-            info!("Loading testcase: {}", testcase_path.display());
+            info!("Loading testcase from: {}", testcase_path.display());
             
             let testcase = Testcase::from_file(testcase_path)
                 .with_context(|| format!("Failed to load testcase from {}", testcase_path.display()))?;
@@ -450,7 +527,7 @@ impl SMTSolver {
     
     /// Reset testcase to original state
     pub fn reset_testcase(&mut self) -> Result<()> {
-        if let Some(ref testcase_path) = self.config.testcase_path {
+        if let Some(ref _testcase_path) = self.config.testcase_path {
             self.load_initial_testcase()
         } else {
             Ok(())
@@ -1232,7 +1309,8 @@ impl SMTSolver {
                     
                     match i386::eflags_all_binary(&self.ctx, &dst_bv, &src1_bv, OpKind::try_from(expr.opkind)?, width) {
                         Ok(result) => Ok(result.into()),
-                        Err(_) => {
+                        Err(e) => {
+                            warn!("Failed to handle eflags_all_binary: {}", e);
                             let placeholder_name = format!("eflags_all_{:?}_{:p}", expr.opkind, expr);
                             Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
                         }
@@ -1268,7 +1346,8 @@ impl SMTSolver {
                     
                     match i386::eflags_all_ternary(&self.ctx, &dst_bv, &src1_bv, &src3_bv, OpKind::try_from(expr.opkind)?, width) {
                         Ok(result) => Ok(result.into()),
-                        Err(_) => {
+                        Err(e) => {
+                            warn!("Failed to handle eflags_all_ternary: {}", e);
                             let placeholder_name = format!("eflags_ternary_{:?}_{:p}", expr.opkind, expr);
                             Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
                         }
@@ -1295,7 +1374,8 @@ impl SMTSolver {
                     
                     match i386::eflags_all_adcxo(&self.ctx, &dst_bv, &src1_bv, &src2_bv, OpKind::try_from(expr.opkind)?) {
                         Ok(result) => Ok(result.into()),
-                        Err(_) => {
+                        Err(e) => {
+                            warn!("Failed to handle eflags_all_adcxo: {}", e);
                             let placeholder_name = format!("eflags_adcxo_{:?}_{:p}", expr.opkind, expr);
                             Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
                         }
@@ -1322,7 +1402,8 @@ impl SMTSolver {
                     
                     match i386::eflags_c_binary(&self.ctx, &dst_bv, &src1_bv, OpKind::try_from(expr.opkind)?, width) {
                         Ok(result) => Ok(result.into()),
-                        Err(_) => {
+                        Err(e) => {
+                            warn!("Failed to handle eflags_c_binary: {}", e);
                             let placeholder_name = format!("eflags_c_{:?}_{:p}", expr.opkind, expr);
                             Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
                         }
@@ -1349,7 +1430,8 @@ impl SMTSolver {
                     
                     match i386::handle_comparison(&self.ctx, &op1_bv, &op2_bv, OpKind::try_from(expr.opkind)?, width) {
                         Ok(result) => Ok(result.into()),
-                        Err(_) => {
+                        Err(e) => {
+                            warn!("Failed to handle comparison: {}", e);
                             let placeholder_name = format!("cmp_{:?}_{:p}", expr.opkind, expr);
                             Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
                         }
@@ -1373,7 +1455,8 @@ impl SMTSolver {
                     
                     match i386::handle_min_max(&self.ctx, &op1_bv, &op2_bv, OpKind::try_from(expr.opkind)?) {
                         Ok(result) => Ok(result.into()),
-                        Err(_) => {
+                        Err(e) => {
+                            warn!("Failed to handle min_max: {}", e);
                             let placeholder_name = format!("minmax_{:?}_{:p}", expr.opkind, expr);
                             Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
                         }
@@ -1392,8 +1475,9 @@ impl SMTSolver {
                     
                     match i386::handle_pmovmskb(&self.ctx, &op1_bv) {
                         Ok(result) => Ok(result.into()),
-                        Err(_) => {
-                            let placeholder_name = format!("pmovmskb_{:p}", expr);
+                        Err(e) => {
+                            warn!("Failed to handle pmovmskb: {}", e);
+                            let placeholder_name = format!("pmovmskb_placeholder_{:p}", expr);
                             Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
                         }
                     }
@@ -1495,10 +1579,10 @@ impl SMTSolver {
 
     pub fn cleanup(&mut self) {
         // Cleanup resources
-        if let Some(ref mut shared_mem) = self.shared_memory {
+        if let Some(ref mut _shared_mem) = self.shared_memory {
             // Shared memory cleanup is handled by Drop trait
         }
-        if let Some(ref mut branch_cov) = self.branch_coverage {
+        if let Some(ref mut _branch_cov) = self.branch_coverage {
             // Branch coverage cleanup is handled by Drop trait
         }
     }

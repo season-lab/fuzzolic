@@ -23,6 +23,8 @@ pub struct SharedExprPool {
     shm_id: i32,
 }
 
+// SAFETY: SharedExprPool manages shared memory that can be safely accessed across threads
+// The underlying shared memory is protected by system-level synchronization
 unsafe impl Send for SharedExprPool {}
 unsafe impl Sync for SharedExprPool {}
 
@@ -128,6 +130,11 @@ pub struct QueryQueue {
     shm_id: i32,
 }
 
+// SAFETY: QueryQueue manages shared memory that can be safely accessed across threads
+// The underlying shared memory is protected by system-level synchronization
+unsafe impl Send for QueryQueue {}
+unsafe impl Sync for QueryQueue {}
+
 impl QueryQueue {
     pub fn new(shm_key: u64, capacity: usize) -> Result<Self> {
         let size = capacity * std::mem::size_of::<Query>();
@@ -146,7 +153,7 @@ impl QueryQueue {
             shmat(shm_id, ptr::null(), 0) as *mut Query
         };
         
-        if queue == (-1isize) as *mut Query {
+        if queue == ptr::null_mut() || queue as isize == -1 {
             anyhow::bail!("Failed to attach to query queue shared memory");
         }
         

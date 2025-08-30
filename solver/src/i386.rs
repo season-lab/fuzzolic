@@ -1,7 +1,7 @@
 use crate::expression::{Expr, OpKind};
 use anyhow::Result;
 use z3::ast::{self, Ast};
-use z3::{Context, SatResult};
+use z3::Context;
 
 // x86 EFLAGS constants
 const CC_C: u64 = 0x0001;
@@ -409,7 +409,7 @@ pub fn handle_comparison<'ctx>(
 
 /// Handle MIN/MAX operations
 pub fn handle_min_max<'ctx>(
-    ctx: &'ctx Context,
+    _ctx: &'ctx Context,
     op1: &ast::BV<'ctx>,
     op2: &ast::BV<'ctx>,
     opkind: OpKind,
