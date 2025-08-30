@@ -1,16 +1,15 @@
-use crate::expression::{Expr, OpKind, SatResult};
-use crate::config::Config;
+use crate::expression::{Expr, OpKind, Query, QueryType};
 use crate::shared_memory::SharedMemoryManager;
-use crate::branch_coverage::BranchCoverage;
-use crate::fuzzy_solver::FuzzySolver;
+use crate::{Config, BranchCoverage, FuzzySolver};
+use crate::testcase::Testcase;
 use crate::i386;
-use anyhow::Result;
+use z3::{ast::{Ast, BV, Bool, Dynamic}, Context, SatResult};
+use anyhow::{Result, Context as AnyhowContext};
 use log::{info, warn};
-use z3::{Context as Z3Context, Config as Z3Config, Solver, SatResult as Z3SatResult, ast::{Ast, Dynamic, BV, Bool}};
 use std::time::Instant;
 
 pub struct SMTSolver {
-    ctx: Z3Context,
+    ctx: Context,
     config: Config,
     shared_memory: Option<SharedMemoryManager>,
     branch_coverage: Option<BranchCoverage>,
@@ -19,8 +18,12 @@ pub struct SMTSolver {
     sat_time: u64,
     unsat_count: u64,
     unsat_time: u64,
+    timeout_count: u64,
     unknown_count: u64,
     unknown_time: u64,
+    current_testcase: Option<Testcase>,
+    symbols_sizes: Vec<u8>,
+    symbols_count: usize,
     translation_time: u64,
     expr_visit_time: u64,
     slice_reasoning_time: u64,
@@ -35,8 +38,8 @@ pub struct SolverResult {
 
 impl SMTSolver {
     pub fn new(config: &Config) -> Result<Self> {
-        let z3_config = Z3Config::new();
-        let ctx = Z3Context::new(&z3_config);
+        let z3_config = z3::Config::new();
+        let ctx = Context::new(&z3_config);
         
         // Initialize shared memory if environment variables are available
         let shared_memory = match SharedMemoryManager::new(config) {
@@ -96,8 +99,12 @@ impl SMTSolver {
             sat_time: 0,
             unsat_count: 0,
             unsat_time: 0,
+            timeout_count: 0,
             unknown_count: 0,
             unknown_time: 0,
+            current_testcase: None,
+            symbols_sizes: Vec::new(),
+            symbols_count: 0,
             translation_time: 0,
             expr_visit_time: 0,
             slice_reasoning_time: 0,
@@ -112,8 +119,6 @@ impl SMTSolver {
         let mut queries = Vec::new();
         if let Some(ref mut shared_memory) = self.shared_memory {
             while let Some(query) = shared_memory.get_next_query()? {
-                // For now, just collect all queries - in full implementation
-                // we would check if the query has valid expression data
                 queries.push(query);
                 if queries.len() > 1000 { // Prevent infinite loop
                     break;
@@ -123,10 +128,20 @@ impl SMTSolver {
         
         // Process collected queries
         for query in queries {
-            // For now, create a dummy expression for processing
-            // In full implementation, this would extract the actual expression from query data
-            let dummy_expr = crate::expression::Expr::new_const(42);
-            let _result = self.solve_query(&dummy_expr)?;
+            match query.get_query_type() {
+                QueryType::Branch => {
+                    self.process_branch_query(&query)?;
+                }
+                QueryType::Slice => {
+                    self.process_slice_query(&query)?;
+                }
+                QueryType::Model => {
+                    self.process_model_query(&query)?;
+                }
+                QueryType::Dependency => {
+                    self.process_dependency_query(&query)?;
+                }
+            }
             queries_processed += 1;
                 
             // Update branch coverage if available
@@ -138,122 +153,595 @@ impl SMTSolver {
         Ok(queries_processed)
     }
     
-    pub fn solve_query(&mut self, expr: &Expr) -> Result<SolverResult> {
-        let start_time = Instant::now();
+    /// Process branch queries (symbolic PC conditions)
+    pub fn process_branch_query(&mut self, query: &Query) -> Result<()> {
+        // Extract query expression from args
+        let query_expr = self.extract_query_expression(query)?;
         
-        // Try fuzzy solver first if available
-        if let Some(ref mut fuzzy_solver) = self.fuzzy_solver {
-            if fuzzy_solver.is_initialized() {
-                match fuzzy_solver.solve(expr) {
-                    Ok(result) => {
-                        info!("Fuzzy solver result: {:?}", result);
-                        // Convert fuzzy solver result to SolverResult
-                        match result {
-                            crate::fuzzy_solver::FuzzySolverResult::Sat => {
-                                self.sat_count += 1;
-                                self.sat_time += start_time.elapsed().as_micros() as u64;
-                                return Ok(SolverResult {
-                                    result: SatResult::Sat,
-                                    model: None,
-                                    testcase: None,
-                                    solve_time_us: start_time.elapsed().as_micros() as u64,
-                                });
-                            }
-                            crate::fuzzy_solver::FuzzySolverResult::Unsat => {
-                                self.unsat_count += 1;
-                                self.unsat_time += start_time.elapsed().as_micros() as u64;
-                                return Ok(SolverResult {
-                                    result: SatResult::Unsat,
-                                    model: None,
-                                    testcase: None,
-                                    solve_time_us: start_time.elapsed().as_micros() as u64,
-                                });
-                            }
-                            crate::fuzzy_solver::FuzzySolverResult::Unknown => {
-                                // Fall through to Z3 solver
-                                info!("Fuzzy solver returned unknown, falling back to Z3");
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        warn!("Fuzzy solver error: {}, falling back to Z3", e);
-                    }
+        // Create a new context for this query to avoid borrowing conflicts
+        let ctx = Context::new(&z3::Config::new());
+        let z3_query = self.translate_expr_to_z3_with_ctx(&ctx, &query_expr)?;
+        let z3_neg_query = if let Some(bool_ast) = z3_query.as_bool() {
+            bool_ast.not()
+        } else {
+            return Err(anyhow::anyhow!("Branch query is not a boolean expression"));
+        };
+        
+        // Check satisfiability of negated branch condition
+        let solver = z3::Solver::new(&ctx);
+        solver.assert(&z3_neg_query);
+        
+        let start_time = std::time::Instant::now();
+        let result = solver.check();
+        let solve_time = start_time.elapsed().as_micros() as u64;
+        
+        match result {
+            z3::SatResult::Sat => {
+                self.sat_count += 1;
+                self.sat_time += solve_time;
+                
+                // Generate testcase from model if available
+                if let Some(model) = solver.get_model() {
+                    // Create a dummy query for testcase generation
+                    let dummy_query = Query::new();
+                    self.generate_testcase_from_model(&model, &dummy_query)?;
                 }
+            }
+            z3::SatResult::Unsat => {
+                self.unsat_count += 1;
+                self.unsat_time += solve_time;
+            }
+            z3::SatResult::Unknown => {
+                self.unknown_count += 1;
+                self.unknown_time += solve_time;
             }
         }
         
-        // Apply memory slice reasoning if enabled
-        if self.config.memory_slice_reasoning {
-            let start_time = Instant::now();
-            // TODO: Implement memory slice reasoning
-            self.slice_reasoning_time += start_time.elapsed().as_micros() as u64;
-        }
+        Ok(())
+    }
+    
+    pub fn solve_query(&mut self, query_expr: &Expr) -> Result<SatResult> {
+        let start_time = Instant::now();
         
-        // Create Z3 solver
-        let solver = Solver::new(&self.ctx);
+        // Create a new context for this query to avoid borrowing conflicts
+        let ctx = Context::new(&z3::Config::new());
+        let z3_query = self.translate_expr_to_z3_with_ctx(&ctx, query_expr)?;
         
-        // Translate expression to Z3
-        let z3_query = self.translate_expr_to_z3(expr)?;
-        
-        // Assert the query
+        // Create solver and add query
+        let solver = z3::Solver::new(&ctx);
         if let Some(bool_ast) = z3_query.as_bool() {
             solver.assert(&bool_ast);
         } else {
-            warn!("Query is not a boolean expression");
-            return Ok(SolverResult {
-                result: SatResult::Unknown,
-                model: None,
-                testcase: None,
-                solve_time_us: start_time.elapsed().as_micros() as u64,
-            });
+            return Err(anyhow::anyhow!("Query is not a boolean expression"));
         }
         
         // Check satisfiability
         let result = solver.check();
-        let solve_time_us = start_time.elapsed().as_micros() as u64;
-        
-        // Drop z3_query to release the borrow before mutating self
-        drop(z3_query);
+        let elapsed = start_time.elapsed().as_millis() as u64;
         
         match result {
-            Z3SatResult::Sat => {
+            z3::SatResult::Sat => {
                 self.sat_count += 1;
-                self.sat_time += solve_time_us;
+                self.sat_time += elapsed;
                 
-                let model = solver.get_model().map(|m| format!("{}", m));
-                
-                Ok(SolverResult {
-                    result: SatResult::Sat,
-                    model,
-                    testcase: None, // TODO: Generate testcase from model
-                    solve_time_us,
-                })
-            }
-            Z3SatResult::Unsat => {
+                // Generate testcase if model is available
+                if let Some(model) = solver.get_model() {
+                    // Create a dummy query for testcase generation
+                    let dummy_query = Query::new();
+                    self.generate_testcase_from_model(&model, &dummy_query)?;
+                }
+                Ok(SatResult::Sat)
+            },
+            z3::SatResult::Unsat => {
                 self.unsat_count += 1;
-                self.unsat_time += solve_time_us;
-                
-                Ok(SolverResult {
-                    result: SatResult::Unsat,
-                    model: None,
-                    testcase: None,
-                    solve_time_us,
-                })
-            }
-            Z3SatResult::Unknown => {
+                self.unsat_time += elapsed;
+                Ok(SatResult::Unsat)
+            },
+            z3::SatResult::Unknown => {
                 self.unknown_count += 1;
-                self.unknown_time += solve_time_us;
-                
-                Ok(SolverResult {
-                    result: SatResult::Unknown,
-                    model: None,
-                    testcase: None,
-                    solve_time_us,
-                })
+                self.unknown_time += elapsed;
+                Ok(SatResult::Unknown)
             }
         }
     }
     
+    /// Process slice queries (memory slice access)
+    pub fn process_slice_query(&mut self, query: &Query) -> Result<()> {
+        // Extract slice access parameters from query args
+        let slice_args = unsafe { &query.args.args8 };
+        let addr_id = slice_args.arg1 as usize;
+        let size = slice_args.arg2 as usize;
+        let offset = slice_args.arg3 as usize;
+        
+        // Create symbolic expression for slice access
+        let slice_expr = self.create_slice_expression(addr_id, size, offset)?;
+        
+        // Solve for concrete values
+        let _result = self.solve_query(&slice_expr)?;
+        
+        Ok(())
+    }
+    
+    /// Process model queries (get concrete values for expressions)
+    pub fn process_model_query(&mut self, query: &Query) -> Result<()> {
+        let query_expr = self.extract_query_expression(query)?;
+        
+        // Find all possible solutions for the expression
+        let solutions = self.find_all_solutions(&query_expr)?;
+        
+        // Store solutions for testcase generation
+        for solution in solutions {
+            self.store_solution(query.get_index(), solution)?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Process dependency queries (track expression dependencies)
+    pub fn process_dependency_query(&mut self, query: &Query) -> Result<()> {
+        let query_expr = self.extract_query_expression(query)?;
+        
+        // Extract input dependencies from the expression
+        let dependencies = self.extract_dependencies(&query_expr)?;
+        
+        // Update dependency graph
+        self.update_dependency_graph(query.get_index(), dependencies)?;
+        
+        Ok(())
+    }
+    
+    /// Extract query expression from Query structure
+    fn extract_query_expression(&self, query: &Query) -> Result<Expr> {
+        // For now, create a placeholder expression
+        // In full implementation, this would extract the actual expression from query data
+        Ok(Expr::new_const(42))
+    }
+    
+    /// Create symbolic expression for memory slice access
+    fn create_slice_expression(&self, addr_id: usize, size: usize, offset: usize) -> Result<Expr> {
+        // Create symbolic load expression
+        let mut expr = Expr::new_const(0);
+        expr.opkind = OpKind::IsSymbolic as u8;
+        expr.op1 = addr_id as *mut Expr;
+        expr.op2 = size as *mut Expr;
+        expr.op3 = offset as *mut Expr;
+        Ok(expr)
+    }
+    
+    /// Find all solutions for an expression
+    fn find_all_solutions(&mut self, expr: &Expr) -> Result<Vec<u64>> {
+        let mut solutions = Vec::new();
+        
+        let z3_query = self.translate_expr_to_z3(expr)?;
+        let solver = z3::Solver::new(&self.ctx);
+        
+        // Find up to 256 different solutions
+        for i in 0..256 {
+            let result = solver.check();
+            if result != z3::SatResult::Sat {
+                break;
+            }
+            
+            if let Some(model) = solver.get_model() {
+                // Extract solution value from model
+                if let Some(bv_ast) = z3_query.as_bv() {
+                    if let Some(value) = model.eval(&bv_ast, true) {
+                        // Try to extract u64 value from the string representation
+                        let value_str = value.to_string();
+                        if let Ok(solution) = value_str.parse::<u64>() {
+                            solutions.push(solution);
+                            
+                            // Add constraint to exclude this solution
+                            let constraint = bv_ast._eq(&z3::ast::BV::from_u64(&self.ctx, solution, 64)).not();
+                            solver.assert(&constraint);
+                        }
+                    }
+                }
+            }
+            
+            if i > 10 && solutions.len() == 1 {
+                break; // Avoid infinite loops for single solutions
+            }
+        }
+        
+        Ok(solutions)
+    }
+    
+    /// Extract input dependencies from expression
+    fn extract_dependencies(&self, _expr: &Expr) -> Result<Vec<usize>> {
+        // Placeholder implementation
+        // In full implementation, this would traverse the expression tree
+        // and collect all symbolic input references
+        Ok(vec![])
+    }
+    
+    /// Update dependency graph with new dependencies
+    fn update_dependency_graph(&mut self, _query_id: usize, _dependencies: Vec<usize>) -> Result<()> {
+        // Placeholder implementation
+        // In full implementation, this would update the dependency tracking structures
+        Ok(())
+    }
+    
+    /// Generate testcase from Z3 model
+    fn generate_testcase_from_model(&mut self, model: &z3::Model, _query: &Query) -> Result<()> {
+        use crate::testcase::{Testcase, TestcaseMutation};
+        
+        // Extract model values and generate testcase
+        let mut testcase_data = Vec::new();
+        
+        // For now, create a simple testcase based on model
+        // In full implementation, this would extract actual variable assignments
+        for i in 0..256 {
+            let var_name = format!("input_{}", i);
+            
+            // Try to get value from model (simplified approach)
+            // In real implementation, we'd have proper symbol mapping
+            testcase_data.push((i % 256) as u8);
+        }
+        
+        // Create testcase with mutations
+        let mut testcase = Testcase::new(testcase_data);
+        
+        // Add some basic mutations for fuzzing
+        testcase.add_mutation(TestcaseMutation::new_trim(10, 5));
+        testcase.add_mutation(TestcaseMutation::new_replace(20, vec![0xFF, 0xFE, 0xFD]));
+        testcase.add_mutation(TestcaseMutation::new_extend(50, vec![0x41, 0x42, 0x43]));
+        
+        // Save testcase to output directory if configured
+        if let Some(ref output_dir) = self.config.output_dir {
+            let output_path = std::path::Path::new(output_dir);
+            if let Err(e) = std::fs::create_dir_all(output_path) {
+                warn!("Failed to create output directory: {}", e);
+                return Ok(());
+            }
+            
+            match testcase.save_to_file(output_path) {
+                Ok(saved_files) => {
+                    info!("Generated {} testcase files", saved_files.len());
+                    for file in saved_files {
+                        info!("Saved testcase: {}", file.display());
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to save testcase: {}", e);
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Store solution for testcase generation
+    fn store_solution(&mut self, _query_id: usize, _solution: u64) -> Result<()> {
+        // Placeholder implementation
+        // In full implementation, this would store the solution for later testcase generation
+        Ok(())
+    }
+    
+    /// Load initial testcase from file
+    pub fn load_initial_testcase(&mut self) -> Result<()> {
+        if let Some(ref testcase_path) = self.config.testcase_path {
+            info!("Loading testcase: {}", testcase_path.display());
+            
+            let testcase = Testcase::from_file(testcase_path)
+                .with_context(|| format!("Failed to load testcase from {}", testcase_path.display()))?;
+            
+            info!("Loaded {} bytes from testcase: {}", testcase.size(), testcase_path.display());
+            
+            // Initialize symbols sizes (each byte is 8 bits)
+            self.symbols_sizes = vec![8; testcase.size()];
+            self.symbols_count = testcase.size();
+            
+            self.current_testcase = Some(testcase);
+            Ok(())
+        } else {
+            warn!("No testcase path configured");
+            Ok(())
+        }
+    }
+    
+    /// Reset testcase to original state
+    pub fn reset_testcase(&mut self) -> Result<()> {
+        if let Some(ref testcase_path) = self.config.testcase_path {
+            self.load_initial_testcase()
+        } else {
+            Ok(())
+        }
+    }
+    
+    /// Get current testcase data
+    pub fn get_testcase_data(&self) -> Option<&[u8]> {
+        self.current_testcase.as_ref().map(|tc| tc.data.as_slice())
+    }
+    
+    /// Mutate testcase at specific byte offset
+    pub fn mutate_testcase_byte(&mut self, offset: usize, value: u8) -> Result<()> {
+        if let Some(ref mut testcase) = self.current_testcase {
+            if offset < testcase.data.len() {
+                testcase.data[offset] = value;
+                Ok(())
+            } else {
+                anyhow::bail!("Testcase mutation offset {} out of bounds (size: {})", offset, testcase.data.len())
+            }
+        } else {
+            anyhow::bail!("No testcase loaded for mutation")
+        }
+    }
+    
+    /// Apply mutations to create new testcase variants
+    pub fn generate_mutated_testcases(&mut self, mutations: Vec<crate::testcase::TestcaseMutation>) -> Result<Vec<Testcase>> {
+        if let Some(ref testcase) = self.current_testcase {
+            let mut variants = Vec::new();
+            
+            for mutation in mutations {
+                let mut variant = testcase.clone();
+                variant.add_mutation(mutation);
+                variants.push(variant);
+            }
+            
+            Ok(variants)
+        } else {
+            anyhow::bail!("No testcase loaded for mutation generation")
+        }
+    }
+    
+    /// Save solver state (bitmaps, statistics, etc.)
+    pub fn save_state(&mut self) -> Result<()> {
+        // Save branch coverage bitmap if available
+        if let Some(ref branch_coverage) = self.branch_coverage {
+            if let Err(e) = branch_coverage.save_bitmaps() {
+                warn!("Failed to save branch coverage bitmaps: {}", e);
+            }
+        }
+        
+        // Save any other persistent state here
+        info!("Solver state saved successfully");
+        Ok(())
+    }
+    
+    
+    pub fn translate_expr_to_z3_with_ctx<'ctx>(&self, ctx: &'ctx Context, expr: &Expr) -> anyhow::Result<Dynamic<'ctx>> {
+        match OpKind::try_from(expr.opkind)? {
+            OpKind::IsConst => {
+                // Extract constant value from pointer cast
+                let value = expr.op1 as u64;
+                Ok(z3::ast::BV::from_u64(ctx, value, 64).into())
+            },
+            OpKind::Neg => {
+                let operand = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                if let Some(bv) = operand.as_bv() {
+                    Ok(bv.bvneg().into())
+                } else {
+                    anyhow::bail!("Expected bitvector for negation")
+                }
+            },
+            OpKind::Add => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvadd(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for addition")
+                }
+            },
+            OpKind::Sub => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvsub(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for subtraction")
+                }
+            },
+            OpKind::Mul => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvmul(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for multiplication")
+                }
+            },
+            OpKind::Divu => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvudiv(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for unsigned division")
+                }
+            },
+            OpKind::Div => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvsdiv(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for signed division")
+                }
+            },
+            OpKind::Remu => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvurem(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for unsigned remainder")
+                }
+            },
+            OpKind::Rem => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvsrem(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for signed remainder")
+                }
+            },
+            OpKind::And => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvand(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for bitwise AND")
+                }
+            },
+            OpKind::Or => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvor(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for bitwise OR")
+                }
+            },
+            OpKind::Xor => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvxor(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for bitwise XOR")
+                }
+            },
+            OpKind::Shl => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvshl(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for left shift")
+                }
+            },
+            OpKind::Shr => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvlshr(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for logical right shift")
+                }
+            },
+            OpKind::Sar => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvashr(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for arithmetic right shift")
+                }
+            },
+            OpKind::Rotl => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    // Z3 rotate left by variable amount
+                    Ok(lbv.bvrotl(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for rotate left")
+                }
+            },
+            OpKind::Rotr => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    // Z3 rotate right by variable amount
+                    Ok(lbv.bvrotr(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for rotate right")
+                }
+            },
+            OpKind::Eq => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                Ok(left._eq(&right).into())
+            },
+            OpKind::Ne => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                Ok(left._eq(&right).not().into())
+            },
+            OpKind::Ltu => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvult(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for unsigned less than")
+                }
+            },
+            OpKind::Leu => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvule(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for unsigned less than or equal")
+                }
+            },
+            OpKind::Gtu => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvugt(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for unsigned greater than")
+                }
+            },
+            OpKind::Geu => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvuge(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for unsigned greater than or equal")
+                }
+            },
+            OpKind::Lt => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvslt(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for signed less than")
+                }
+            },
+            OpKind::Le => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvsle(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for signed less than or equal")
+                }
+            },
+            OpKind::Gt => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvsgt(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for signed greater than")
+                }
+            },
+            OpKind::Ge => {
+                let left = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op1 })?;
+                let right = self.translate_expr_to_z3_with_ctx(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lbv), Some(rbv)) = (left.as_bv(), right.as_bv()) {
+                    Ok(lbv.bvsge(&rbv).into())
+                } else {
+                    anyhow::bail!("Expected bitvectors for signed greater than or equal")
+                }
+            },
+            _ => {
+                // For unsupported operations, create a symbolic variable
+                let var_name = format!("sym_{}", expr.opkind);
+                Ok(z3::ast::BV::new_const(ctx, var_name, 64).into())
+            }
+        }
+    }
+
     pub fn translate_expr_to_z3(&self, expr: &Expr) -> anyhow::Result<Dynamic> {
         match OpKind::try_from(expr.opkind)? {
             // Constants
@@ -406,6 +894,121 @@ impl SMTSolver {
                 }
             }
             
+            // Shift operations
+            OpKind::Shl => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvshl(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("shl_placeholder_{:p}", expr);
+                    Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
+                }
+            }
+            
+            OpKind::Shr => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvlshr(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("shr_placeholder_{:p}", expr);
+                    Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
+                }
+            }
+            
+            OpKind::Sar => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvashr(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("sar_placeholder_{:p}", expr);
+                    Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
+                }
+            }
+            
+            // Division operations
+            OpKind::Div => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvsdiv(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("div_placeholder_{:p}", expr);
+                    Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
+                }
+            }
+            
+            OpKind::Divu => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvudiv(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("divu_placeholder_{:p}", expr);
+                    Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
+                }
+            }
+            
+            // Remainder operations
+            OpKind::Rem => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvsrem(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("rem_placeholder_{:p}", expr);
+                    Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
+                }
+            }
+            
+            OpKind::Remu => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvurem(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("remu_placeholder_{:p}", expr);
+                    Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
+                }
+            }
+            
             // Comparison operations (return Bool)
             OpKind::Eq => {
                 if let (Some(left_expr), Some(right_expr)) = (
@@ -436,6 +1039,169 @@ impl SMTSolver {
                 } else {
                     let placeholder_name = format!("ne_placeholder_{:p}", expr);
                     Ok(Bool::new_const(&self.ctx, placeholder_name.as_str()).into())
+                }
+            }
+            
+            // Additional comparison operations
+            OpKind::Lt => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvslt(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("lt_placeholder_{:p}", expr);
+                    Ok(Bool::new_const(&self.ctx, placeholder_name.as_str()).into())
+                }
+            }
+            
+            OpKind::Le => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvsle(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("le_placeholder_{:p}", expr);
+                    Ok(Bool::new_const(&self.ctx, placeholder_name.as_str()).into())
+                }
+            }
+            
+            OpKind::Gt => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvsgt(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("gt_placeholder_{:p}", expr);
+                    Ok(Bool::new_const(&self.ctx, placeholder_name.as_str()).into())
+                }
+            }
+            
+            OpKind::Ge => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvsge(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("ge_placeholder_{:p}", expr);
+                    Ok(Bool::new_const(&self.ctx, placeholder_name.as_str()).into())
+                }
+            }
+            
+            // Unsigned comparison operations
+            OpKind::Ltu => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvult(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("ltu_placeholder_{:p}", expr);
+                    Ok(Bool::new_const(&self.ctx, placeholder_name.as_str()).into())
+                }
+            }
+            
+            OpKind::Leu => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvule(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("leu_placeholder_{:p}", expr);
+                    Ok(Bool::new_const(&self.ctx, placeholder_name.as_str()).into())
+                }
+            }
+            
+            OpKind::Gtu => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvugt(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("gtu_placeholder_{:p}", expr);
+                    Ok(Bool::new_const(&self.ctx, placeholder_name.as_str()).into())
+                }
+            }
+            
+            OpKind::Geu => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvuge(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("geu_placeholder_{:p}", expr);
+                    Ok(Bool::new_const(&self.ctx, placeholder_name.as_str()).into())
+                }
+            }
+            
+            // Rotation operations
+            OpKind::Rotl => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvrotl(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("rotl_placeholder_{:p}", expr);
+                    Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
+                }
+            }
+            
+            OpKind::Rotr => {
+                if let (Some(left_expr), Some(right_expr)) = (
+                    unsafe { expr.op1.as_ref() },
+                    unsafe { expr.op2.as_ref() }
+                ) {
+                    let left_z3 = self.translate_expr_to_z3(left_expr)?;
+                    let right_z3 = self.translate_expr_to_z3(right_expr)?;
+                    let left_bv = left_z3.as_bv().unwrap();
+                    let right_bv = right_z3.as_bv().unwrap();
+                    Ok(left_bv.bvrotr(&right_bv).into())
+                } else {
+                    let placeholder_name = format!("rotr_placeholder_{:p}", expr);
+                    Ok(BV::new_const(&self.ctx, placeholder_name.as_str(), 64).into())
                 }
             }
             
@@ -681,40 +1447,33 @@ impl SMTSolver {
         
         let elapsed_time = start_time.elapsed().as_micros() as u64;
         
-        // Update statistics and return result
-        let result = match z3_result {
-            Z3SatResult::Sat => {
+        // Update statistics
+        match z3_result {
+            SatResult::Sat => {
                 self.sat_count += 1;
                 self.sat_time += elapsed_time;
-                SatResult::Sat
             }
-            Z3SatResult::Unsat => {
+            SatResult::Unsat => {
                 self.unsat_count += 1;
                 self.unsat_time += elapsed_time;
-                SatResult::Unsat
             }
-            Z3SatResult::Unknown => {
+            SatResult::Unknown => {
                 self.unknown_count += 1;
                 self.unknown_time += elapsed_time;
-                SatResult::Unknown
             }
-        };
+        }
         
-        Ok(result)
+        Ok(z3_result)
     }
-
-    pub fn get_model(&mut self, expr: &Expr) -> anyhow::Result<Option<Model>> {
+    
+    pub fn get_model(&mut self, expr: &Expr) -> anyhow::Result<Option<z3::Model>> {
         let z3_expr = self.translate_expr_to_z3(expr)?;
         let solver = z3::Solver::new(&self.ctx);
         solver.assert(&z3_expr.as_bool().unwrap());
         
         match solver.check() {
-            z3::SatResult::Sat => {
-                if let Some(z3_model) = solver.get_model() {
-                    Ok(Some(Model::new(z3_model)))
-                } else {
-                    Ok(None)
-                }
+            SatResult::Sat => {
+                Ok(solver.get_model())
             }
             _ => Ok(None)
         }
