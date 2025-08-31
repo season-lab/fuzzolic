@@ -1,4 +1,4 @@
-use crate::expression::{Expr, QueryType, DependencyGraph, SatResult};
+use crate::expression::{Expr, DependencyGraph, SatResult};
 use crate::shared_memory::SharedMemoryManager;
 use crate::{BranchCoverage, FuzzySolver, Testcase};
 use crate::concrete_eval::ConcreteEvaluator;
@@ -119,29 +119,7 @@ impl SMTSolver {
         }
     }
     
-    pub fn process_shared_queries(&mut self) -> Result<crate::expression::SatResult> {
-        // Process queries from shared memory
-        if let Some(ref mut shared_mem) = self.shared_memory {
-            if let Some(query) = shared_mem.get_next_query()? {
-                // Process the query based on its type
-                match query.query_type {
-                    QueryType::Branch => {
-                        // Handle branch queries
-                        Ok(crate::expression::SatResult::Sat)
-                    }
-                    QueryType::Model => {
-                        // Handle model queries  
-                        Ok(crate::expression::SatResult::Sat)
-                    }
-                    _ => Ok(crate::expression::SatResult::Unknown)
-                }
-            } else {
-                Ok(crate::expression::SatResult::Unknown)
-            }
-        } else {
-            Ok(crate::expression::SatResult::Unknown)
-        }
-    }
+    
     
     pub fn load_initial_testcase(&mut self) -> Result<bool> {
         // Load initial testcase if available
@@ -168,328 +146,263 @@ impl SMTSolver {
     
     /// Static expression translation method for avoiding borrowing conflicts
     pub fn translate_expression_static<'a>(ctx: &'a z3::Context, expr: &Expr) -> Result<z3::ast::Dynamic<'a>> {
-        match expr.opkind {
-            1 => { // Const
+        use crate::expression::OpKind;
+        let op = OpKind::try_from(expr.opkind)?;
+        match op {
+            OpKind::Not => {
+                let v = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                if let Some(b) = v.as_bool() { Ok(b.not().into()) } else { Ok(v.as_bv().ok_or_else(|| anyhow::anyhow!("Not op1 not BV/bool"))?.bvnot().into()) }
+            }
+            OpKind::Neg => {
+                let v = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                Ok(v.as_bv().ok_or_else(|| anyhow::anyhow!("Neg op1 not BV"))?.bvneg().into())
+            }
+            OpKind::IsConst => {
                 let value = expr.op1 as u64;
                 Ok(z3::ast::BV::from_u64(ctx, value, 64).into())
             }
-            5 => { // Add
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvadd(&right_bv).into())
+            OpKind::Add => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Add lhs not BV"))?
+                    .bvadd(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Add rhs not BV"))?)
+                    .into())
+            }
+            OpKind::Sub => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Sub lhs not BV"))?
+                    .bvsub(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Sub rhs not BV"))?)
+                    .into())
+            }
+            OpKind::Mul => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Mul lhs not BV"))?
+                    .bvmul(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Mul rhs not BV"))?)
+                    .into())
+            }
+            OpKind::Mulu => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Mulu lhs not BV"))?
+                    .bvmul(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Mulu rhs not BV"))?)
+                    .into())
+            }
+            OpKind::Div => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Div lhs not BV"))?
+                    .bvsdiv(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Div rhs not BV"))?)
+                    .into())
+            }
+            OpKind::Divu => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Divu lhs not BV"))?
+                    .bvudiv(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Divu rhs not BV"))?)
+                    .into())
+            }
+            OpKind::Rem => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Rem lhs not BV"))?
+                    .bvsrem(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Rem rhs not BV"))?)
+                    .into())
+            }
+            OpKind::Remu => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Remu lhs not BV"))?
+                    .bvurem(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Remu rhs not BV"))?)
+                    .into())
+            }
+            OpKind::And => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lb), Some(rb)) = (l.as_bool(), r.as_bool()) {
+                    Ok(z3::ast::Bool::and(ctx, &[&lb, &rb]).into())
                 } else {
-                    anyhow::bail!("Invalid operands for Add operation")
+                    Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("And lhs not BV/bool"))?
+                        .bvand(&r.as_bv().ok_or_else(|| anyhow::anyhow!("And rhs not BV/bool"))?)
+                        .into())
                 }
             }
-            10 => { // Eq
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                Ok(left._eq(&right).into())
-            }
-            15 => { // Not
-                let operand = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                if let Some(bool_expr) = operand.as_bool() {
-                    Ok(bool_expr.not().into())
+            OpKind::Or => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                if let (Some(lb), Some(rb)) = (l.as_bool(), r.as_bool()) {
+                    Ok(z3::ast::Bool::or(ctx, &[&lb, &rb]).into())
                 } else {
-                    anyhow::bail!("Invalid operand for Not operation")
+                    Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Or lhs not BV/bool"))?
+                        .bvor(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Or rhs not BV/bool"))?)
+                        .into())
                 }
             }
-            6 => { // Sub
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvsub(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Sub operation")
-                }
+            OpKind::Xor => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Xor lhs not BV"))?
+                    .bvxor(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Xor rhs not BV"))?)
+                    .into())
             }
-            7 => { // Mul
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvmul(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Mul operation")
-                }
+            OpKind::Shl | OpKind::Sal => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Shl lhs not BV"))?
+                    .bvshl(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Shl rhs not BV"))?)
+                    .into())
             }
-            8 => { // Div
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvudiv(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Div operation")
-                }
+            OpKind::Shr => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Shr lhs not BV"))?
+                    .bvlshr(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Shr rhs not BV"))?)
+                    .into())
             }
-            9 => { // Mod
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvurem(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Mod operation")
-                }
+            OpKind::Sar => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Sar lhs not BV"))?
+                    .bvashr(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Sar rhs not BV"))?)
+                    .into())
             }
-            11 => { // Ne
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                Ok(left._eq(&right).not().into())
+            OpKind::Eq => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l._eq(&r).into())
             }
-            16 => { // And
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bool), Some(right_bool)) = (left.as_bool(), right.as_bool()) {
-                    Ok(z3::ast::Bool::and(ctx, &[&left_bool, &right_bool]).into())
-                } else if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvand(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for And operation")
-                }
+            OpKind::Ne => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l._eq(&r).not().into())
             }
-            17 => { // Or
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bool), Some(right_bool)) = (left.as_bool(), right.as_bool()) {
-                    Ok(z3::ast::Bool::or(ctx, &[&left_bool, &right_bool]).into())
-                } else if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvor(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Or operation")
-                }
+            OpKind::Lt => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Lt lhs not BV"))?
+                    .bvslt(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Lt rhs not BV"))?)
+                    .into())
             }
-            18 => { // Xor
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvxor(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Xor operation")
-                }
+            OpKind::Le => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Le lhs not BV"))?
+                    .bvsle(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Le rhs not BV"))?)
+                    .into())
             }
-            19 => { // Shl
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvshl(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Shl operation")
-                }
+            OpKind::Gt => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Gt lhs not BV"))?
+                    .bvsgt(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Gt rhs not BV"))?)
+                    .into())
             }
-            20 => { // Shr
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvlshr(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Shr operation")
-                }
+            OpKind::Ge => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Ge lhs not BV"))?
+                    .bvsge(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Ge rhs not BV"))?)
+                    .into())
             }
-            21 => { // Sar (arithmetic right shift)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvashr(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Sar operation")
-                }
+            OpKind::Ltu => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Ltu lhs not BV"))?
+                    .bvult(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Ltu rhs not BV"))?)
+                    .into())
             }
-            12 => { // Lt (less than)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvult(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Lt operation")
-                }
+            OpKind::Leu => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Leu lhs not BV"))?
+                    .bvule(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Leu rhs not BV"))?)
+                    .into())
             }
-            13 => { // Le (less than or equal)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvule(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Le operation")
-                }
+            OpKind::Gtu => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Gtu lhs not BV"))?
+                    .bvugt(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Gtu rhs not BV"))?)
+                    .into())
             }
-            14 => { // Gt (greater than)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvugt(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Gt operation")
-                }
+            OpKind::Geu => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Geu lhs not BV"))?
+                    .bvuge(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Geu rhs not BV"))?)
+                    .into())
             }
-            22 => { // Ge (greater than or equal)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvuge(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Ge operation")
-                }
+            OpKind::Extract => {
+                let v = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let bv = v.as_bv().ok_or_else(|| anyhow::anyhow!("Extract op1 not BV"))?;
+                let high = expr.op2 as u32;
+                let low = expr.op3 as u32;
+                Ok(bv.extract(high, low).into())
             }
-            23 => { // Extract
-                let operand = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                if let Some(bv_expr) = operand.as_bv() {
-                    // Extract bits from high to low (op2 = high, op3 = low)
-                    let high = expr.op2 as u32;
-                    let low = expr.op3 as u32;
-                    Ok(bv_expr.extract(high, low).into())
-                } else {
-                    anyhow::bail!("Invalid operand for Extract operation")
-                }
+            OpKind::Extract8 => {
+                let v = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let bv = v.as_bv().ok_or_else(|| anyhow::anyhow!("Extract8 op1 not BV"))?;
+                Ok(bv.extract(7, 0).into())
             }
-            24 => { // Concat
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.concat(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Concat operation")
-                }
+            OpKind::Concat => {
+                let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let r = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Concat lhs not BV"))?
+                    .concat(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Concat rhs not BV"))?)
+                    .into())
             }
-            25 => { // Zext (zero extend)
-                let operand = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                if let Some(bv_expr) = operand.as_bv() {
-                    let extend_bits = expr.op2 as u32;
-                    Ok(bv_expr.zero_ext(extend_bits).into())
-                } else {
-                    anyhow::bail!("Invalid operand for Zext operation")
-                }
+            OpKind::Zext => {
+                let v = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let bv = v.as_bv().ok_or_else(|| anyhow::anyhow!("Zext op1 not BV"))?;
+                let extend_bits = expr.op2 as u32;
+                Ok(bv.zero_ext(extend_bits).into())
             }
-            26 => { // Sext (sign extend)
-                let operand = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                if let Some(bv_expr) = operand.as_bv() {
-                    let extend_bits = expr.op2 as u32;
-                    Ok(bv_expr.sign_ext(extend_bits).into())
-                } else {
-                    anyhow::bail!("Invalid operand for Sext operation")
-                }
+            OpKind::Sext => {
+                let v = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let bv = v.as_bv().ok_or_else(|| anyhow::anyhow!("Sext op1 not BV"))?;
+                let extend_bits = expr.op2 as u32;
+                Ok(bv.sign_ext(extend_bits).into())
             }
-            27 => { // Sdiv (signed division)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvsdiv(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Sdiv operation")
-                }
-            }
-            28 => { // Srem (signed remainder)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvsrem(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Srem operation")
-                }
-            }
-            29 => { // Slt (signed less than)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvslt(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Slt operation")
-                }
-            }
-            30 => { // Sle (signed less than or equal)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvsle(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Sle operation")
-                }
-            }
-            31 => { // Sgt (signed greater than)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvsgt(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Sgt operation")
-                }
-            }
-            32 => { // Sge (signed greater than or equal)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvsge(&right_bv).into())
-                } else {
-                    anyhow::bail!("Invalid operands for Sge operation")
-                }
-            }
-            106 => { // SymbolicLoad
-                // Create symbolic memory load operation
-                let address = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                if let Some(addr_bv) = address.as_bv() {
-                    // Create a symbolic value for the loaded data
-                    let load_symbol = format!("load_{}", addr_bv.to_string());
-                    Ok(z3::ast::BV::new_const(ctx, load_symbol, 64).into())
-                } else {
-                    anyhow::bail!("Invalid address for SymbolicLoad operation")
-                }
-            }
-            107 => { // SymbolicStore
-                // Create symbolic memory store operation
-                let address = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let value = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(_addr_bv), Some(val_bv)) = (address.as_bv(), value.as_bv()) {
-                    // Store operations typically return the stored value
-                    Ok(val_bv.into())
-                } else {
-                    anyhow::bail!("Invalid operands for SymbolicStore operation")
-                }
-            }
-            103 => { // MemorySlice
-                // Create memory slice constraint
-                let base_addr = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+            // Keep placeholders for memory/symbolic ops used by higher layers
+            OpKind::MemorySlice => {
+                let base = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
                 let size = expr.op2 as u64;
-                if let Some(base_bv) = base_addr.as_bv() {
-                    // Create a symbolic array for the memory slice
-                    let slice_name = format!("slice_{}_{}", base_bv.to_string(), size);
-                    Ok(z3::ast::BV::new_const(ctx, slice_name, (size * 8) as u32).into())
-                } else {
-                    anyhow::bail!("Invalid base address for MemorySlice operation")
-                }
+                let base_bv = base.as_bv().ok_or_else(|| anyhow::anyhow!("MemorySlice base not BV"))?;
+                let name = format!("slice_{}_{}", base_bv.to_string(), size);
+                Ok(z3::ast::BV::new_const(ctx, name, (size * 8) as u32).into())
             }
-            2 => { // Symbol (symbolic variable)
-                let symbol_id = expr.op1 as u32;
-                let symbol_name = format!("sym_{}", symbol_id);
-                Ok(z3::ast::BV::new_const(ctx, symbol_name, 64).into())
+            OpKind::SymbolicLoad => {
+                let addr = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let addr_bv = addr.as_bv().ok_or_else(|| anyhow::anyhow!("SymbolicLoad addr not BV"))?;
+                let name = format!("load_{}", addr_bv.to_string());
+                Ok(z3::ast::BV::new_const(ctx, name, 64).into())
             }
-            33 => { // ITE (if-then-else)
-                let condition = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let then_expr = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                let else_expr = Self::translate_expression_static(ctx, unsafe { &*expr.op3 })?;
-                if let Some(cond_bool) = condition.as_bool() {
-                    Ok(cond_bool.ite(&then_expr, &else_expr))
-                } else {
-                    anyhow::bail!("Invalid condition for ITE operation")
-                }
+            OpKind::SymbolicStore => {
+                let _addr = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let val = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                Ok(val)
             }
-            34 => { // Rol (rotate left)
+            OpKind::Rotl => {
                 let operand = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
                 let amount = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
                 if let (Some(op_bv), Some(amt_bv)) = (operand.as_bv(), amount.as_bv()) {
                     Ok(op_bv.bvrotl(&amt_bv).into())
                 } else {
-                    anyhow::bail!("Invalid operands for Rol operation")
+                    anyhow::bail!("Invalid operands for Rotl operation")
                 }
             }
-            35 => { // Ror (rotate right)
+            OpKind::Rotr => {
                 let operand = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
                 let amount = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
                 if let (Some(op_bv), Some(amt_bv)) = (operand.as_bv(), amount.as_bv()) {
                     Ok(op_bv.bvrotr(&amt_bv).into())
                 } else {
-                    anyhow::bail!("Invalid operands for Ror operation")
+                    anyhow::bail!("Invalid operands for Rotr operation")
                 }
             }
-            36 => { // Abs (absolute value)
+            // Optional Abs implementation (not part of OpKind currently)
+            /* 36 => { // Abs (absolute value)
                 let operand = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
                 if let Some(op_bv) = operand.as_bv() {
                     // Implement abs using ITE: (ite (bvslt x 0) (bvneg x) x)
@@ -500,8 +413,8 @@ impl SMTSolver {
                 } else {
                     anyhow::bail!("Invalid operand for Abs operation")
                 }
-            }
-            37 => { // Min (minimum)
+            } */
+            OpKind::Min => {
                 let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
                 let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
                 if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
@@ -512,7 +425,7 @@ impl SMTSolver {
                     anyhow::bail!("Invalid operands for Min operation")
                 }
             }
-            38 => { // Max (maximum)
+            OpKind::Max => {
                 let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
                 let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
                 if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
@@ -523,7 +436,7 @@ impl SMTSolver {
                     anyhow::bail!("Invalid operands for Max operation")
                 }
             }
-            39 => { // Nand (bitwise NAND)
+            OpKind::Nand => {
                 let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
                 let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
                 if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
@@ -532,121 +445,43 @@ impl SMTSolver {
                     anyhow::bail!("Invalid operands for Nand operation")
                 }
             }
-            40 => { // Nor (bitwise NOR)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(left_bv), Some(right_bv)) = (left.as_bv(), right.as_bv()) {
-                    Ok(left_bv.bvor(&right_bv).bvnot().into())
-                } else {
-                    anyhow::bail!("Invalid operands for Nor operation")
-                }
-            }
-            41 => { // PopCount (population count - count set bits)
+            OpKind::Clz => { // count leading zeros (placeholder)
                 let operand = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
                 if let Some(op_bv) = operand.as_bv() {
-                    // Simplified popcount implementation - create symbolic result
-                    let popcount_name = format!("popcount_{}", op_bv.to_string());
-                    Ok(z3::ast::BV::new_const(ctx, popcount_name, 64).into())
-                } else {
-                    anyhow::bail!("Invalid operand for PopCount operation")
-                }
-            }
-            42 => { // Clz (count leading zeros)
-                let operand = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                if let Some(op_bv) = operand.as_bv() {
-                    // Simplified clz implementation - create symbolic result
                     let clz_name = format!("clz_{}", op_bv.to_string());
                     Ok(z3::ast::BV::new_const(ctx, clz_name, 64).into())
                 } else {
                     anyhow::bail!("Invalid operand for Clz operation")
                 }
             }
-            43 => { // Ctz (count trailing zeros)
+            OpKind::Ctz => { // count trailing zeros (placeholder)
                 let operand = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
                 if let Some(op_bv) = operand.as_bv() {
-                    // Simplified ctz implementation - create symbolic result
                     let ctz_name = format!("ctz_{}", op_bv.to_string());
                     Ok(z3::ast::BV::new_const(ctx, ctz_name, 64).into())
                 } else {
                     anyhow::bail!("Invalid operand for Ctz operation")
                 }
             }
-            44 => { // Bswap (byte swap)
+            OpKind::Bswap => {
                 let operand = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
                 if let Some(op_bv) = operand.as_bv() {
-                    // Implement byte swap for 64-bit values
                     let size = op_bv.get_size();
-                    if size == 64 {
-                        let b0 = op_bv.extract(7, 0);
-                        let b1 = op_bv.extract(15, 8);
-                        let b2 = op_bv.extract(23, 16);
-                        let b3 = op_bv.extract(31, 24);
-                        let b4 = op_bv.extract(39, 32);
-                        let b5 = op_bv.extract(47, 40);
-                        let b6 = op_bv.extract(55, 48);
-                        let b7 = op_bv.extract(63, 56);
-                        Ok(b0.concat(&b1).concat(&b2).concat(&b3)
-                           .concat(&b4).concat(&b5).concat(&b6).concat(&b7).into())
-                    } else {
-                        // For other sizes, create symbolic result
-                        let bswap_name = format!("bswap_{}", op_bv.to_string());
-                        Ok(z3::ast::BV::new_const(ctx, bswap_name, size).into())
+                    if size % 8 != 0 { anyhow::bail!("Bswap requires byte-multiple width") }
+                    let bytes = size / 8;
+                    let mut acc: Option<z3::ast::BV> = None;
+                    for i in 0..bytes {
+                        let hi = (i + 1) * 8 - 1;
+                        let lo = i * 8;
+                        let byte = op_bv.extract(hi, lo);
+                        acc = Some(match acc { None => byte, Some(a) => byte.concat(&a) });
                     }
+                    Ok(acc.unwrap().into())
                 } else {
                     anyhow::bail!("Invalid operand for Bswap operation")
                 }
             }
-            45 => { // Saturate (saturation arithmetic)
-                let operand = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let min_val = expr.op2 as i64;
-                let max_val = expr.op3 as i64;
-                if let Some(op_bv) = operand.as_bv() {
-                    let min_bv = z3::ast::BV::from_i64(ctx, min_val, op_bv.get_size());
-                    let max_bv = z3::ast::BV::from_i64(ctx, max_val, op_bv.get_size());
-                    
-                    // Implement saturation: clamp(x, min, max)
-                    let too_small = op_bv.bvslt(&min_bv);
-                    let too_large = op_bv.bvsgt(&max_bv);
-                    
-                    let clamped_low = too_small.ite(&min_bv.into(), &op_bv.into());
-                    Ok(too_large.ite(&max_bv.into(), &clamped_low))
-                } else {
-                    anyhow::bail!("Invalid operand for Saturate operation")
-                }
-            }
-            46 => { // FpAdd (floating point addition)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                // Simplified FP implementation - create symbolic result
-                let fp_name = format!("fpadd_{}_{}", left.to_string(), right.to_string());
-                Ok(z3::ast::BV::new_const(ctx, fp_name, 64).into())
-            }
-            47 => { // FpSub (floating point subtraction)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                // Simplified FP implementation - create symbolic result
-                let fp_name = format!("fpsub_{}_{}", left.to_string(), right.to_string());
-                Ok(z3::ast::BV::new_const(ctx, fp_name, 64).into())
-            }
-            48 => { // FpMul (floating point multiplication)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                // Simplified FP implementation - create symbolic result
-                let fp_name = format!("fpmul_{}_{}", left.to_string(), right.to_string());
-                Ok(z3::ast::BV::new_const(ctx, fp_name, 64).into())
-            }
-            49 => { // FpDiv (floating point division)
-                let left = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
-                let right = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                // Simplified FP implementation - create symbolic result
-                let fp_name = format!("fpdiv_{}_{}", left.to_string(), right.to_string());
-                Ok(z3::ast::BV::new_const(ctx, fp_name, 64).into())
-            }
-            // i386-specific EFLAGS and comparison operations (OpKind 50+)
-            opkind if opkind >= 50 => {
-                // Delegate to i386-specific translation
-                crate::i386::smt_query_i386_to_z3(ctx, expr, 8)
-            }
+            // i386-specific EFLAGS and comparison operations handled elsewhere if needed
             _ => {
                 // Enhanced error handling for unsupported operations
                 anyhow::bail!("Unsupported OpKind {} in expression translation. This operation is not yet implemented in the Z3 translation layer.", expr.opkind)

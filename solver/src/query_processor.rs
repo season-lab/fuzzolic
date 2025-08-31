@@ -130,45 +130,35 @@ impl QueryProcessor {
     
     /// Process branch queries (conditional branches)
     fn process_branch_query(&mut self, query: &Query) -> Result<()> {
-        let branch_args = unsafe { &query.args.args8 };
-        let addr_conc = branch_args.arg1 as u64;
-        let branch_taken = branch_args.arg2 != 0;
-        
-        // Record branch in coverage
-        self.branch_coverage.record_branch(addr_conc, branch_taken, false);
-        
-        // Try to find input that would take the opposite branch
-        if branch_taken {
-            // Create separate context to avoid borrowing conflicts
+        // C layout: q->address holds PC; q->args8.arg0 holds taken flag; q->query points to branch cond expr
+        let addr_conc = query.address as u64;
+        let taken = unsafe { query.args.args8 }.arg0 != 0;
+
+        // Record branch in coverage (AFL/QSYM-compatible API)
+        self.branch_coverage.record_branch(addr_conc, taken, false);
+
+        // If we took the branch, try to solve for the opposite by negating the branch condition
+        if !query.query.is_null() {
+            let cond_expr = unsafe { &*query.query };
             let ctx = z3::Context::new(&z3::Config::new());
-            let z3_condition = z3::ast::BV::from_u64(&ctx, addr_conc as u64, 64);
-            let _opposite_constraint: z3::ast::Dynamic = if branch_taken {
-                z3_condition.bvnot().into()
-            } else {
-                z3_condition.into()
-            };
-                
-            // Try to solve for opposite branch
-            let dummy_expr = Expr::new_const(addr_conc as usize);
+            let z3_cond = SMTSolver::translate_expression_static(&ctx, cond_expr)?;
             let solver = z3::Solver::new(&ctx);
-            let z3_dummy = crate::solver::SMTSolver::translate_expression_static(&ctx, &dummy_expr)?;
-            solver.assert(&z3_dummy.as_bool().unwrap());
+            // In C: if taken => assert(not cond); else assert(cond)
+            let cond_bool = z3_cond.as_bool().expect("branch condition must be Bool");
+            let to_assert = if taken { cond_bool.not() } else { cond_bool };
+            solver.assert(&to_assert);
             match solver.check() {
                 z3::SatResult::Sat => {
-                    info!("Found satisfiable opposite branch");
+                    info!("Opposite branch at 0x{:x} is SAT", addr_conc);
                     if let Some(model) = solver.get_model() {
-                        self.generate_testcase_from_model(&model, &dummy_expr)?;
+                        self.generate_testcase_from_model(&model, cond_expr)?;
                     }
                 }
-                z3::SatResult::Unsat => {
-                    debug!("Opposite branch unsatisfiable");
-                }
-                z3::SatResult::Unknown => {
-                    warn!("Opposite branch result unknown");
-                }
+                z3::SatResult::Unsat => debug!("Opposite branch at 0x{:x} is UNSAT", addr_conc),
+                z3::SatResult::Unknown => warn!("Opposite branch at 0x{:x} is UNKNOWN", addr_conc),
             }
         }
-        
+
         Ok(())
     }
     
@@ -193,15 +183,8 @@ impl QueryProcessor {
     
     #[allow(dead_code)]
     fn process_expression_query_with_query(&mut self, query: &Query, _config: &Config) -> Result<()> {
-        // Extract expression pointer from query args
-        let expr_ptr = unsafe {
-            let ptr_bytes = [
-                query.args.args8.arg1, query.args.args8.arg2, query.args.args8.arg3, query.args.args8.arg4,
-                query.args.args8.arg5, query.args.args8.arg6, query.args.args8.arg7, query.args.args8.arg8,
-            ];
-            std::ptr::read(ptr_bytes.as_ptr() as *const *const Expr)
-        };
-        let expr = unsafe { expr_ptr.as_ref() };
+        // Use the direct expression pointer from the C-compatible layout
+        let expr = if query.query.is_null() { None } else { Some(unsafe { &*query.query }) };
         
         if let Some(expression) = expr {
             // Create separate context to avoid borrowing conflicts
@@ -283,23 +266,8 @@ impl QueryProcessor {
     
     /// Check if this is the final query marker
     fn is_final_query(&self, query: &Query) -> bool {
-        // Check for final query marker (null pointer or special value)
-        unsafe { 
-            // Check if this is the final query marker
-            // Final query has null pointer in first 8 bytes and 0xFFFFFFFF in next 4 bytes
-            let ptr_bytes = [
-                query.args.args8.arg1,
-                query.args.args8.arg2,
-                query.args.args8.arg3,
-                query.args.args8.arg4,
-                query.args.args8.arg5,
-                query.args.args8.arg6,
-                query.args.args8.arg7,
-                query.args.args8.arg8,
-            ];
-            let expr_ptr = std::ptr::read(ptr_bytes.as_ptr() as *const *const Expr);
-            expr_ptr.is_null()
-        }
+        // Final query marker: null query pointer (mirrors C code behavior)
+        query.query.is_null()
     }
     
     /// Process model queries

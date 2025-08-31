@@ -303,10 +303,11 @@ pub struct Expr {
     pub op3_is_const: u8,
 }
 
-/// QueryArgs8 struct matching C definition
+/// QueryArgs8 struct matching C definition (fields arg0..arg7)
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct QueryArgs8 {
+    pub arg0: u8,
     pub arg1: u8,
     pub arg2: u8,
     pub arg3: u8,
@@ -314,7 +315,6 @@ pub struct QueryArgs8 {
     pub arg5: u8,
     pub arg6: u8,
     pub arg7: u8,
-    pub arg8: u8,
 }
 
 /// Query union args matching C definition
@@ -346,10 +346,14 @@ pub enum QueryType {
 }
 
 /// Query structure matching C definition
+/// Layout mirrors C (symbolic-struct.h):
+/// struct Query { uintptr_t address; Expr* query; union { ... } args; uint8_t query_type; };
 #[repr(C)]
 pub struct Query {
-    pub query_type: QueryType,
+    pub address: usize,
+    pub query: *mut Expr,
     pub args: QueryArgs,
+    pub query_type: QueryType,
 }
 
 impl Expr {
@@ -569,13 +573,15 @@ impl DependencyGraph {
 impl Query {
     pub fn new() -> Self {
         Query {
-            query_type: QueryType::Branch, // Default query type
+            address: 0,
+            query: std::ptr::null_mut(),
             args: QueryArgs { args8: std::mem::ManuallyDrop::new(QueryArgs8::default()) },
+            query_type: QueryType::Branch, // Default
         }
     }
     
     pub fn get_index(&self) -> usize {
-        unsafe { self.args.args64 } // Use args64 field from union
+        unsafe { self.args.args64 } // Mirrors GET_QUERY_IDX(q) usage when index is stuffed here
     }
     
     pub fn get_query_type(&self) -> QueryType {

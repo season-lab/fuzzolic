@@ -41,21 +41,10 @@ pub fn run_solver(config: Config, use_fuzzy: bool) -> Result<()> {
     let mut solver_config = config.clone();
     solver_config.use_fuzzy_solver = use_fuzzy;
     
-    let mut solver = SMTSolver::new(&solver_config)?;
-    info!("SMT Solver initialized successfully");
-    
-    // Process queries from shared memory if available
-    match solver.process_shared_queries() {
-        Ok(queries_processed) => {
-            info!("Processed {:?} queries from shared memory", queries_processed);
-        }
-        Err(e) => {
-            info!("No shared memory queries available: {}", e);
-        }
-    }
-    
-    // Print final statistics
-    solver.print_statistics();
+    // Run the full query processing loop (C-parity behavior)
+    let mut processor = QueryProcessor::new(solver_config.clone())?;
+    info!("Query Processor initialized successfully");
+    processor.run(&solver_config)?;
     info!("Solver completed successfully");
     
     Ok(())

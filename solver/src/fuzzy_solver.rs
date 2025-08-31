@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::expression::Expr;
+use crate::i386; // delegate i386-specific opkinds
 // use crate::testcase_list::TestcaseList;
 // use crate::index_queue::{IndexQueue, IndexGenerator};
 use anyhow::Result;
@@ -98,6 +99,76 @@ impl FuzzySolver {
         Ok(BV::from_u64(&self.z3_ctx, value, n_bits as u32))
     }
     
+    /// Extract the first bit-vector numeral found in an SMT-LIB term string.
+    /// Supports patterns like "(_ bv123 64)", "#x7b" and "#b0111".
+    fn extract_first_bv_numeral(s: &str) -> Option<u64> {
+        // Pattern 1: (_ bv<digits> <width>)
+        if let Some(i) = s.find("(_ bv") {
+            let tail = &s[i + 5..]; // after "(_ bv"
+            let mut num = 0u64;
+            let mut seen = false;
+            for ch in tail.chars() {
+                if ch.is_ascii_digit() {
+                    seen = true;
+                    num = num.saturating_mul(10).saturating_add((ch as u8 - b'0') as u64);
+                } else {
+                    break;
+                }
+            }
+            if seen { return Some(num); }
+        }
+
+        // Pattern 2: #x<hex>
+        if let Some(i) = s.find("#x") {
+            let tail = &s[i + 2..];
+            let mut val: u64 = 0;
+            let mut seen = false;
+            for ch in tail.chars() {
+                let digit = match ch {
+                    '0'..='9' => (ch as u8 - b'0') as u8,
+                    'a'..='f' => 10 + (ch as u8 - b'a') as u8,
+                    'A'..='F' => 10 + (ch as u8 - b'A') as u8,
+                    _ => break,
+                } as u64;
+                seen = true;
+                val = val.saturating_mul(16).saturating_add(digit);
+            }
+            if seen { return Some(val); }
+        }
+
+        // Pattern 3: #b<bits>
+        if let Some(i) = s.find("#b") {
+            let tail = &s[i + 2..];
+            let mut val: u64 = 0;
+            let mut seen = false;
+            for ch in tail.chars() {
+                let bit = match ch { '0' => 0u64, '1' => 1u64, _ => break };
+                seen = true;
+                val = (val << 1) | bit;
+            }
+            if seen { return Some(val); }
+        }
+
+        None
+    }
+
+    /// Heuristic: detect whether the SMT-LIB string looks like an arithmetic/bitwise op with a constant.
+    fn looks_like_sub_add_and_with_const(s: &str) -> bool {
+        (s.contains("bvsub") || s.contains("bvadd") || s.contains("bvand"))
+            && (s.contains("(_ bv") || s.contains("#x") || s.contains("#b"))
+    }
+
+    /// Heuristic: detect whether the SMT-LIB string looks like a comparison with a constant.
+    fn looks_like_comparison_with_const(s: &str) -> bool {
+        (s.contains("=") || s.contains("bvult") || s.contains("bvule") || s.contains("bvugt") || s.contains("bvuge"))
+            && (s.contains("(_ bv") || s.contains("#x") || s.contains("#b"))
+    }
+
+    /// Convert any AST node to a printable string using Debug formatting.
+    fn ast_to_smt_string(ast: &dyn Ast) -> String {
+        format!("{:?}", ast)
+    }
+
     /// Dump solution to file (placeholder)
     fn smt_dump_solution(&mut self, model: &Model) -> Result<()> {
         info!("Dumping solution to file");
@@ -190,26 +261,35 @@ impl FuzzySolver {
     
     /// Implementation of ast_find_early_constants with mutable references
     fn ast_find_early_constants_impl(&self, _ast: &dyn Ast, _sub_add: &mut u64, _comparison: &mut u64) -> i32 {
-        // Simplified implementation due to Z3 Rust API limitations
-        // In a full implementation, this would traverse the AST to find constants
-        // in SUB/ADD operations and comparison operations
-        
-        // For now, return 0 (no constants found) as a placeholder
-        // This can be enhanced when more Z3 AST introspection is available
-        0
+        // Best-effort heuristic by parsing the SMT-LIB string of the AST.
+        // This avoids relying on z3_sys while still extracting useful constants.
+        let s = Self::ast_to_smt_string(_ast);
+        let mut mask = 0i32;
+
+        if Self::looks_like_sub_add_and_with_const(&s) {
+            if let Some(val) = Self::extract_first_bv_numeral(&s) {
+                *_sub_add = val;
+                mask |= FOUND_SUB_AND;
+            }
+        }
+
+        if Self::looks_like_comparison_with_const(&s) {
+            if let Some(val) = Self::extract_first_bv_numeral(&s) {
+                *_comparison = val;
+                mask |= FOUND_COMPARISON;
+            }
+        }
+
+        mask
     }
     
     /// Visit concat chain in AST (from C ast_visit_concat_chain)
     fn ast_visit_concat_chain(&self, _ast: &dyn Ast, group: u32) -> i32 {
-        // Group together inputs that belong to a "concat chain"
-        // e.g. (concat (concat (INPUT[7:0], INPUT[15:8])), INPUT[23:16])
-        // Returns: 0 -> success, 1 -> error
-        
-        // Simplified implementation due to Z3 Rust API limitations
-        debug!("Processing concat chain for group {}", group);
-        
-        // For now, return success as a placeholder
-        // This can be enhanced when more Z3 AST introspection is available
+        // Heuristic: count "concat" occurrences for visibility and return success.
+        // Full grouping would require tracking input symbols; here we only log.
+        let s = Self::ast_to_smt_string(_ast);
+        let count = s.match_indices("concat").count();
+        debug!("Processing concat chain for group {} (concat nodes: {})", group, count);
         0
     }
     
@@ -344,6 +424,16 @@ impl FuzzySolver {
                 let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for NEG"))?;
                 Ok(bv1.bvneg().into())
             }
+            OpKind::Not => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                if let Some(b) = op1.as_bool() {
+                    Ok(b.not().into())
+                } else if let Some(bv) = op1.as_bv() {
+                    Ok(bv.bvnot().into())
+                } else {
+                    Err(anyhow::anyhow!("Type mismatch in NOT operation"))
+                }
+            }
             
             OpKind::Add => {
                 let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
@@ -361,6 +451,50 @@ impl FuzzySolver {
                 Ok(bv1.bvsub(&bv2).into())
             }
             
+            OpKind::Mul => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for MUL op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for MUL op2"))?;
+                Ok(bv1.bvmul(&bv2).into())
+            }
+            OpKind::Mulu => {
+                // same as MUL in bitvector semantics
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for MULU op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for MULU op2"))?;
+                Ok(bv1.bvmul(&bv2).into())
+            }
+            OpKind::Div => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for DIV op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for DIV op2"))?;
+                Ok(bv1.bvsdiv(&bv2).into())
+            }
+            OpKind::Divu => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for DIVU op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for DIVU op2"))?;
+                Ok(bv1.bvudiv(&bv2).into())
+            }
+            OpKind::Rem => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for REM op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for REM op2"))?;
+                Ok(bv1.bvsrem(&bv2).into())
+            }
+            OpKind::Remu => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for REMU op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for REMU op2"))?;
+                Ok(bv1.bvurem(&bv2).into())
+            }
+            
             OpKind::And => {
                 let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
                 let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
@@ -374,6 +508,198 @@ impl FuzzySolver {
                     Err(anyhow::anyhow!("Type mismatch in AND operation"))
                 }
             }
+            OpKind::Or => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                if let (Some(b1), Some(b2)) = (op1.as_bool(), op2.as_bool()) {
+                    Ok(Bool::or(&self.z3_ctx, &[&b1, &b2]).into())
+                } else if let (Some(bv1), Some(bv2)) = (op1.as_bv(), op2.as_bv()) {
+                    Ok(bv1.bvor(&bv2).into())
+                } else {
+                    Err(anyhow::anyhow!("Type mismatch in OR operation"))
+                }
+            }
+            OpKind::Xor => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                if let (Some(b1), Some(b2)) = (op1.as_bool(), op2.as_bool()) {
+                    Ok(b1.xor(&b2).into())
+                } else if let (Some(bv1), Some(bv2)) = (op1.as_bv(), op2.as_bv()) {
+                    Ok(bv1.bvxor(&bv2).into())
+                } else {
+                    Err(anyhow::anyhow!("Type mismatch in XOR operation"))
+                }
+            }
+            OpKind::Andc => {
+                // a ANDC b == a & (~b)
+                let a = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let b = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                if let (Some(ba), Some(bb)) = (a.as_bool(), b.as_bool()) {
+                    Ok(Bool::and(&self.z3_ctx, &[&ba, &bb.not()]).into())
+                } else if let (Some(bva), Some(bvb)) = (a.as_bv(), b.as_bv()) {
+                    Ok(bva.bvand(&bvb.bvnot()).into())
+                } else {
+                    Err(anyhow::anyhow!("Type mismatch in ANDC operation"))
+                }
+            }
+            OpKind::Or3 => {
+                // or of three operands
+                let a = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let b = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let c = self.smt_query_to_z3(unsafe { &*expr.op3 }, expr.op3_is_const != 0)?;
+                if let (Some(ba), Some(bb), Some(bc)) = (a.as_bool(), b.as_bool(), c.as_bool()) {
+                    Ok(Bool::or(&self.z3_ctx, &[&ba, &bb, &bc]).into())
+                } else if let (Some(bva), Some(bvb), Some(bvc)) = (a.as_bv(), b.as_bv(), c.as_bv()) {
+                    Ok(bva.bvor(&bvb).bvor(&bvc).into())
+                } else {
+                    Err(anyhow::anyhow!("Type mismatch in OR3 operation"))
+                }
+            }
+            OpKind::Xor3 => {
+                // xor of three operands: a ^ b ^ c
+                let a = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let b = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let c = self.smt_query_to_z3(unsafe { &*expr.op3 }, expr.op3_is_const != 0)?;
+                if let (Some(ba), Some(bb), Some(bc)) = (a.as_bool(), b.as_bool(), c.as_bool()) {
+                    Ok(ba.xor(&bb).xor(&bc).into())
+                } else if let (Some(bva), Some(bvb), Some(bvc)) = (a.as_bv(), b.as_bv(), c.as_bv()) {
+                    Ok(bva.bvxor(&bvb).bvxor(&bvc).into())
+                } else {
+                    Err(anyhow::anyhow!("Type mismatch in XOR3 operation"))
+                }
+            }
+            OpKind::Nand => {
+                let a = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let b = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                if let (Some(ba), Some(bb)) = (a.as_bool(), b.as_bool()) {
+                    Ok(Bool::and(&self.z3_ctx, &[&ba, &bb]).not().into())
+                } else if let (Some(bva), Some(bvb)) = (a.as_bv(), b.as_bv()) {
+                    Ok(bva.bvand(&bvb).bvnot().into())
+                } else {
+                    Err(anyhow::anyhow!("Type mismatch in NAND operation"))
+                }
+            }
+            OpKind::Shl => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for SHL op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for SHL op2"))?;
+                Ok(bv1.bvshl(&bv2).into())
+            }
+            OpKind::Shr => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for SHR op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for SHR op2"))?;
+                Ok(bv1.bvlshr(&bv2).into())
+            }
+            OpKind::Sar | OpKind::Sal => {
+                // SAR: arithmetic right shift; SAL: alias of SHL
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for shift op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for shift op2"))?;
+                match opkind {
+                    OpKind::Sar => Ok(bv1.bvashr(&bv2).into()),
+                    OpKind::Sal => Ok(bv1.bvshl(&bv2).into()),
+                    _ => unreachable!(),
+                }
+            }
+            OpKind::Rotl => {
+                let x = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let kdyn = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv = x.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for ROTL op1"))?;
+                let nbits = bv.get_size();
+                if expr.op2_is_const != 0 {
+                    let k = (expr.op2 as usize as u64) % (nbits as u64);
+                    let k_bv = BV::from_u64(&self.z3_ctx, k, nbits);
+                    let n_bv = BV::from_u64(&self.z3_ctx, nbits as u64, nbits);
+                    let nk_bv = n_bv.bvsub(&k_bv);
+                    let left = bv.bvshl(&k_bv);
+                    let right = bv.bvlshr(&nk_bv);
+                    Ok(left.bvor(&right).into())
+                } else {
+                    let mut k_bv = kdyn.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for ROTL amount"))?;
+                    if k_bv.get_size() < nbits { k_bv = k_bv.zero_ext(nbits - k_bv.get_size()); }
+                    else if k_bv.get_size() > nbits { k_bv = k_bv.extract(nbits - 1, 0); }
+                    let mask = BV::from_u64(&self.z3_ctx, (nbits as u64) - 1, nbits);
+                    let k = k_bv.bvand(&mask);
+                    let n_bv = BV::from_u64(&self.z3_ctx, nbits as u64, nbits);
+                    let nk = n_bv.bvsub(&k).bvand(&mask);
+                    let left = bv.bvshl(&k);
+                    let right = bv.bvlshr(&nk);
+                    Ok(left.bvor(&right).into())
+                }
+            }
+            OpKind::Rotr => {
+                let x = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let kdyn = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv = x.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for ROTR op1"))?;
+                let nbits = bv.get_size();
+                if expr.op2_is_const != 0 {
+                    let k = (expr.op2 as usize as u64) % (nbits as u64);
+                    let k_bv = BV::from_u64(&self.z3_ctx, k, nbits);
+                    let n_bv = BV::from_u64(&self.z3_ctx, nbits as u64, nbits);
+                    let nk_bv = n_bv.bvsub(&k_bv);
+                    let right = bv.bvlshr(&k_bv);
+                    let left = bv.bvshl(&nk_bv);
+                    Ok(left.bvor(&right).into())
+                } else {
+                    let mut k_bv = kdyn.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for ROTR amount"))?;
+                    if k_bv.get_size() < nbits { k_bv = k_bv.zero_ext(nbits - k_bv.get_size()); }
+                    else if k_bv.get_size() > nbits { k_bv = k_bv.extract(nbits - 1, 0); }
+                    let mask = BV::from_u64(&self.z3_ctx, (nbits as u64) - 1, nbits);
+                    let k = k_bv.bvand(&mask);
+                    let n_bv = BV::from_u64(&self.z3_ctx, nbits as u64, nbits);
+                    let nk = n_bv.bvsub(&k).bvand(&mask);
+                    let right = bv.bvlshr(&k);
+                    let left = bv.bvshl(&nk);
+                    Ok(left.bvor(&right).into())
+                }
+            }
+            OpKind::Bswap => {
+                let v = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let bv = v.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for BSWAP"))?;
+                let nbits = bv.get_size();
+                if nbits % 8 != 0 { anyhow::bail!("Bswap requires byte-multiple width") }
+                let bytes = nbits / 8;
+                let mut acc: Option<BV> = None;
+                for i in 0..bytes {
+                    let hi = (i + 1) * 8 - 1;
+                    let lo = i * 8;
+                    let byte = bv.extract(hi, lo);
+                    acc = Some(match acc { None => byte, Some(a) => byte.concat(&a) });
+                }
+                Ok(acc.unwrap().into())
+            }
+            OpKind::MulHigh => {
+                // Signed high half of product
+                let a = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let b = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let (bva, bvb) = (
+                    a.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for MulHigh a"))?,
+                    b.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for MulHigh b"))?,
+                );
+                let n = bva.get_size();
+                let a2 = bva.sign_ext(n);
+                let b2 = bvb.sign_ext(n);
+                let prod = a2.bvmul(&b2); // 2n bits
+                Ok(prod.extract(2 * n - 1, n).into())
+            }
+            OpKind::MuluHigh => {
+                // Unsigned high half of product
+                let a = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let b = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let (bva, bvb) = (
+                    a.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for MuluHigh a"))?,
+                    b.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for MuluHigh b"))?,
+                );
+                let n = bva.get_size();
+                let a2 = bva.zero_ext(n);
+                let b2 = bvb.zero_ext(n);
+                let prod = a2.bvmul(&b2); // 2n bits
+                Ok(prod.extract(2 * n - 1, n).into())
+            }
             
             OpKind::Eq => {
                 let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
@@ -386,6 +712,34 @@ impl FuzzySolver {
                 let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
                 let eq = op1._eq(&op2);
                 Ok(eq.not().into())
+            }
+            OpKind::Lt => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for LT op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for LT op2"))?;
+                Ok(bv1.bvslt(&bv2).into())
+            }
+            OpKind::Le => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for LE op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for LE op2"))?;
+                Ok(bv1.bvsle(&bv2).into())
+            }
+            OpKind::Ge => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for GE op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for GE op2"))?;
+                Ok(bv1.bvsge(&bv2).into())
+            }
+            OpKind::Gt => {
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for GT op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for GT op2"))?;
+                Ok(bv1.bvsgt(&bv2).into())
             }
             
             OpKind::Ltu => {
@@ -444,6 +798,14 @@ impl FuzzySolver {
                 let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for CONCAT op2"))?;
                 Ok(bv1.concat(&bv2).into())
             }
+            OpKind::Concat8L | OpKind::Concat8R => {
+                // Treat as ordinary concat for now
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let op2 = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for CONCAT8 op1"))?;
+                let bv2 = op2.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for CONCAT8 op2"))?;
+                Ok(bv1.concat(&bv2).into())
+            }
             
             OpKind::Extract8 => {
                 let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
@@ -452,6 +814,87 @@ impl FuzzySolver {
                 let low = byte_index * 8;
                 let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for EXTRACT8"))?;
                 Ok(bv1.extract(high, low).into())
+            }
+            OpKind::Extract => {
+                // op2 = high, op3 = low (both expected as const indices in bits)
+                let op1 = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let bv1 = op1.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for EXTRACT"))?;
+                if expr.op2_is_const == 0 || expr.op3_is_const == 0 {
+                    anyhow::bail!("Extract requires constant high/low indices")
+                }
+                let high = expr.op2 as u32;
+                let low = expr.op3 as u32;
+                Ok(bv1.extract(high, low).into())
+            }
+            
+            OpKind::Ite => {
+                let c = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let t = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let e = self.smt_query_to_z3(unsafe { &*expr.op3 }, expr.op3_is_const != 0)?;
+                if let Some(cb) = c.as_bool() {
+                    // bool condition, both branches same sort
+                    if let (Some(tb), Some(eb)) = (t.as_bool(), e.as_bool()) {
+                        Ok(cb.ite(&tb, &eb).into())
+                    } else if let (Some(tbv), Some(ebv)) = (t.as_bv(), e.as_bv()) {
+                        Ok(cb.ite(&tbv, &ebv).into())
+                    } else {
+                        anyhow::bail!("Ite branch sort mismatch")
+                    }
+                } else if let Some(cbv) = c.as_bv() {
+                    // Non-zero as true
+                    let zero = BV::from_u64(&self.z3_ctx, 0, cbv.get_size());
+                    let cond = cbv._eq(&zero).not();
+                    if let (Some(tbv), Some(ebv)) = (t.as_bv(), e.as_bv()) {
+                        Ok(cond.ite(&tbv, &ebv).into())
+                    } else {
+                        anyhow::bail!("Ite BV condition requires BV branches")
+                    }
+                } else {
+                    anyhow::bail!("Unsupported Ite condition type")
+                }
+            }
+            OpKind::IteEqZero => {
+                let c = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let t = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let e = self.smt_query_to_z3(unsafe { &*expr.op3 }, expr.op3_is_const != 0)?;
+                let cbv = c.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for IteEqZero condition"))?;
+                let zero = BV::from_u64(&self.z3_ctx, 0, cbv.get_size());
+                let cond = cbv._eq(&zero);
+                if let (Some(tbv), Some(ebv)) = (t.as_bv(), e.as_bv()) {
+                    Ok(cond.ite(&tbv, &ebv).into())
+                } else {
+                    anyhow::bail!("IteEqZero requires BV branches")
+                }
+            }
+            OpKind::IteNeZero => {
+                let c = self.smt_query_to_z3(unsafe { &*expr.op1 }, expr.op1_is_const != 0)?;
+                let t = self.smt_query_to_z3(unsafe { &*expr.op2 }, expr.op2_is_const != 0)?;
+                let e = self.smt_query_to_z3(unsafe { &*expr.op3 }, expr.op3_is_const != 0)?;
+                let cbv = c.as_bv().ok_or_else(|| anyhow::anyhow!("Expected BV for IteNeZero condition"))?;
+                let zero = BV::from_u64(&self.z3_ctx, 0, cbv.get_size());
+                let cond = cbv._eq(&zero).not();
+                if let (Some(tbv), Some(ebv)) = (t.as_bv(), e.as_bv()) {
+                    Ok(cond.ite(&tbv, &ebv).into())
+                } else {
+                    anyhow::bail!("IteNeZero requires BV branches")
+                }
+            }
+
+            // Delegate i386-specific opkinds, including EFLAGS and special SIMD ops
+            OpKind::CmpEq | OpKind::CmpGt | OpKind::CmpGe | OpKind::CmpLe | OpKind::CmpLt |
+            OpKind::Pmovmskb | OpKind::Min | OpKind::Max |
+            OpKind::EflagsAllAdd | OpKind::EflagsAllSub | OpKind::EflagsAllMul |
+            OpKind::EflagsAllLogic | OpKind::EflagsAllInc | OpKind::EflagsAllDec |
+            OpKind::EflagsAllShl | OpKind::EflagsAllSar | OpKind::EflagsAllBmilg |
+            OpKind::EflagsAllAdcb | OpKind::EflagsAllAdcw | OpKind::EflagsAllAdcl | OpKind::EflagsAllAdcq |
+            OpKind::EflagsAllSbbb | OpKind::EflagsAllSbbw | OpKind::EflagsAllSbbl | OpKind::EflagsAllSbbq |
+            OpKind::EflagsAllAdcx | OpKind::EflagsAllAdox | OpKind::EflagsAllAdcox |
+            OpKind::EflagsCAdd | OpKind::EflagsCSub | OpKind::EflagsCMul | OpKind::EflagsCLogic | OpKind::EflagsCShl |
+            OpKind::EflagsCAdcb | OpKind::EflagsCAdcw | OpKind::EflagsCAdcl | OpKind::EflagsCAdcq |
+            OpKind::EflagsCSbbb | OpKind::EflagsCSbbw | OpKind::EflagsCSbbl | OpKind::EflagsCSbbq |
+            OpKind::Rcl => {
+                let dyn_ast = i386::smt_query_i386_to_z3(&self.z3_ctx, expr, 8)?;
+                Ok(dyn_ast)
             }
             
             _ => {

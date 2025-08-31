@@ -180,22 +180,18 @@ impl QueryQueue {
         })
     }
     
-    /// Pop a query from the queue
+    /// Pop a query from the queue (legacy helper)
     pub fn pop_query(&mut self) -> Option<Query> {
         if self.read_index >= self.capacity {
             return None;
         }
-        
         unsafe {
             let query_ptr = self.queue.add(self.read_index);
-            if (&(*query_ptr).args.args8).arg1 == 0 {
+            // Consider an all-zero entry as empty
+            if (*query_ptr).query.is_null() && (*query_ptr).address == 0 {
                 return None;
             }
-            
-            let query = Query {
-                query_type: (*query_ptr).query_type,
-                args: std::ptr::read(&(*query_ptr).args),
-            };
+            let query = std::ptr::read(query_ptr);
             self.read_index += 1;
             Some(query)
         }
@@ -238,9 +234,7 @@ impl QueryQueue {
             return None; // Queue is empty
         }
         
-        let query = unsafe {
-            ptr::read(self.queue.add(self.read_index))
-        };
+        let query = unsafe { ptr::read(self.queue.add(self.read_index)) };
         
         self.read_index = (self.read_index + 1) % self.capacity;
         debug!("Retrieved query from index {} (type: {:?})", self.read_index, query.query_type);
