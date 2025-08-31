@@ -457,6 +457,16 @@ impl Expr {
             None
         }
     }
+    
+    /// Get operand size for operand at given index
+    pub fn get_operand_size(&self, operand_index: usize) -> usize {
+        match operand_index {
+            0 => self.op1 as usize,
+            1 => self.op2 as usize, 
+            2 => self.op3 as usize,
+            _ => 0,
+        }
+    }
 }
 
 /// Expression pool for managing shared expressions

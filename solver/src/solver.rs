@@ -3,11 +3,10 @@ use crate::shared_memory::SharedMemoryManager;
 use crate::{Config, BranchCoverage, FuzzySolver};
 use crate::testcase::Testcase;
 use crate::dependency::DependencyGraph;
-use crate::z3_cache::Z3Optimizer;
 use crate::concrete_eval::ConcreteEvaluator;
 use crate::testcase_loader::TestcaseInitializer;
-use crate::i386;
-use z3::{ast::{Ast, BV, Bool, Dynamic}, Context, SatResult};
+// use crate::i386;
+use z3::{ast::{Ast, Dynamic}, Context, Model, Solver, SatResult};
 use std::time::Instant;
 use anyhow::{Result, Context as AnyhowContext};
 use log::{debug, info, warn};
@@ -52,7 +51,6 @@ pub struct SMTSolver {
     symbols_sizes: Vec<u8>,
     symbols_count: usize,
     dependency_graph: DependencyGraph,
-    z3_optimizer: Z3Optimizer,
     concrete_evaluator: ConcreteEvaluator,
     expr_visit_time: u64,
     slice_reasoning_time: u64,
@@ -119,7 +117,6 @@ impl SMTSolver {
             None
         };
         
-        let z3_optimizer = Z3Optimizer::new(&ctx);
         
         Ok(SMTSolver {
             ctx,
@@ -132,7 +129,6 @@ impl SMTSolver {
             symbols_sizes: Vec::new(),
             symbols_count: 0,
             dependency_graph: DependencyGraph::new(1024 * 1024), // MAX_INPUT_SIZE * 2
-            z3_optimizer,
             concrete_evaluator: ConcreteEvaluator::new(),
             expr_visit_time: 0,
             slice_reasoning_time: 0,
@@ -1309,30 +1305,3 @@ impl SMTSolver {
     }
 }
 
-pub struct Model<'a> {
-    z3_model: z3::Model<'a>,
-}
-
-impl<'a> Model<'a> {
-    pub fn new(z3_model: z3::Model<'a>) -> Self {
-        Self { z3_model }
-    }
-    
-    /// Generate testcase from model
-    pub fn generate_testcase(&self, input_size: usize) -> Result<Vec<u8>> {
-        let mut testcase = vec![0u8; input_size];
-        
-        // Extract values from Z3 model and populate testcase
-        // This is a simplified implementation - in practice would extract
-        // symbolic variable values from the model
-        // For now, generate random testcase data
-        // In full implementation, would extract symbolic variable values from Z3 model
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        for i in 0..input_size {
-            testcase[i] = rng.gen::<u8>();
-        }
-        
-        Ok(testcase)
-    }
-}

@@ -6,7 +6,6 @@ pub mod branch_coverage;
 pub mod statistics;
 pub mod testcase;
 pub mod query_processor;
-pub mod z3_optimizer;
 pub mod dependency_graph;
 pub mod concrete_eval;
 pub mod memory_slice;
@@ -17,6 +16,8 @@ pub mod dependency;
 pub mod z3_cache;
 pub mod testcase_loader;
 pub mod i386;
+pub mod benchmarking;
+pub mod expression_simplifier;
 
 pub use config::Config;
 pub use expression::{Expr, OpKind, Query, QueryType};

@@ -13,11 +13,12 @@ pub struct BranchCoverage {
     pub branch_bitmap: Vec<u8>,
     pub branch_alt_bitmap: Vec<u8>,
     pub context_bitmap: Vec<u8>,
+    pub branch_neg_bitmap: Vec<u8>,
     visited_branches: HashMap<u64, bool>,
     config: Config,
     last_branch_hash: u64,
     last_branch_inv_idx: u64,
-    last_branch_is_interesting: bool,
+    last_branch_is_interesting: i32,
 }
 
 impl BranchCoverage {
@@ -26,11 +27,12 @@ impl BranchCoverage {
             branch_bitmap: vec![0; BRANCH_BITMAP_SIZE],
             branch_alt_bitmap: vec![0; BRANCH_BITMAP_SIZE],
             context_bitmap: vec![0; BRANCH_BITMAP_SIZE],
+            branch_neg_bitmap: vec![0; BRANCH_BITMAP_SIZE],
             visited_branches: HashMap::new(),
             config: config.clone(),
             last_branch_hash: 0,
             last_branch_inv_idx: 0,
-            last_branch_is_interesting: false,
+            last_branch_is_interesting: 0,
         })
     }
     
@@ -144,7 +146,7 @@ impl BranchCoverage {
         // Update last branch tracking
         self.last_branch_hash = hash;
         self.last_branch_inv_idx = idx;
-        self.last_branch_is_interesting = self.record_branch(addr, taken, false);
+        self.last_branch_is_interesting = if self.record_branch(addr, taken, false) { 1 } else { 0 };
         
         Ok(())
     }
@@ -174,9 +176,61 @@ impl BranchCoverage {
     }
     
     pub fn mark_sat_branch(&mut self) {
-        // Mark that we found a satisfiable branch
-        if self.last_branch_is_interesting {
-            info!("Marked SAT branch at hash {}", self.last_branch_hash);
+        // Mark that we found a satisfiable branch - from C implementation
+        self.branch_neg_bitmap[self.last_branch_inv_idx as usize] += 1;
+        self.branch_bitmap[self.last_branch_inv_idx as usize] |= self.branch_neg_bitmap[self.last_branch_inv_idx as usize];
+        self.branch_neg_bitmap[self.last_branch_inv_idx as usize] -= 1;
+    }
+    
+    /// QSYM-style branch coverage (from C implementation)
+    pub fn is_interesting_branch_qsym(&mut self, pc: u64, taken: bool, is_lib: bool) -> i32 {
+        let h = self.hash_pc(pc, taken);
+        let idx = self.get_index(h);
+        
+        self.branch_neg_bitmap[idx as usize] = self.branch_neg_bitmap[idx as usize].wrapping_add(1);
+        
+        let ret = if (self.branch_neg_bitmap[idx as usize] | self.branch_bitmap[idx as usize]) != self.branch_bitmap[idx as usize] {
+            let inv_h = self.hash_pc(pc, !taken);
+            let inv_idx = self.get_index(inv_h);
+            
+            let result = if !is_lib && self.branch_bitmap[idx as usize] == 0 { 2 } else { 1 };
+            
+            self.branch_bitmap[idx as usize] |= self.branch_neg_bitmap[idx as usize];
+            
+            self.branch_neg_bitmap[inv_idx as usize] = self.branch_neg_bitmap[inv_idx as usize].wrapping_add(1);
+            self.branch_bitmap[inv_idx as usize] |= self.branch_neg_bitmap[inv_idx as usize];
+            self.branch_neg_bitmap[inv_idx as usize] = self.branch_neg_bitmap[inv_idx as usize].wrapping_sub(1);
+            
+            result
+        } else {
+            0
+        };
+        
+        self.branch_neg_bitmap[idx as usize] = self.branch_neg_bitmap[idx as usize].wrapping_sub(1);
+        self.last_branch_inv_idx = self.get_index(self.hash_pc(pc, !taken));
+        
+        ret
+    }
+    
+    /// Fuzzolic-style branch coverage (from C implementation)
+    pub fn is_interesting_branch_fuzzolic_impl(&mut self, idx: u16, count: u16, idx_inv: u16, count_inv: u16, addr: u64) -> i32 {
+        let normalized_hit_count = COUNT_CLASS_BINARY[(count + 1) as usize];
+        
+        if (normalized_hit_count | self.branch_bitmap[idx as usize]) != self.branch_bitmap[idx as usize] {
+            let ret = if addr < 0x10000000 && self.branch_bitmap[idx as usize] == 0 { 2 } else { 1 };
+            
+            // Update bitmap
+            self.branch_bitmap[idx as usize] |= normalized_hit_count;
+            
+            // Update inverse bitmap
+            let normalized_hit_count_inv = COUNT_CLASS_BINARY[(count_inv + 1) as usize];
+            self.branch_bitmap[idx_inv as usize] |= normalized_hit_count_inv;
+            
+            self.last_branch_is_interesting = ret;
+            ret
+        } else {
+            self.last_branch_is_interesting = 0;
+            0
         }
     }
     
@@ -185,7 +239,11 @@ impl BranchCoverage {
         let mut data = Vec::with_capacity(9);
         data.extend_from_slice(&pc.to_le_bytes());
         data.push(taken_byte);
-        xxh32(&data, 0) as u64
+        (xxh32(&data, 0) as u64) % (BRANCH_BITMAP_SIZE as u64)
+    }
+    
+    fn get_index(&self, h: u64) -> u64 {
+        ((self.last_branch_hash >> 1) ^ h) % (BRANCH_BITMAP_SIZE as u64)
     }
     
     fn is_power_of_two(x: u32) -> bool {
