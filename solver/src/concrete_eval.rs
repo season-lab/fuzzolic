@@ -109,9 +109,9 @@ impl ConcreteEvaluator {
         hasher.finish() as usize
     }
     
-    fn should_skip_global_cache(&self, _hash: usize) -> bool {
-        // TODO: Implement blacklist logic from C version
-        false
+    fn should_skip_global_cache(&self, hash: usize) -> bool {
+        // Check if this expression hash is blacklisted
+        self.blacklist_inputs.get(&(hash as u64)).copied().unwrap_or(false)
     }
     
     /// Get inputs for expression (from eval.c get_inputs_expr)
@@ -129,19 +129,57 @@ impl ConcreteEvaluator {
         inputs
     }
     
-    fn collect_inputs_recursive(&self, _expr: &Dynamic, _inputs: &mut Vec<u64>) {
-        // TODO: Implement input collection from expression AST
-        // This would parse the expression and extract input symbols
+    fn collect_inputs_recursive(&self, expr: &Dynamic, inputs: &mut Vec<u64>) {
+        // Parse the expression and extract input symbols
+        // This is a simplified implementation that would need to be expanded
+        // based on the actual Z3 AST structure
+        
+        // For now, extract input IDs from the expression string representation
+        let expr_str = expr.to_string();
+        if expr_str.contains("input_") {
+            // Extract input ID from string like "input_0", "input_1", etc.
+            for part in expr_str.split_whitespace() {
+                if part.starts_with("input_") {
+                    if let Some(id_str) = part.strip_prefix("input_") {
+                        if let Ok(id) = id_str.parse::<u64>() {
+                            if !inputs.contains(&id) {
+                                inputs.push(id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     
     /// Fuzzy query evaluation (from eval.c fuzz_query_eval)
     pub fn fuzz_query_eval(&mut self,
-                          _ctx: &Context,
-                          _inputs: &[u64],
-                          _expr: &Dynamic,
+                          ctx: &Context,
+                          inputs: &[u64],
+                          expr: &Dynamic,
                           solutions: &mut std::collections::HashSet<u64>) -> Result<bool> {
-        // TODO: Implement fuzzy evaluation logic from C version
+        // Implement fuzzy evaluation logic from C version
         // This involves iterating through input values and checking satisfiability
+        
+        for &input_val in inputs {
+            // Create a simple evaluation context with this input value
+            let input_data = vec![input_val];
+            let symbols_sizes = vec![8u8]; // Assume 8-bit symbols
+            
+            // Evaluate the expression with this input
+            match self.eval_query(ctx, expr, &input_data, &symbols_sizes, MAX_EVAL_DEPTH) {
+                Ok(result) => {
+                    if result != 0 {
+                        solutions.insert(input_val);
+                    }
+                },
+                Err(_) => {
+                    // Skip evaluation errors
+                    continue;
+                }
+            }
+        }
+        
         Ok(solutions.len() > 1)
     }
 
@@ -163,13 +201,17 @@ impl ConcreteEvaluator {
 
     /// Recursive expression evaluation (from eval-driver.c __evaluate_expression)
     fn eval_expr_recursive(&mut self,
-                          _ctx: &Context,
-                          _expr: &Dynamic,
-                          _input_data: &[u8],
-                          _others: &HashMap<u64, u64>) -> Result<u64> {
+                          ctx: &Context,
+                          expr: &Dynamic,
+                          input_data: &[u8],
+                          others: &HashMap<u64, u64>) -> Result<u64> {
         // This implements the core evaluation logic from eval-driver.c
-        // TODO: Complete implementation with all Z3 operators
-        Ok(0)
+        // Convert input_data to u64 format for evaluation
+        let input_u64: Vec<u64> = input_data.iter().map(|&b| b as u64).collect();
+        let symbols_sizes = vec![8u8; input_data.len()]; // Assume 8-bit symbols
+        
+        // Use the main evaluation function
+        self.eval_query(ctx, expr, &input_u64, &symbols_sizes, MAX_EVAL_DEPTH)
     }
     
     /// Recursive concrete evaluation implementation
@@ -242,13 +284,42 @@ impl ConcreteEvaluator {
     }
 
     /// Get expression kind from Z3 Dynamic expression
-    fn get_expr_kind(&self, _ctx: &Context, _expr: &Dynamic) -> Result<ExprKind<'static>> {
-        // This is a simplified implementation
-        // In a full implementation, this would analyze the Z3 AST structure
-        // and extract the appropriate expression kind
+    fn get_expr_kind(&self, _ctx: &Context, expr: &Dynamic) -> Result<ExprKind<'static>> {
+        // Analyze the Z3 expression to determine its kind
+        use z3::ast::Ast;
         
-        // For now, return Unknown for all expressions
-        // This should be replaced with proper Z3 AST analysis
+        // Check if it's a constant
+        if let Some(bv) = expr.as_bv() {
+            if let Some(val) = bv.as_u64() {
+                return Ok(ExprKind::Constant(val));
+            }
+        }
+        
+        // Check if it's a boolean constant
+        if let Some(bool_ast) = expr.as_bool() {
+            if let Some(val) = bool_ast.as_bool() {
+                return Ok(ExprKind::Constant(if val { 1 } else { 0 }));
+            }
+        }
+        
+        // Check if it's an application (function call)
+        if expr.is_app() {
+            // For now, we can't easily extract the operation type from Z3 Rust API
+            // This would require more complex Z3 AST analysis
+            // Return Unknown for now, but the evaluation will still work for constants
+            return Ok(ExprKind::Unknown);
+        }
+        
+        // Check if it looks like a symbol based on string representation
+        let expr_str = expr.to_string();
+        if expr_str.starts_with("input_") {
+            if let Some(id_str) = expr_str.strip_prefix("input_") {
+                if let Ok(id) = id_str.parse::<u32>() {
+                    return Ok(ExprKind::Symbol(id));
+                }
+            }
+        }
+        
         Ok(ExprKind::Unknown)
     }
 
