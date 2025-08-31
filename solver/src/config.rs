@@ -70,6 +70,18 @@ pub struct Config {
     /// Enable fuzzy solver
     #[arg(skip)]
     pub use_fuzzy_solver: bool,
+    
+    /// Polling interval in milliseconds
+    #[arg(skip)]
+    pub polling_interval_ms: u64,
+    
+    /// Enable shared memory
+    #[arg(skip)]
+    pub use_shared_memory: bool,
+    
+    /// Enable branch coverage
+    #[arg(skip)]
+    pub use_branch_coverage: bool,
 }
 
 impl Config {
@@ -107,6 +119,11 @@ impl Config {
         
         // Check for fuzzy solver flag
         self.use_fuzzy_solver = std::env::var("USE_FUZZY_SOLVER").unwrap_or_default() == "1";
+        
+        // Set default values for new fields
+        self.polling_interval_ms = 10;
+        self.use_shared_memory = true;
+        self.use_branch_coverage = true;
         
         Ok(self)
     }

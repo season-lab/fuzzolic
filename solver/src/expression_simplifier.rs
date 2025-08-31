@@ -1,7 +1,7 @@
 use anyhow::Result;
 use log::debug;
 use std::collections::HashMap;
-use crate::expression::{Expr, OpKind};
+use crate::expression::Expr;
 
 /// Advanced expression simplification engine
 pub struct ExpressionSimplifier {
@@ -91,23 +91,23 @@ impl ExpressionSimplifier {
     /// Simplify expression tree recursively
     pub fn simplify_recursive(&mut self, expr: &Expr) -> Result<Expr> {
         // First simplify child expressions
-        let mut simplified = expr.clone();
+        let simplified = expr.clone();
         
         if !expr.op1.is_null() {
-            let child1 = unsafe { &*expr.op1 };
-            let simplified_child1 = self.simplify_recursive(child1)?;
+            let op1_ref = unsafe { &*expr.op1 };
+            let _simplified_child1 = self.simplify_recursive(op1_ref)?;
             // In a real implementation, we'd need to properly manage memory here
             // For now, we'll work with the original structure
         }
         
         if !expr.op2.is_null() {
-            let child2 = unsafe { &*expr.op2 };
-            let simplified_child2 = self.simplify_recursive(child2)?;
+            let op2_ref = unsafe { &*expr.op2 };
+            let _simplified_child2 = self.simplify_recursive(op2_ref)?;
         }
         
         if !expr.op3.is_null() {
-            let child3 = unsafe { &*expr.op3 };
-            let simplified_child3 = self.simplify_recursive(child3)?;
+            let op3_ref = unsafe { &*expr.op3 };
+            let _simplified_child3 = self.simplify_recursive(op3_ref)?;
         }
         
         // Then simplify the current expression
@@ -671,7 +671,7 @@ impl SimplificationRule for ExtractOptimizationRule {
         
         // Pattern: extract from concatenation
         if op1.opkind == 34 { // Concat
-            let arg1 = unsafe { &*op1.op1 }; // High part
+            let _arg1 = unsafe { &*op1.op1 }; // High part
             let arg2 = unsafe { &*op1.op2 }; // Low part
             let arg2_size = self.get_expr_size(arg2);
             
@@ -704,7 +704,7 @@ impl SimplificationRule for ExtractOptimizationRule {
         
         // Pattern: nested extract
         if op1.opkind == 38 { // Extract
-            let nested_high = (op1.op2 as u64 >> 32) as u32;
+            let _nested_high = (op1.op2 as u64 >> 32) as u32;
             let nested_low = (op1.op2 as u64 & 0xFFFFFFFF) as u32;
             
             return Ok(Expr {

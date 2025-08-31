@@ -1,4 +1,4 @@
-use crate::expression::{Expr, OpKind};
+// Memory slice reasoning placeholder
 use anyhow::Result;
 use log::{debug, warn};
 use std::collections::HashMap;
@@ -132,7 +132,7 @@ impl MemorySliceReasoner {
         Ok(addr_eq)
     }
     
-    /// Create Z3 expression for input slice access
+    /// Put slice access
     pub fn create_input_slice_expr<'a>(
         &'a self,
         addr: u64,

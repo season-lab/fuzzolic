@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use std::fs::File;
 use std::io::Write;
 use serde::{Serialize, Deserialize};
-use crate::expression::{Expr, Query};
+use crate::expression::{Expr, SatResult};
 use crate::solver::SMTSolver;
 use crate::statistics::Statistics;
 
@@ -173,9 +173,9 @@ impl BenchmarkSuite {
                 match solver.solve_query(expr) {
                     Ok(sat_result) => {
                         Ok(match sat_result {
-                            z3::SatResult::Sat => QueryResult::Sat,
-                            z3::SatResult::Unsat => QueryResult::Unsat,
-                            z3::SatResult::Unknown => QueryResult::Unknown,
+                            SatResult::Sat => QueryResult::Sat,
+                            SatResult::Unsat => QueryResult::Unsat,
+                            SatResult::Unknown => QueryResult::Unknown,
                         })
                     }
                     Err(e) => Ok(QueryResult::Error(e.to_string())),

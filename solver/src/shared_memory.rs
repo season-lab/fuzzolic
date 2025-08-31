@@ -2,9 +2,8 @@ use crate::expression::{Expr, Query};
 use crate::config::Config;
 use anyhow::Result;
 use std::ptr;
-use std::ffi::c_void;
 use std::sync::atomic::{fence, Ordering};
-use log::{debug, info, error, warn};
+use log::{info, debug, error};
 use libc::{shmget, shmat, shmdt, IPC_CREAT};
 
 /// Statistics for monitoring queue performance
@@ -31,7 +30,8 @@ pub struct SharedExprPool {
     pool: *mut Expr,
     capacity: usize,
     current_index: usize,
-    shm_id: i32,
+    #[allow(dead_code)]
+    _shm_id: i32,
 }
 
 // SAFETY: SharedExprPool manages shared memory that can be safely accessed across threads
@@ -63,11 +63,11 @@ impl SharedExprPool {
         
         info!("Attached to expression pool shared memory (key: {}, size: {} bytes)", shm_key, size);
         
-        Ok(Self {
+        Ok(SharedExprPool {
             pool,
             capacity,
             current_index: 0,
-            shm_id,
+            _shm_id: shm_id,
         })
     }
     
@@ -138,7 +138,8 @@ pub struct QueryQueue {
     capacity: usize,
     read_index: usize,
     write_index: usize,
-    shm_id: i32,
+    #[allow(dead_code)]
+    _shm_id: i32,
 }
 
 // SAFETY: QueryQueue manages shared memory that can be safely accessed across threads
@@ -170,12 +171,12 @@ impl QueryQueue {
         
         info!("Attached to query queue shared memory (key: {}, size: {} bytes)", shm_key, size);
         
-        Ok(Self {
+        Ok(QueryQueue {
             queue,
             capacity,
             read_index: 0,
             write_index: 0,
-            shm_id,
+            _shm_id: shm_id,
         })
     }
     
@@ -187,7 +188,7 @@ impl QueryQueue {
         
         unsafe {
             let query_ptr = self.queue.add(self.read_index);
-            if (*query_ptr).args.args8.arg1 == 0 {
+            if (&(*query_ptr).args.args8).arg1 == 0 {
                 return None;
             }
             

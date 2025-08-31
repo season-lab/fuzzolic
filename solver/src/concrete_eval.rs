@@ -61,7 +61,7 @@ impl ConcreteEvaluator {
                      ctx: &Context,
                      expr: &Dynamic,
                      input_data: &[u8],
-                     others: &HashMap<u64, u64>) -> Result<(u64, bool)> {
+                     _others: &HashMap<u64, u64>) -> Result<(u64, bool)> {
         let hash = self.get_ast_id(expr);
         let _from_cache = false;
         
@@ -85,7 +85,7 @@ impl ConcreteEvaluator {
         }
         
         // Evaluate expression
-        let result = self.eval_expr_recursive(ctx, expr, input_data, others)?;
+        let result = self.eval_expr_recursive(ctx, expr, input_data, _others)?;
         
         // Cache the result
         if !skip_global_cache {
@@ -204,7 +204,7 @@ impl ConcreteEvaluator {
                           ctx: &Context,
                           expr: &Dynamic,
                           input_data: &[u8],
-                          others: &HashMap<u64, u64>) -> Result<u64> {
+                          _others: &HashMap<u64, u64>) -> Result<u64> {
         // This implements the core evaluation logic from eval-driver.c
         // Convert input_data to u64 format for evaluation
         let input_u64: Vec<u64> = input_data.iter().map(|&b| b as u64).collect();

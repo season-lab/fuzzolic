@@ -443,3 +443,183 @@ pub fn handle_pmovmskb<'ctx>(
     let zeros = smt_new_const(ctx, 0, 64 - XMM_BYTES as u32);
     Ok(zeros.concat(&result))
 }
+
+/// Helper function to translate operands to Z3 bitvectors
+fn translate_operand<'ctx>(
+    ctx: &'ctx Context,
+    operand: *mut Expr,
+    is_const: bool,
+    width: usize,
+) -> Result<ast::BV<'ctx>> {
+    if is_const {
+        let value = operand as usize as u64;
+        Ok(smt_new_const(ctx, value, (width * 8) as u32))
+    } else {
+        // For symbolic operands, create a symbolic bitvector
+        // In a full implementation, this would recursively translate the expression
+        let symbol_name = format!("sym_{:p}", operand);
+        Ok(ast::BV::new_const(ctx, symbol_name, (width * 8) as u32))
+    }
+}
+
+/// Get operation width from opkind
+fn get_opkind_width(opkind: OpKind) -> usize {
+    match opkind {
+        OpKind::EflagsAllAdcb | OpKind::EflagsAllSbbb | OpKind::EflagsCAdcb | OpKind::EflagsCSbbb => 1,
+        OpKind::EflagsAllAdcw | OpKind::EflagsAllSbbw | OpKind::EflagsCAdcw | OpKind::EflagsCSbbw => 2,
+        OpKind::EflagsAllAdcl | OpKind::EflagsAllSbbl | OpKind::EflagsCAdcl | OpKind::EflagsCSbbl => 4,
+        OpKind::EflagsAllAdcq | OpKind::EflagsAllSbbq | OpKind::EflagsCAdcq | OpKind::EflagsCSbbq => 8,
+        _ => 8, // Default to 8 bytes for other operations
+    }
+}
+
+/// Main i386 query translation function - converts i386-specific expressions to Z3 AST
+pub fn smt_query_i386_to_z3<'ctx>(
+    ctx: &'ctx Context,
+    query: &Expr,
+    width: usize,
+) -> Result<ast::Dynamic<'ctx>> {
+    use crate::expression::OpKind;
+    
+    // Convert u8 opkind to OpKind enum for pattern matching
+    let opkind = unsafe { std::mem::transmute::<u8, OpKind>(query.opkind) };
+    
+    match opkind {
+        // Comparison operations
+        OpKind::CmpEq | OpKind::CmpGt | OpKind::CmpGe | OpKind::CmpLt | OpKind::CmpLe => {
+            let slice = unsafe { query.op3 as *const Expr as usize };
+            let slice = if slice <= 8 { slice } else { width };
+            
+            let op1 = translate_operand(ctx, query.op1, query.op1_is_const != 0, slice)?;
+            let op2 = translate_operand(ctx, query.op2, query.op2_is_const != 0, slice)?;
+            
+            let result = handle_comparison(ctx, &op1, &op2, opkind, slice)?;
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        
+        // PMOVMSKB operation
+        OpKind::Pmovmskb => {
+            let op1 = translate_operand(ctx, query.op1, query.op1_is_const != 0, 16)?; // XMM register is 16 bytes
+            let result = handle_pmovmskb(ctx, &op1)?;
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        
+        // MIN/MAX operations
+        OpKind::Min | OpKind::Max => {
+            let slice = unsafe { query.op3 as *const Expr as usize };
+            let slice = if slice <= 8 { slice } else { width };
+            
+            let op1 = translate_operand(ctx, query.op1, query.op1_is_const != 0, slice)?;
+            let op2 = translate_operand(ctx, query.op2, query.op2_is_const != 0, slice)?;
+            
+            let result = handle_min_max(ctx, &op1, &op2, opkind)?;
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        
+        // EFLAGS binary operations (ADD, SUB, MUL, LOGIC, INC, DEC, SHL, SAR, BMILG)
+        OpKind::EflagsAllAdd | OpKind::EflagsAllSub | OpKind::EflagsAllMul | 
+        OpKind::EflagsAllLogic | OpKind::EflagsAllInc | OpKind::EflagsAllDec |
+        OpKind::EflagsAllShl | OpKind::EflagsAllSar | OpKind::EflagsAllBmilg => {
+            let op_width = get_opkind_width(opkind);
+            let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, op_width)?;
+            let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, op_width)?;
+            
+            let result = eflags_all_binary(ctx, &dst, &src1, opkind, op_width)?;
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        
+        // EFLAGS ternary operations (ADC, SBB)
+        OpKind::EflagsAllAdcb | OpKind::EflagsAllAdcw | OpKind::EflagsAllAdcl | OpKind::EflagsAllAdcq |
+        OpKind::EflagsAllSbbb | OpKind::EflagsAllSbbw | OpKind::EflagsAllSbbl | OpKind::EflagsAllSbbq => {
+            let op_width = get_opkind_width(opkind);
+            let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, op_width)?;
+            let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, op_width)?;
+            let carry = translate_operand(ctx, query.op3, false, 1)?; // Carry is always 1 bit
+            
+            let result = eflags_all_ternary(ctx, &dst, &src1, &carry, opkind, op_width)?;
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        
+        // EFLAGS ADCX/ADOX operations
+        OpKind::EflagsAllAdcx | OpKind::EflagsAllAdox | OpKind::EflagsAllAdcox => {
+            let op_width = get_opkind_width(opkind);
+            let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, op_width)?;
+            let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, op_width)?;
+            let carry = translate_operand(ctx, query.op3, false, 1)?;
+            
+            let result = eflags_all_adcxo(ctx, &dst, &src1, &carry, opkind)?;
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        
+        // EFLAGS carry-only operations
+        OpKind::EflagsCAdd | OpKind::EflagsCSub | OpKind::EflagsCMul | 
+        OpKind::EflagsCLogic | OpKind::EflagsCShl => {
+            let op_width = get_opkind_width(opkind);
+            let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, op_width)?;
+            let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, op_width)?;
+            
+            let result = eflags_c_binary(ctx, &dst, &src1, opkind, op_width)?;
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        
+        // EFLAGS carry-only ADC operations
+        OpKind::EflagsCAdcb => {
+            let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, 1)?;
+            let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 1)?;
+            let result = eflags_c_adc(ctx, &dst, &src1, unsafe { &*query.op3 }, false, 1)?;
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        OpKind::EflagsCAdcw => {
+            let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, 2)?;
+            let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 2)?;
+            let result = eflags_c_adc(ctx, &dst, &src1, unsafe { &*query.op3 }, false, 2)?;
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        OpKind::EflagsCAdcl => {
+            let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, 4)?;
+            let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 4)?;
+            let result = eflags_c_adc(ctx, &dst, &src1, unsafe { &*query.op3 }, false, 4)?;
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        OpKind::EflagsCAdcq => {
+            let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, 8)?;
+            let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 8)?;
+            let result = eflags_c_adc(ctx, &dst, &src1, unsafe { &*query.op3 }, false, 8)?;
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        
+        // EFLAGS carry-only SBB operations
+        OpKind::EflagsCSbbb => {
+            let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, 1)?;
+            let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 1)?;
+            let carry = translate_operand(ctx, query.op3, false, 1)?;
+            let result = eflags_c_sbb(ctx, &dst, &src1, &carry, 1);
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        OpKind::EflagsCSbbw => {
+            let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, 2)?;
+            let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 2)?;
+            let carry = translate_operand(ctx, query.op3, false, 1)?;
+            let result = eflags_c_sbb(ctx, &dst, &src1, &carry, 2);
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        OpKind::EflagsCSbbl => {
+            let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, 4)?;
+            let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 4)?;
+            let carry = translate_operand(ctx, query.op3, false, 1)?;
+            let result = eflags_c_sbb(ctx, &dst, &src1, &carry, 4);
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        OpKind::EflagsCSbbq => {
+            let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, 8)?;
+            let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 8)?;
+            let carry = translate_operand(ctx, query.op3, false, 1)?;
+            let result = eflags_c_sbb(ctx, &dst, &src1, &carry, 8);
+            Ok(ast::Dynamic::from_ast(&result))
+        }
+        
+        _ => {
+            anyhow::bail!("Unsupported i386 opkind: {:?}", query.opkind);
+        }
+    }
+}

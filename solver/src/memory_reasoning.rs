@@ -1,10 +1,10 @@
 use anyhow::Result;
-use log::{info, debug, warn};
-use std::collections::{HashMap, HashSet, BTreeMap};
-use crate::expression::{Expr, OpKind};
+use std::collections::{HashMap, BTreeMap};
+use crate::expression::Expr;
 
 /// Advanced memory reasoning engine for complex memory patterns
 pub struct MemoryReasoningEngine {
+    #[allow(dead_code)]
     memory_model: MemoryModel,
     alias_analysis: AliasAnalysis,
     reasoning_cache: ReasoningCache,
@@ -169,6 +169,7 @@ impl MemoryReasoningEngine {
 /// Memory model
 #[derive(Debug, Clone)]
 pub struct MemoryModel {
+    #[allow(dead_code)]
     regions: BTreeMap<u64, MemoryRegion>,
 }
 

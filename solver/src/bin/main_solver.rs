@@ -136,14 +136,18 @@ fn main() -> Result<()> {
         
         // Process queries from shared memory
         match solver.process_shared_queries() {
-            Ok(queries_processed) => {
-                if queries_processed > 0 {
-                    info!("Processed {} queries", queries_processed);
-                }
-                
-                // If no queries processed, sleep briefly to avoid busy waiting
-                if queries_processed == 0 {
-                    thread::sleep(polling_interval);
+            Ok(result) => {
+                match result {
+                    fuzzolic_solver::expression::SatResult::Sat => {
+                        info!("Processed queries with SAT result");
+                    }
+                    fuzzolic_solver::expression::SatResult::Unsat => {
+                        info!("Processed queries with UNSAT result");
+                    }
+                    fuzzolic_solver::expression::SatResult::Unknown => {
+                        // No queries processed, sleep briefly to avoid busy waiting
+                        thread::sleep(polling_interval);
+                    }
                 }
             }
             Err(e) => {

@@ -1,8 +1,6 @@
 use anyhow::Result;
-use log::{info, debug, warn};
+use log::info;
 use rand::Rng;
-use std::collections::HashMap;
-use crate::expression::{Expr, SatResult};
 use crate::testcase::{Testcase, TestcaseMutation};
 
 /// Advanced testcase generator with sophisticated mutation strategies

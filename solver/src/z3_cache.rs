@@ -1,6 +1,5 @@
 use z3::{ast::Dynamic, Context};
 use std::collections::HashMap;
-use anyhow::Result;
 use log::debug;
 
 /// Z3 expression cache for optimization and memoization

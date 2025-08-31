@@ -14,6 +14,9 @@ pub mod testcase_generator;
 pub mod memory_reasoning;
 pub mod dependency;
 pub mod z3_cache;
+
+#[cfg(test)]
+mod shared_memory_tests;
 pub mod testcase_loader;
 pub mod i386;
 pub mod benchmarking;
@@ -44,7 +47,7 @@ pub fn run_solver(config: Config, use_fuzzy: bool) -> Result<()> {
     // Process queries from shared memory if available
     match solver.process_shared_queries() {
         Ok(queries_processed) => {
-            info!("Processed {} queries from shared memory", queries_processed);
+            info!("Processed {:?} queries from shared memory", queries_processed);
         }
         Err(e) => {
             info!("No shared memory queries available: {}", e);
