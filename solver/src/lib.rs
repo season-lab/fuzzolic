@@ -1,24 +1,27 @@
 pub mod solver;
 pub mod shared_memory;
 pub mod branch_coverage;
-pub mod dependency;
-pub mod expression;
 pub mod testcase;
-pub mod fuzzy_solver;
-pub mod z3_cache;
-pub mod concrete_eval;
 pub mod testcase_loader;
+pub mod z3_cache;
+pub mod query_processor;
+pub mod memory_slice;
+pub mod concrete_eval;
 pub mod i386;
 pub mod config;
+pub mod expression;
+pub mod dependency;
+pub mod fuzzy_solver;
 
 pub use config::Config;
 pub use expression::{Expr, OpKind, Query, QueryType};
 pub use testcase::Testcase;
-pub use solver::{SMTSolver, SolverResult, Model};
-pub use expression::SatResult;
+pub use crate::solver::{SMTSolver, SolverStatistics};
+use crate::expression::SatResult;
 pub use branch_coverage::BranchCoverage;
-pub use shared_memory::SharedMemoryManager;
+pub use shared_memory::{SharedExprPool, QueryQueue};
 pub use fuzzy_solver::FuzzySolver;
+pub use query_processor::QueryProcessor;
 use anyhow::Result;
 use log::info;
 

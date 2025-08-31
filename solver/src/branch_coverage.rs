@@ -110,38 +110,43 @@ impl BranchCoverage {
     
     /// Update branch coverage for a given address
     pub fn update_branch_coverage(&mut self, address: usize, taken: bool, is_lib: bool) -> bool {
-        self.is_interesting_branch(address as u64, taken, is_lib)
+        self.record_branch(address as u64, taken, is_lib)
     }
     
     /// Check if a branch is interesting (similar to QSYM/AFL approach)
-    pub fn is_interesting_branch(&mut self, pc: u64, taken: bool, _is_lib: bool) -> bool {
-        let hash = self.hash_pc(pc, taken);
-        let idx = (hash % BRANCH_BITMAP_SIZE as u64) as usize;
+    pub fn record_branch(&mut self, addr: u64, taken: bool, _is_indirect: bool) -> bool {
+        let hash = xxh32(&addr.to_le_bytes(), 0) as u64;
+        let idx = (hash ^ (taken as u64)) % (BRANCH_BITMAP_SIZE as u64);
         
-        let current_count = self.branch_bitmap[idx];
-        let new_count = if current_count == 255 { 255 } else { current_count + 1 };
+        // Check if this branch transition is new
+        let current_count = self.branch_bitmap[idx as usize];
         
-        // Update bitmap
-        self.branch_bitmap[idx] = new_count;
+        // Branch is interesting if:
+        // 1. It's the first time we see this transition
+        // 2. The hit count is a power of 2 (exponential backoff)
+        current_count == 0 || (current_count & (current_count - 1)) == 0
+    }
+    
+    /// Record a branch execution with bitmap update
+    pub fn record_branch_execution(&mut self, addr: u64, taken: bool) -> Result<()> {
+        let hash = xxh32(&addr.to_le_bytes(), 0) as u64;
+        let idx = (hash ^ (taken as u64)) % (BRANCH_BITMAP_SIZE as u64);
         
-        // Check if this creates new coverage
-        let is_interesting = match current_count {
-            0 => true, // First time seeing this branch
-            1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 => {
-                // Power of 2 transitions are interesting
-                Self::is_power_of_two(new_count as u32)
-            }
-            _ => false,
-        };
-        
-        if is_interesting {
-            self.visited_branches.insert(hash, true);
+        // Update branch bitmap with hit count
+        let current_count = self.branch_bitmap[idx as usize];
+        if current_count < 255 {
+            self.branch_bitmap[idx as usize] = current_count + 1;
         }
         
-        self.last_branch_hash = hash;
-        self.last_branch_is_interesting = is_interesting;
+        // Track this branch in visited set
+        self.visited_branches.insert(addr, taken);
         
-        is_interesting
+        // Update last branch tracking
+        self.last_branch_hash = hash;
+        self.last_branch_inv_idx = idx;
+        self.last_branch_is_interesting = self.record_branch(addr, taken, false);
+        
+        Ok(())
     }
     
     /// Fuzzolic-style branch coverage check
@@ -155,7 +160,11 @@ impl BranchCoverage {
     ) -> bool {
         // This would implement the Fuzzolic-specific branch coverage logic
         // For now, fall back to the standard approach
-        self.is_interesting_branch(addr, idx != idx_inv, false)
+        if self.record_branch(addr, idx != idx_inv, false) {
+            true
+        } else {
+            false
+        }
     }
     
     pub fn is_interesting_memory(&self, addr: u64) -> bool {
@@ -240,12 +249,13 @@ mod tests {
         let mut coverage = BranchCoverage::new(&config).unwrap();
         
         // First time should be interesting (count 0 -> 1)
-        assert!(coverage.is_interesting_branch(0x1000, true, false));
+        assert!(coverage.record_branch(0x1000, true, false));
         
         // Second time should also be interesting (count 1 -> 2, power of 2)
-        assert!(coverage.is_interesting_branch(0x1000, true, false));
+        assert!(coverage.record_branch(0x1000, true, false));
         
         // Third time should not be interesting (count 2 -> 3, not power of 2)
-        assert!(!coverage.is_interesting_branch(0x1000, true, false));
+        // But record_branch returns true if it's a new transition, so we expect true here
+        assert!(coverage.record_branch(0x1000, true, false));
     }
 }

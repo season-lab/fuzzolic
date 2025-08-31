@@ -168,6 +168,42 @@ impl QueryQueue {
         })
     }
     
+    /// Pop a query from the queue
+    pub fn pop_query(&mut self) -> Option<Query> {
+        if self.read_index >= self.capacity {
+            return None;
+        }
+        
+        unsafe {
+            let query_ptr = self.queue.add(self.read_index);
+            if (*query_ptr).args.args8.arg1 == 0 {
+                return None;
+            }
+            
+            let query = Query {
+                query_type: (*query_ptr).query_type,
+                args: std::ptr::read(&(*query_ptr).args),
+            };
+            self.read_index += 1;
+            Some(query)
+        }
+    }
+    
+    /// Push a query to the queue
+    pub fn push_query(&mut self, query: Query) -> Result<()> {
+        if self.write_index >= self.capacity {
+            anyhow::bail!("Query queue is full");
+        }
+        
+        unsafe {
+            let query_ptr = self.queue.add(self.write_index);
+            *query_ptr = query;
+        }
+        
+        self.write_index += 1;
+        Ok(())
+    }
+    
     pub fn add_query(&mut self, query: Query) -> Result<()> {
         let next_write = (self.write_index + 1) % self.capacity;
         
