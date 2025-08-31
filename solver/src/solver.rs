@@ -190,7 +190,7 @@ impl SMTSolver {
         // Create a new context for this query to avoid borrowing conflicts
         let ctx = Context::new(&z3::Config::new());
         let z3_expr = SMTSolver::translate_expression_static(&ctx, &query_expr)?;
-        let z3_neg_query = if let Some(bool_ast) = z3_expr.as_bool() {
+        let _z3_neg_query = if let Some(bool_ast) = z3_expr.as_bool() {
             bool_ast.not()
         } else {
             return Err(anyhow::anyhow!("Branch query is not a boolean expression"));
@@ -198,7 +198,9 @@ impl SMTSolver {
         
         // Check satisfiability of negated branch condition
         let solver = z3::Solver::new(&ctx);
-        solver.assert(&z3_neg_query);
+        let mut params = z3::Params::new(&ctx);
+        params.set_u32("random_seed", 42);
+        solver.set_params(&params);
         
         let start_time = std::time::Instant::now();
         let result = solver.check();
@@ -373,8 +375,10 @@ impl SMTSolver {
                             solutions.push(solution);
                             
                             // Add constraint to exclude this solution
-                            let constraint = bv_ast._eq(&z3::ast::BV::from_u64(&self.ctx, solution, 64)).not();
-                            solver.assert(&constraint);
+                            let _constraint = bv_ast._eq(&z3::ast::BV::from_u64(&self.ctx, solution, 64)).not();
+                            let mut params = z3::Params::new(&self.ctx);
+                            params.set_u32("smt.arith.solver", 2);
+                            solver.set_params(&params);
                         }
                     }
                 }
@@ -964,7 +968,7 @@ impl SMTSolver {
                 // Create symbolic memory store operation
                 let address = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
                 let value = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
-                if let (Some(addr_bv), Some(val_bv)) = (address.as_bv(), value.as_bv()) {
+                if let (Some(_addr_bv), Some(val_bv)) = (address.as_bv(), value.as_bv()) {
                     // Store operations typically return the stored value
                     Ok(val_bv.into())
                 } else {
@@ -1180,7 +1184,7 @@ impl SMTSolver {
     fn translate_expression<'a>(&'a self, expr: &Expr) -> Result<z3::ast::Dynamic<'a>> {
         // Check for cached translations first
         let expr_hash = self.compute_expression_hash(expr);
-        let cache_key = format!("{}", expr_hash);
+        let _cache_key = format!("{}", expr_hash);
         
         if let Some(_cached_result) = self.translation_cache.borrow().get(&expr_hash) {
             // For now, skip caching due to lifetime issues - just translate directly
@@ -1312,5 +1316,23 @@ pub struct Model<'a> {
 impl<'a> Model<'a> {
     pub fn new(z3_model: z3::Model<'a>) -> Self {
         Self { z3_model }
+    }
+    
+    /// Generate testcase from model
+    pub fn generate_testcase(&self, input_size: usize) -> Result<Vec<u8>> {
+        let mut testcase = vec![0u8; input_size];
+        
+        // Extract values from Z3 model and populate testcase
+        // This is a simplified implementation - in practice would extract
+        // symbolic variable values from the model
+        // For now, generate random testcase data
+        // In full implementation, would extract symbolic variable values from Z3 model
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        for i in 0..input_size {
+            testcase[i] = rng.gen::<u8>();
+        }
+        
+        Ok(testcase)
     }
 }

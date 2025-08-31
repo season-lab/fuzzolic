@@ -3,6 +3,9 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use serde::{Serialize, Deserialize};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static TESTCASE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MutationType {
@@ -51,12 +54,50 @@ impl TestcaseMutation {
             data: Some(data),
         }
     }
+    
+    pub fn new_bit_flip(byte_idx: usize, bit_idx: usize) -> Self {
+        Self {
+            mutation_type: MutationType::Replace,
+            offset: byte_idx,
+            len: 1,
+            data: Some(vec![1u8 << bit_idx]), // Will be XORed with original
+        }
+    }
+    
+    pub fn new_arithmetic(offset: usize, delta: i32) -> Self {
+        Self {
+            mutation_type: MutationType::Replace,
+            offset,
+            len: 1,
+            data: Some(vec![delta as u8]), // Will be added to original
+        }
+    }
+    
+    pub fn new_overwrite(offset: usize, data: Vec<u8>) -> Self {
+        let len = data.len();
+        Self {
+            mutation_type: MutationType::Replace,
+            offset,
+            len,
+            data: Some(data),
+        }
+    }
+    
+    pub fn new_delete(offset: usize, len: usize) -> Self {
+        Self {
+            mutation_type: MutationType::Trim,
+            offset,
+            len,
+            data: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Testcase {
     pub data: Vec<u8>,
     pub mutations: Vec<TestcaseMutation>,
+    id: u64,
 }
 
 impl Testcase {
@@ -64,7 +105,16 @@ impl Testcase {
         Self {
             data,
             mutations: Vec::new(),
+            id: TESTCASE_ID_COUNTER.fetch_add(1, Ordering::SeqCst),
         }
+    }
+    
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+    
+    pub fn data(&self) -> &[u8] {
+        &self.data
     }
     
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
