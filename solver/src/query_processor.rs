@@ -144,9 +144,9 @@ impl QueryProcessor {
             // Record dependencies for this branch condition into the solver's graph
             // so subsequent dependency assertions can consult it.
             let _ = self.solver.add_dependency_for_expr(cond_expr);
-            let ctx = z3::Context::new(&z3::Config::new());
-            let z3_cond = SMTSolver::translate_expression_static(&ctx, cond_expr)?;
-            let solver = z3::Solver::new(&ctx);
+            let ctx = &self.solver.ctx;
+            let z3_cond = SMTSolver::translate_expression_static(ctx, cond_expr)?;
+            let solver = z3::Solver::new(ctx);
             // In C: if taken => assert(not cond); else assert(cond)
             let cond_bool = z3_cond.as_bool().expect("branch condition must be Bool");
             let to_assert = if taken { cond_bool.not() } else { cond_bool };
@@ -218,7 +218,7 @@ impl QueryProcessor {
     }
     
     /// Generate testcase from Z3 model
-    fn generate_testcase_from_model(&mut self, model: &z3::Model, _expr: &Expr) -> Result<()> {
+    fn generate_testcase_from_model(&self, model: &z3::Model, _expr: &Expr) -> Result<()> {
         debug!("Generating testcase from model");
         
         // Extract input values from model
@@ -324,7 +324,7 @@ impl QueryProcessor {
     }
 
     /// Placeholder to assert dependencies alongside the branch condition
-    fn add_dependency_assertions(&self, ctx: &z3::Context, _solver: &z3::Solver, expr: &Expr) -> Result<()> {
+    fn add_dependency_assertions(&self, ctx: &z3::Context, solver: &z3::Solver, expr: &Expr) -> Result<()> {
         // Translate expression to Z3 again locally
         let z3_expr = SMTSolver::translate_expression_static(ctx, expr)?;
 
@@ -344,8 +344,53 @@ impl QueryProcessor {
             deps.inputs, deps.expressions
         );
 
-        // TODO: Construct and assert Z3 constraints for these dependencies on `_solver` once
-        // the dependency constraint representation is available in the graph.
+        // Per-call cache to avoid retranslating the same dependency expressions
+        // Keyed by raw pointer value (usize) of the expression.
+        let mut dep_bool_cache: std::collections::HashMap<usize, Option<z3::ast::Bool>> =
+            std::collections::HashMap::new();
+
+        // Assert each dependent expression as a prerequisite constraint.
+        // Expressions are stored in the graph by their raw pointer value (usize).
+        let current_id = (expr as *const Expr) as usize;
+        for expr_id in deps.expressions.iter() {
+            // Mirror C's add_deps_to_solver(..., skip_expr): do not assert the
+            // current expression among its own prerequisites.
+            if *expr_id == current_id { continue; }
+
+            // Try cache first
+            let cached = dep_bool_cache.get(expr_id).cloned();
+            let maybe_bool = if let Some(cached_opt) = cached {
+                cached_opt
+            } else {
+                // Translate and cache
+                let dep_expr_ptr = *expr_id as *const Expr;
+                if dep_expr_ptr.is_null() {
+                    dep_bool_cache.insert(*expr_id, None);
+                    None
+                } else {
+                    let dep_expr = unsafe { &*dep_expr_ptr };
+                    match SMTSolver::translate_expression_static(ctx, dep_expr) {
+                        Ok(z3_dep) => {
+                            let as_bool = z3_dep.as_bool().cloned();
+                            dep_bool_cache.insert(*expr_id, as_bool.clone());
+                            as_bool
+                        }
+                        Err(e) => {
+                            debug!("Failed to translate dependency expr id={} err={}", expr_id, e);
+                            dep_bool_cache.insert(*expr_id, None);
+                            None
+                        }
+                    }
+                }
+            };
+
+            if let Some(as_bool) = maybe_bool {
+                solver.assert(&as_bool);
+            } else {
+                // Non-bool or failed translation: skip.
+                debug!("Skipping non-bool/failed dependency expr id={}", expr_id);
+            }
+        }
 
         Ok(())
     }
