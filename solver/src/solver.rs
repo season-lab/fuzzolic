@@ -51,6 +51,10 @@ pub struct SMTSolver {
     #[allow(dead_code)]
     _slice_reasoning_time: u64,
     translation_cache: std::cell::RefCell<std::collections::HashMap<u64, String>>,
+    // Cross-query caches of dependency expression kinds (Bool vs non-Bool),
+    // keyed by raw Expr pointer address (usize). We avoid SMT-LIB strings.
+    pub(crate) dep_bool_ids: std::cell::RefCell<std::collections::HashSet<usize>>,
+    pub(crate) dep_nonbool_ids: std::cell::RefCell<std::collections::HashSet<usize>>,
 }
 
 impl SMTSolver {
@@ -84,6 +88,8 @@ impl SMTSolver {
             _expr_visit_time: 0,
             _slice_reasoning_time: 0,
             translation_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
+            dep_bool_ids: std::cell::RefCell::new(std::collections::HashSet::new()),
+            dep_nonbool_ids: std::cell::RefCell::new(std::collections::HashSet::new()),
         })
     }
     
@@ -117,6 +123,35 @@ impl SMTSolver {
         inputs: &std::collections::HashSet<usize>,
     ) -> crate::expression::Dependency {
         self.dependency_graph.merge_dependencies(inputs)
+    }
+
+    /// Mark an expression ID as Bool-producing.
+    fn mark_dep_bool_id(&self, id: usize) {
+        self.dep_bool_ids.borrow_mut().insert(id);
+        self.dep_nonbool_ids.borrow_mut().remove(&id);
+    }
+
+    /// Mark an expression ID as non-Bool-producing.
+    fn mark_dep_nonbool_id(&self, id: usize) {
+        self.dep_nonbool_ids.borrow_mut().insert(id);
+        self.dep_bool_ids.borrow_mut().remove(&id);
+    }
+
+    /// Check known kind caches.
+    pub fn is_dep_bool_id(&self, id: usize) -> bool { self.dep_bool_ids.borrow().contains(&id) }
+    pub fn is_dep_nonbool_id(&self, id: usize) -> bool { self.dep_nonbool_ids.borrow().contains(&id) }
+
+    /// Ensure we know whether an expression is Bool-producing. Returns true if Bool.
+    pub fn ensure_dep_is_bool(&self, expr: &Expr) -> bool {
+        let id = expr as *const Expr as usize;
+        if self.is_dep_bool_id(id) { return true; }
+        if self.is_dep_nonbool_id(id) { return false; }
+        match Self::translate_expression_static(&self.ctx, expr) {
+            Ok(ast) => {
+                if ast.as_bool().is_some() { self.mark_dep_bool_id(id); true } else { self.mark_dep_nonbool_id(id); false }
+            }
+            Err(_) => { self.mark_dep_nonbool_id(id); false }
+        }
     }
     
     pub fn get_current_testcase(&self) -> Option<Vec<u8>> {

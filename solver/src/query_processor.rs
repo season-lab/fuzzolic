@@ -193,10 +193,10 @@ impl QueryProcessor {
         let expr = if query.query.is_null() { None } else { Some(unsafe { &*query.query }) };
         
         if let Some(expression) = expr {
-            // Create separate context to avoid borrowing conflicts
-            let ctx = z3::Context::new(&z3::Config::new());
-            let z3_expr = SMTSolver::translate_expression_static(&ctx, expression)?;
-            let solver = z3::Solver::new(&ctx);
+            // Reuse single solver context
+            let ctx = &self.solver.ctx;
+            let z3_expr = SMTSolver::translate_expression_static(ctx, expression)?;
+            let solver = z3::Solver::new(ctx);
             solver.assert(&z3_expr.as_bool().unwrap());
             match solver.check() {
                 z3::SatResult::Sat => {
@@ -281,9 +281,9 @@ impl QueryProcessor {
         debug!("Processing model query");
         if query.query.is_null() { return Ok(()); }
         let expr = unsafe { &*query.query };
-        let ctx = z3::Context::new(&z3::Config::new());
-        let z3_expr = SMTSolver::translate_expression_static(&ctx, expr)?;
-        let solver = z3::Solver::new(&ctx);
+        let ctx = &self.solver.ctx;
+        let z3_expr = SMTSolver::translate_expression_static(ctx, expr)?;
+        let solver = z3::Solver::new(ctx);
         // Model queries should be asserted as Bool conditions
         let as_bool = z3_expr.as_bool().ok_or_else(|| anyhow::anyhow!("Model query expr not Bool"))?;
         solver.assert(&as_bool);
@@ -305,9 +305,9 @@ impl QueryProcessor {
         debug!("Processing dependency query");
         if query.query.is_null() { return Ok(()); }
         let expr = unsafe { &*query.query };
-        let ctx = z3::Context::new(&z3::Config::new());
-        let z3_expr = SMTSolver::translate_expression_static(&ctx, expr)?;
-        let solver = z3::Solver::new(&ctx);
+        let ctx = &self.solver.ctx;
+        let z3_expr = SMTSolver::translate_expression_static(ctx, expr)?;
+        let solver = z3::Solver::new(ctx);
         let as_bool = z3_expr.as_bool().ok_or_else(|| anyhow::anyhow!("Dependency query expr not Bool"))?;
         solver.assert(&as_bool);
         match solver.check() {
@@ -357,28 +357,35 @@ impl QueryProcessor {
             // current expression among its own prerequisites.
             if *expr_id == current_id { continue; }
 
-            // Try cache first
+            // Try per-call cache first
             let cached = dep_bool_cache.get(expr_id).cloned();
             let maybe_bool = if let Some(cached_opt) = cached {
                 cached_opt
             } else {
-                // Translate and cache
+                // Consult cross-query cache to quickly detect non-bool deps
                 let dep_expr_ptr = *expr_id as *const Expr;
                 if dep_expr_ptr.is_null() {
                     dep_bool_cache.insert(*expr_id, None);
                     None
                 } else {
                     let dep_expr = unsafe { &*dep_expr_ptr };
-                    match SMTSolver::translate_expression_static(ctx, dep_expr) {
-                        Ok(z3_dep) => {
-                            let as_bool = z3_dep.as_bool().cloned();
-                            dep_bool_cache.insert(*expr_id, as_bool.clone());
-                            as_bool
-                        }
-                        Err(e) => {
-                            debug!("Failed to translate dependency expr id={} err={}", expr_id, e);
-                            dep_bool_cache.insert(*expr_id, None);
-                            None
+                    if !self.solver.ensure_dep_is_bool(dep_expr) {
+                        // Known non-bool or failed translation across queries; skip translating again
+                        dep_bool_cache.insert(*expr_id, None);
+                        None
+                    } else {
+                        // Bool dep: translate once in this call to obtain a Bool AST to assert
+                        match SMTSolver::translate_expression_static(ctx, dep_expr) {
+                            Ok(z3_dep) => {
+                                let as_bool = z3_dep.as_bool();
+                                dep_bool_cache.insert(*expr_id, as_bool.clone());
+                                as_bool
+                            }
+                            Err(e) => {
+                                debug!("Failed to translate dependency expr id={} err={}", expr_id, e);
+                                dep_bool_cache.insert(*expr_id, None);
+                                None
+                            }
                         }
                     }
                 }
