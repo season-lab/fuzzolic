@@ -4,6 +4,7 @@ use crate::expression::{Expr, Query, QueryType};
 use crate::shared_memory::QueryQueue;
 use crate::branch_coverage::BranchCoverage;
 use crate::memory_slice::MemorySliceReasoner;
+use crate::concrete_eval::ConcreteEvaluator;
 use anyhow::Result;
 use log::{debug, info, warn};
 use std::time::{Duration, Instant};
@@ -140,6 +141,9 @@ impl QueryProcessor {
         // If we took the branch, try to solve for the opposite by negating the branch condition
         if !query.query.is_null() {
             let cond_expr = unsafe { &*query.query };
+            // Record dependencies for this branch condition into the solver's graph
+            // so subsequent dependency assertions can consult it.
+            let _ = self.solver.add_dependency_for_expr(cond_expr);
             let ctx = z3::Context::new(&z3::Config::new());
             let z3_cond = SMTSolver::translate_expression_static(&ctx, cond_expr)?;
             let solver = z3::Solver::new(&ctx);
@@ -147,6 +151,8 @@ impl QueryProcessor {
             let cond_bool = z3_cond.as_bool().expect("branch condition must be Bool");
             let to_assert = if taken { cond_bool.not() } else { cond_bool };
             solver.assert(&to_assert);
+            // Add dependency assertions (placeholder to mirror C smt_branch_query behavior)
+            self.add_dependency_assertions(&ctx, &solver, cond_expr)?;
             match solver.check() {
                 z3::SatResult::Sat => {
                     info!("Opposite branch at 0x{:x} is SAT", addr_conc);
@@ -271,16 +277,76 @@ impl QueryProcessor {
     }
     
     /// Process model queries
-    fn process_model_query(&mut self, _query: &Query) -> Result<()> {
+    fn process_model_query(&mut self, query: &Query) -> Result<()> {
         debug!("Processing model query");
-        // Model query processing implementation
+        if query.query.is_null() { return Ok(()); }
+        let expr = unsafe { &*query.query };
+        let ctx = z3::Context::new(&z3::Config::new());
+        let z3_expr = SMTSolver::translate_expression_static(&ctx, expr)?;
+        let solver = z3::Solver::new(&ctx);
+        // Model queries should be asserted as Bool conditions
+        let as_bool = z3_expr.as_bool().ok_or_else(|| anyhow::anyhow!("Model query expr not Bool"))?;
+        solver.assert(&as_bool);
+        match solver.check() {
+            z3::SatResult::Sat => {
+                debug!("Model query SAT");
+                if let Some(model) = solver.get_model() {
+                    self.generate_testcase_from_model(&model, expr)?;
+                }
+            }
+            z3::SatResult::Unsat => debug!("Model query UNSAT"),
+            z3::SatResult::Unknown => warn!("Model query UNKNOWN"),
+        }
         Ok(())
     }
     
     /// Process dependency queries
-    fn process_dependency_query(&mut self, _query: &Query) -> Result<()> {
+    fn process_dependency_query(&mut self, query: &Query) -> Result<()> {
         debug!("Processing dependency query");
-        // Dependency query processing implementation
+        if query.query.is_null() { return Ok(()); }
+        let expr = unsafe { &*query.query };
+        let ctx = z3::Context::new(&z3::Config::new());
+        let z3_expr = SMTSolver::translate_expression_static(&ctx, expr)?;
+        let solver = z3::Solver::new(&ctx);
+        let as_bool = z3_expr.as_bool().ok_or_else(|| anyhow::anyhow!("Dependency query expr not Bool"))?;
+        solver.assert(&as_bool);
+        match solver.check() {
+            z3::SatResult::Sat => {
+                debug!("Dependency query SAT");
+                if let Some(model) = solver.get_model() {
+                    self.generate_testcase_from_model(&model, expr)?;
+                }
+            }
+            z3::SatResult::Unsat => debug!("Dependency query UNSAT"),
+            z3::SatResult::Unknown => warn!("Dependency query UNKNOWN"),
+        }
+        Ok(())
+    }
+
+    /// Placeholder to assert dependencies alongside the branch condition
+    fn add_dependency_assertions(&self, ctx: &z3::Context, _solver: &z3::Solver, expr: &Expr) -> Result<()> {
+        // Translate expression to Z3 again locally
+        let z3_expr = SMTSolver::translate_expression_static(ctx, expr)?;
+
+        // Collect input symbols using a temporary ConcreteEvaluator helper
+        let mut evaluator = ConcreteEvaluator::new();
+        let inputs = evaluator.get_inputs_expr(&z3_expr);
+        debug!("Dependency assertion: collected {} input(s): {:?}", inputs.len(), inputs);
+
+        // Map input list to a set for dependency graph query
+        let mut input_set: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        for id in inputs.iter() { input_set.insert(*id as usize); }
+
+        // Retrieve merged dependencies for these inputs
+        let deps = self.solver.get_deps_for_inputs(&input_set);
+        debug!(
+            "Merged dependency: inputs={:?} expressions={:?}",
+            deps.inputs, deps.expressions
+        );
+
+        // TODO: Construct and assert Z3 constraints for these dependencies on `_solver` once
+        // the dependency constraint representation is available in the graph.
+
         Ok(())
     }
     

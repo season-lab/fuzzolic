@@ -92,6 +92,32 @@ impl SMTSolver {
         // SharedMemoryManager doesn't have initialize method - it's initialized in constructor
         Ok(())
     }
+
+    /// Record dependency information for an expression into the dependency graph.
+    /// Uses the Z3 translation to extract symbolic input IDs and links them to the expression ID.
+    /// The expression ID is derived from the pointer address to mirror the C-side identity.
+    pub fn add_dependency_for_expr(&mut self, expr: &Expr) -> Result<()> {
+        // Translate once to Z3 to extract inputs via ConcreteEvaluator
+        let z3_expr = Self::translate_expression_static(&self.ctx, expr)?;
+        let mut evaluator = crate::concrete_eval::ConcreteEvaluator::new();
+        let inputs = evaluator.get_inputs_expr(&z3_expr);
+
+        // Use the address of the Expr as a stable identifier
+        let expr_id = expr as *const Expr as usize;
+        for input_id in inputs {
+            // Our dependency graph is keyed by input id -> expressions
+            self.dependency_graph.add_dependency(input_id as usize, expr_id);
+        }
+        Ok(())
+    }
+
+    /// Retrieve merged dependencies information for a set of input IDs.
+    pub fn get_deps_for_inputs(
+        &self,
+        inputs: &std::collections::HashSet<usize>,
+    ) -> crate::expression::Dependency {
+        self.dependency_graph.merge_dependencies(inputs)
+    }
     
     pub fn get_current_testcase(&self) -> Option<Vec<u8>> {
         self.current_testcase.as_ref().map(|t| t.data.clone())
@@ -160,6 +186,13 @@ impl SMTSolver {
             OpKind::IsConst => {
                 let value = expr.op1 as u64;
                 Ok(z3::ast::BV::from_u64(ctx, value, 64).into())
+            }
+            // Create a BV symbol for input bytes: input_{id}
+            OpKind::IsSymbolic => {
+                let input_id = expr.op1 as u64;
+                // Default to 8-bit symbols (byte-level)
+                let name = format!("input_{}", input_id);
+                Ok(z3::ast::BV::new_const(ctx, name, 8).into())
             }
             OpKind::Add => {
                 let l = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
@@ -434,6 +467,48 @@ impl SMTSolver {
                     Ok(is_greater.ite(&left_bv.into(), &right_bv.into()))
                 } else {
                     anyhow::bail!("Invalid operands for Max operation")
+                }
+            }
+            OpKind::IteEqZero => {
+                // (ite (== op1 0) op2 op3) treating op1 as BV if needed
+                let c = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let t = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                let e = Self::translate_expression_static(ctx, unsafe { &*expr.op3 })?;
+                let cond = if let Some(cb) = c.as_bool() {
+                    cb._eq(&z3::ast::Bool::from_bool(ctx, true)) // rarely used; prefer BV route
+                } else if let Some(cbv) = c.as_bv() {
+                    let zero = z3::ast::BV::from_u64(ctx, 0, cbv.get_size());
+                    cbv._eq(&zero)
+                } else {
+                    anyhow::bail!("IteEqZero cond not BV/bool")
+                };
+                if let (Some(tbv), Some(ebv)) = (t.as_bv(), e.as_bv()) {
+                    Ok(cond.ite(&tbv.into(), &ebv.into()))
+                } else if let (Some(tb), Some(eb)) = (t.as_bool(), e.as_bool()) {
+                    Ok(cond.ite(&tb.into(), &eb.into()))
+                } else {
+                    anyhow::bail!("IteEqZero branch types mismatch")
+                }
+            }
+            OpKind::IteNeZero => {
+                // (ite (!= op1 0) op2 op3)
+                let c = Self::translate_expression_static(ctx, unsafe { &*expr.op1 })?;
+                let t = Self::translate_expression_static(ctx, unsafe { &*expr.op2 })?;
+                let e = Self::translate_expression_static(ctx, unsafe { &*expr.op3 })?;
+                let cond = if let Some(cb) = c.as_bool() {
+                    cb // already boolean
+                } else if let Some(cbv) = c.as_bv() {
+                    let zero = z3::ast::BV::from_u64(ctx, 0, cbv.get_size());
+                    cbv._eq(&zero).not()
+                } else {
+                    anyhow::bail!("IteNeZero cond not BV/bool")
+                };
+                if let (Some(tbv), Some(ebv)) = (t.as_bv(), e.as_bv()) {
+                    Ok(cond.ite(&tbv.into(), &ebv.into()))
+                } else if let (Some(tb), Some(eb)) = (t.as_bool(), e.as_bool()) {
+                    Ok(cond.ite(&tb.into(), &eb.into()))
+                } else {
+                    anyhow::bail!("IteNeZero branch types mismatch")
                 }
             }
             OpKind::Nand => {

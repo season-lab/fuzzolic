@@ -556,7 +556,7 @@ impl DependencyGraph {
         self.dependencies.get(&input_id)
     }
     
-    pub fn merge_dependencies(&mut self, inputs: &HashSet<usize>) -> Dependency {
+    pub fn merge_dependencies(&self, inputs: &HashSet<usize>) -> Dependency {
         let mut merged = Dependency::new();
         
         for &input_id in inputs {
