@@ -58,7 +58,7 @@ impl QueryProcessor {
             }
             
             // Try to get next query from queue
-            match self.query_queue.pop_query() {
+            match self.query_queue.next_query() {
                 Some(query) => {
                     if self.is_final_query(&query) {
                         info!("Received final query, exiting");
@@ -72,8 +72,8 @@ impl QueryProcessor {
                     }
                 }
                 None => {
-                    // No query available, check if tracer crashed
-                    std::thread::sleep(polling_interval);
+                    // No query available, short sleep
+                    std::thread::sleep(Duration::from_millis(1));
                     
                     // If no queries for too long, assume tracer crashed
                     if self.start_time.elapsed() > Duration::from_secs(30) {
@@ -90,64 +90,32 @@ impl QueryProcessor {
     /// Process a single query
     fn process_query(&mut self, query: Query) -> Result<()> {
         debug!("Processing query: {:?}", query.query_type);
+        let start_time = Instant::now();
         
-        match query.query_type {
-            QueryType::Branch => self.process_branch_query(&query)?,
-            QueryType::Slice => self.process_slice_query(&query)?,
-            QueryType::Model => self.process_model_query(&query)?,
-            QueryType::Dependency => self.process_dependency_query(&query)?,
-        }
+        let result = match query.query_type {
+            QueryType::Branch => self.process_branch_query(&query),
+            QueryType::Slice => self.process_slice_query(&query),
+            QueryType::Model => self.process_model_query(&query),
+            QueryType::Dependency => self.process_dependency_query(&query),
+        };
         
-        Ok(())
+        let elapsed = start_time.elapsed();
+        debug!("Query processed in {:?}", elapsed);
+        
+        result
     }
     
     /// Process memory slice access queries
     fn process_slice_query(&mut self, query: &Query) -> Result<()> {
         let slice_args = unsafe { &query.args.args8 };
         let addr_conc = slice_args.arg1 as u64;
-        let _s_load_id = addr_conc;
+        let size = slice_args.arg2 as usize;
+        let load_id = slice_args.arg3 as u64;
         
-        // Create a separate context to avoid borrowing conflicts
-        let ctx = z3::Context::new(&z3::Config::new());
-        let z3_addr = z3::ast::BV::from_u64(&ctx, addr_conc as u64, 64);
+        debug!("Processing slice query: addr={:x}, size={}, load_id={}", addr_conc, size, load_id);
         
-        // Create slice constraints
-        let constraint_result = self.memory_slice_reasoner.create_slice_constraint(
-            z3_addr,
-            addr_conc as u64,
-            8,
-        );
-        
-        if let Ok(constraint) = constraint_result {
-            // Create separate solver to avoid borrowing conflicts
-            let solver = z3::Solver::new(&ctx);
-            solver.assert(&constraint);
-            match solver.check() {
-                z3::SatResult::Sat => {
-                    // For slice queries, we need to extract the expression from args
-                    let expr_ptr = unsafe { 
-                        let ptr_bytes = [
-                            query.args.args8.arg1, query.args.args8.arg2, query.args.args8.arg3, query.args.args8.arg4,
-                            query.args.args8.arg5, query.args.args8.arg6, query.args.args8.arg7, query.args.args8.arg8,
-                        ];
-                        std::ptr::read(ptr_bytes.as_ptr() as *const *const Expr)
-                    };
-                    if let Some(_expr) = unsafe { expr_ptr.as_ref() } {
-                        if let Some(_model) = solver.get_model() {
-                            // Store model and expression for later processing
-                            let model_data = vec![0u8; 1024]; // Placeholder
-                            self.save_testcase(&model_data)?;
-                        }
-                    }
-                }
-                z3::SatResult::Unsat => {
-                    debug!("Slice query unsatisfiable");
-                }
-                z3::SatResult::Unknown => {
-                    warn!("Slice query result unknown");
-                }
-            }
-        }
+        // Use memory slice reasoner to handle the query
+        self.memory_slice_reasoner.process_slice_access(addr_conc, size, load_id)?;
         
         Ok(())
     }

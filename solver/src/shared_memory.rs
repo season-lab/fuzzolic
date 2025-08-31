@@ -2,10 +2,21 @@ use crate::expression::{Expr, Query};
 use crate::config::Config;
 use anyhow::Result;
 use std::ptr;
-use std::slice;
+use std::ffi::c_void;
 use std::sync::atomic::{fence, Ordering};
-use log::{debug, info, error};
+use log::{debug, info, error, warn};
 use libc::{shmget, shmat, shmdt, IPC_CREAT};
+
+/// Statistics for monitoring queue performance
+#[derive(Debug, Clone)]
+pub struct QueueStats {
+    pub capacity: usize,
+    pub length: usize,
+    pub read_index: usize,
+    pub write_index: usize,
+    pub is_empty: bool,
+    pub is_full: bool,
+}
 
 // Constants from symbolic-struct.h
 pub const EXPR_POOL_CAPACITY: usize = 1024 * 1024 * 8;
@@ -106,7 +117,7 @@ impl SharedExprPool {
     
     pub fn as_slice(&self) -> &[Expr] {
         unsafe {
-            slice::from_raw_parts(self.pool, self.current_index)
+            std::slice::from_raw_parts(self.pool, self.current_index)
         }
     }
 }
@@ -211,12 +222,13 @@ impl QueryQueue {
             anyhow::bail!("Query queue is full");
         }
         
+        let query_type = query.query_type;
         unsafe {
             ptr::write(self.queue.add(self.write_index), query);
         }
         
         self.write_index = next_write;
-        debug!("Added query at index {}", self.write_index);
+        debug!("Added query at index {} (type: {:?})", self.write_index, query_type);
         Ok(())
     }
     
@@ -230,7 +242,7 @@ impl QueryQueue {
         };
         
         self.read_index = (self.read_index + 1) % self.capacity;
-        debug!("Retrieved query from index {}", self.read_index);
+        debug!("Retrieved query from index {} (type: {:?})", self.read_index, query.query_type);
         Some(query)
     }
     
@@ -246,6 +258,55 @@ impl QueryQueue {
         self.read_index == self.write_index
     }
     
+    /// Get queue statistics for monitoring
+    pub fn get_stats(&self) -> QueueStats {
+        QueueStats {
+            capacity: self.capacity,
+            length: self.len(),
+            read_index: self.read_index,
+            write_index: self.write_index,
+            is_empty: self.is_empty(),
+            is_full: self.is_full(),
+        }
+    }
+    
+    /// Wait for a query with timeout
+    pub fn wait_for_query(&mut self, timeout_ms: u64) -> Option<Query> {
+        use std::time::{Duration, Instant};
+        
+        let start = Instant::now();
+        let timeout = Duration::from_millis(timeout_ms);
+        
+        while start.elapsed() < timeout {
+            if let Some(query) = self.next_query() {
+                return Some(query);
+            }
+            std::thread::sleep(Duration::from_micros(100)); // Short sleep to avoid busy waiting
+        }
+        
+        None
+    }
+    
+    /// Batch process multiple queries
+    pub fn process_batch<F>(&mut self, mut processor: F, max_batch_size: usize) -> Result<usize>
+    where
+        F: FnMut(Query) -> Result<()>,
+    {
+        let mut processed = 0;
+        
+        while processed < max_batch_size {
+            match self.next_query() {
+                Some(query) => {
+                    processor(query)?;
+                    processed += 1;
+                }
+                None => break,
+            }
+        }
+        
+        Ok(processed)
+    }
+
     pub fn is_full(&self) -> bool {
         (self.write_index + 1) % self.capacity == self.read_index
     }

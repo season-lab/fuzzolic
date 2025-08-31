@@ -334,7 +334,7 @@ impl SimplificationRule for CommutativityRule {
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         match expr.opkind {
-            1 | 3 => { // Add, Mul (commutative)
+            5 | 7 => { // Add=5, Mul=7 (commutative)
                 // Move constants to the right for consistency
                 if expr.op1_is_const != 0 && expr.op2_is_const == 0 {
                     return Ok(Expr {
@@ -650,12 +650,14 @@ impl SimplificationRule for ExtractOptimizationRule {
         let low = (expr.op2 as u64 & 0xFFFFFFFF) as u32; // Extract low parameter
         
         // Pattern: extract from constant
-        if op1.op1_is_const != 0 {
+        if op1.opkind == 1 && op1.op1_is_const != 0 {
             let value = op1.op1 as u64;
             // Extract bits [high:low] from value
             let width = high - low + 1;
             let mask = if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
             let result = (value >> low) & mask;
+            
+            
             return Ok(Expr {
                 op1: result as *mut Expr,
                 op2: std::ptr::null_mut(),
@@ -1627,6 +1629,7 @@ mod tests {
         let extract_expr = create_extract_expr(&const_expr, 7, 0);
         
         let result = simplifier.simplify(&extract_expr).unwrap();
+        
         // The extract optimization should work since we have opkind 38 and constant operand
         if result.opkind == 1 {
             // If optimization worked, check the extracted value

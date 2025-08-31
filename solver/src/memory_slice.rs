@@ -26,18 +26,35 @@ pub struct MemorySliceReasoner {
     input_slices: HashMap<u64, usize>,
     /// Z3 context for constraint generation
     ctx: Context,
+    /// Counter for generating unique slice IDs
+    slice_counter: u64,
 }
 
 impl MemorySliceReasoner {
     pub fn new() -> Self {
-        let cfg = z3::Config::new();
-        let ctx = Context::new(&cfg);
-        
-        Self {
+        MemorySliceReasoner {
             slices: HashMap::new(),
             input_slices: HashMap::new(),
-            ctx,
+            ctx: Context::new(&z3::Config::new()),
+            slice_counter: 0,
         }
+    }
+    
+    /// Process a slice access query
+    pub fn process_slice_access(&mut self, addr: u64, size: usize, load_id: u64) -> Result<()> {
+        debug!("Processing slice access: addr={:x}, size={}, load_id={}", addr, size, load_id);
+        
+        // Create or update slice information
+        let slice = MemorySlice {
+            base_addr: addr,
+            data: [0; SLICE_SIZE],
+            is_symbolic: false,
+        };
+        
+        self.slices.insert(load_id, slice);
+        self.slice_counter += 1;
+        
+        Ok(())
     }
     
     /// Add a memory slice with concrete data
