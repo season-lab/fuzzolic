@@ -1,4 +1,5 @@
 use crate::expression::{Expr, OpKind};
+use crate::solver::SMTSolver;
 use anyhow::Result;
 use z3::ast::{self, Ast};
 use z3::Context;
@@ -17,6 +18,52 @@ const XMM_BYTES: usize = 16;
 /// Helper function to create Z3 bitvector constants
 fn smt_new_const(ctx: &Context, value: u64, bits: u32) -> ast::BV {
     ast::BV::from_u64(ctx, value, bits)
+}
+
+/// EFLAGS for RCL (rotate through carry left): compute CF and OF
+/// CF: top bit of (CF_in || VAL) rotated left by COUNT mod (N+1)
+/// OF: defined iff (COUNT mod (N+1)) == 1, equals MSB(RESULT) xor CF
+fn eflags_all_rcl<'ctx>(
+    ctx: &'ctx Context,
+    val: &ast::BV<'ctx>,
+    count8: &ast::BV<'ctx>,
+    cf_in8: &ast::BV<'ctx>,
+    width: usize,
+) -> ast::BV<'ctx> {
+    let n_bits: u32 = (width * 8) as u32;
+    let zero = smt_new_const(ctx, 0, (width * 8) as u32);
+    // Extract 1-bit CF from input byte
+    let cf_bit = cf_in8.extract(0, 0);
+    // Build V = CF || VAL (N+1 bits)
+    let v_n1 = cf_bit.concat(val);
+    let m_bits = v_n1.get_size();
+    // Extend COUNT to M bits and reduce modulo M
+    let cnt_ext = {
+        let cur = count8.get_size();
+        if cur < m_bits { count8.zero_ext(m_bits - cur) } else if cur > m_bits { count8.extract(m_bits - 1, 0) } else { count8.clone() }
+    };
+    let m_const = ast::BV::from_u64(ctx, m_bits as u64, m_bits);
+    let cnt_mod = cnt_ext.bvurem(&m_const);
+    // Rotate and split result
+    let rotated = v_n1.bvrotl(&cnt_ext);
+    let new_val = rotated.extract(n_bits - 1, 0);
+    let new_cf_bit = rotated.extract(m_bits - 1, m_bits - 1);
+    // CF flag
+    let cc_c = smt_new_const(ctx, CC_C, (width * 8) as u32);
+    let one1 = ast::BV::from_u64(ctx, 1, 1);
+    let cf_cond = new_cf_bit._eq(&one1); // Bool
+    let cf_flag = cf_cond.ite(&cc_c, &zero);
+    // OF flag (only if cnt_mod == 1): of_bit = MSB(new_val) xor new_cf_bit
+    let one_m = ast::BV::from_u64(ctx, 1, m_bits);
+    let cnt_is_one = cnt_mod._eq(&one_m);
+    let msb_new_val = new_val.extract(n_bits - 1, n_bits - 1);
+    let of_bit = msb_new_val.bvxor(&new_cf_bit);
+    let cc_o = smt_new_const(ctx, CC_O, (width * 8) as u32);
+    let of_cond = of_bit._eq(&one1);
+    let of_flag_when_one = of_cond.ite(&cc_o, &zero);
+    let of_flag = cnt_is_one.ite(&of_flag_when_one, &zero);
+    // Combine flags; other flags undefined -> 0 per CPU semantics
+    cf_flag.bvor(&of_flag)
 }
 
 /// Helper function to perform left/right shift based on sign
@@ -82,14 +129,14 @@ pub fn eflags_c_adc<'ctx>(
     ctx: &'ctx Context,
     dst: &ast::BV<'ctx>,
     src1: &ast::BV<'ctx>,
-    src3_expr: &Expr,
+    src3_ptr: *mut Expr,
     src3_is_const: bool,
     width: usize,
 ) -> Result<ast::BV<'ctx>> {
     let mask = (1u64 << (width * 8)) - 1;
     
     if src3_is_const {
-        let src3_val = src3_expr as *const Expr as usize as u64;
+        let src3_val = src3_ptr as usize as u64;
         let cond_result = if (src3_val & mask) != 0 {
             dst.bvule(src1)
         } else {
@@ -100,12 +147,13 @@ pub fn eflags_c_adc<'ctx>(
         let zero = smt_new_const(ctx, 0, (width * 8) as u32);
         Ok(cond_result.ite(&one, &zero))
     } else {
-        // For symbolic src3, we need to handle both cases
+        // For symbolic src3, translate it to a 1-byte BV and branch on (src3 != 0)
         let zero = smt_new_const(ctx, 0, (width * 8) as u32);
         let one = smt_new_const(ctx, 1, (width * 8) as u32);
-        // Convert src3 expression to BV - simplified implementation
-        let src3 = smt_new_const(ctx, 0, (width * 8) as u32); // Placeholder: would convert src3_expr in full implementation
-        let cond = src3._eq(&zero).not();
+        // Translate carry operand to 8-bit BV
+        let src3 = translate_operand(ctx, src3_ptr, false, 1)?;
+        let zero_c = smt_new_const(ctx, 0, 8);
+        let cond = src3._eq(&zero_c).not();
         let a = dst.bvule(src1).ite(&one, &zero);
         let b = dst.bvult(src1).ite(&one, &zero);
         Ok(cond.ite(&a, &b))
@@ -453,13 +501,28 @@ fn translate_operand<'ctx>(
 ) -> Result<ast::BV<'ctx>> {
     if is_const {
         let value = operand as usize as u64;
-        Ok(smt_new_const(ctx, value, (width * 8) as u32))
-    } else {
-        // For symbolic operands, create a symbolic bitvector
-        // In a full implementation, this would recursively translate the expression
-        let symbol_name = format!("sym_{:p}", operand);
-        Ok(ast::BV::new_const(ctx, symbol_name, (width * 8) as u32))
+        return Ok(smt_new_const(ctx, value, (width * 8) as u32));
     }
+    if operand.is_null() {
+        anyhow::bail!("Null (non-const) operand in i386::translate_operand");
+    }
+    // Recursively translate non-const operand via unified translator
+    let dyn_ast = SMTSolver::translate_expression_static(ctx, unsafe { &*operand })?;
+    if let Some(bv) = dyn_ast.as_bv() {
+        let expected = (width * 8) as u32;
+        let cur = bv.get_size();
+        if cur == expected { return Ok(bv); }
+        if cur < expected { return Ok(bv.zero_ext(expected - cur)); }
+        // cur > expected
+        return Ok(bv.extract(expected - 1, 0));
+    }
+    if let Some(b) = dyn_ast.as_bool() {
+        // Map Bool to BV of requested width: true -> 1, false -> 0
+        let one = smt_new_const(ctx, 1, (width * 8) as u32);
+        let zero = smt_new_const(ctx, 0, (width * 8) as u32);
+        return Ok(b.ite(&one, &zero));
+    }
+    anyhow::bail!("Unsupported operand type for i386 translate_operand")
 }
 
 /// Get operation width from opkind
@@ -482,12 +545,12 @@ pub fn smt_query_i386_to_z3<'ctx>(
     use crate::expression::OpKind;
     
     // Convert u8 opkind to OpKind enum for pattern matching
-    let opkind = unsafe { std::mem::transmute::<u8, OpKind>(query.opkind) };
+    let opkind = OpKind::try_from(query.opkind)?;
     
     match opkind {
         // Comparison operations
         OpKind::CmpEq | OpKind::CmpGt | OpKind::CmpGe | OpKind::CmpLt | OpKind::CmpLe => {
-            let slice = unsafe { query.op3 as *const Expr as usize };
+            let slice = query.op3 as usize;
             let slice = if slice <= 8 { slice } else { width };
             
             let op1 = translate_operand(ctx, query.op1, query.op1_is_const != 0, slice)?;
@@ -506,7 +569,7 @@ pub fn smt_query_i386_to_z3<'ctx>(
         
         // MIN/MAX operations
         OpKind::Min | OpKind::Max => {
-            let slice = unsafe { query.op3 as *const Expr as usize };
+            let slice = query.op3 as usize;
             let slice = if slice <= 8 { slice } else { width };
             
             let op1 = translate_operand(ctx, query.op1, query.op1_is_const != 0, slice)?;
@@ -526,6 +589,16 @@ pub fn smt_query_i386_to_z3<'ctx>(
             
             let result = eflags_all_binary(ctx, &dst, &src1, opkind, op_width)?;
             Ok(ast::Dynamic::from_ast(&result))
+        }
+        
+        // EFLAGS RCL (CF/OF only)
+        OpKind::EflagsAllRcl => {
+            let op_width = get_opkind_width(opkind);
+            let val = translate_operand(ctx, query.op1, query.op1_is_const != 0, op_width)?;
+            let cnt8 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 1)?; // 8-bit count
+            let cf_in = translate_operand(ctx, query.op3, query.op3_is_const != 0, 1)?; // carry in
+            let flags = eflags_all_rcl(ctx, &val, &cnt8, &cf_in, op_width);
+            Ok(ast::Dynamic::from_ast(&flags))
         }
         
         // EFLAGS ternary operations (ADC, SBB)
@@ -566,25 +639,25 @@ pub fn smt_query_i386_to_z3<'ctx>(
         OpKind::EflagsCAdcb => {
             let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, 1)?;
             let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 1)?;
-            let result = eflags_c_adc(ctx, &dst, &src1, unsafe { &*query.op3 }, false, 1)?;
+            let result = eflags_c_adc(ctx, &dst, &src1, query.op3, query.op3_is_const != 0, 1)?;
             Ok(ast::Dynamic::from_ast(&result))
         }
         OpKind::EflagsCAdcw => {
             let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, 2)?;
             let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 2)?;
-            let result = eflags_c_adc(ctx, &dst, &src1, unsafe { &*query.op3 }, false, 2)?;
+            let result = eflags_c_adc(ctx, &dst, &src1, query.op3, query.op3_is_const != 0, 2)?;
             Ok(ast::Dynamic::from_ast(&result))
         }
         OpKind::EflagsCAdcl => {
             let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, 4)?;
             let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 4)?;
-            let result = eflags_c_adc(ctx, &dst, &src1, unsafe { &*query.op3 }, false, 4)?;
+            let result = eflags_c_adc(ctx, &dst, &src1, query.op3, query.op3_is_const != 0, 4)?;
             Ok(ast::Dynamic::from_ast(&result))
         }
         OpKind::EflagsCAdcq => {
             let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, 8)?;
             let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 8)?;
-            let result = eflags_c_adc(ctx, &dst, &src1, unsafe { &*query.op3 }, false, 8)?;
+            let result = eflags_c_adc(ctx, &dst, &src1, query.op3, query.op3_is_const != 0, 8)?;
             Ok(ast::Dynamic::from_ast(&result))
         }
         
@@ -618,6 +691,32 @@ pub fn smt_query_i386_to_z3<'ctx>(
             Ok(ast::Dynamic::from_ast(&result))
         }
         
+        // RCL (rotate through carry left) on an N-bit value with a 1-bit carry-in.
+        // Semantics: build (N+1)-bit vector V = concat(val[N-1:0], CF), then rotate-left by count mod (N+1),
+        // result value is low N bits; carry-out is top bit (handled by separate EFLAGS nodes when needed).
+        OpKind::Rcl => {
+            let n_bits: u32 = (width * 8) as u32;
+            let val = translate_operand(ctx, query.op1, query.op1_is_const != 0, width)?; // N bits
+            // Use 1 byte for count; zero-extend to N+1 below
+            let cnt8 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 1)?; // 8 bits
+            // Carry-in is provided as 8-bit BV; extract the least significant bit to get 1-bit CF
+            let cf = translate_operand(ctx, query.op3, query.op3_is_const != 0, 1)?; // 8 bits (0/1)
+            let cf = cf.extract(0, 0);
+
+            // Build (N+1)-bit vector: CF || val (CF as MSB position for RCL semantics)
+            let v_n1 = cf.concat(&val); // width N+1
+            let v_width = v_n1.get_size(); // N + 1
+            // Zero-extend count to (N+1) bits for variable rotation
+            let ext = v_width.saturating_sub(cnt8.get_size());
+            let cnt_ext = if ext > 0 { cnt8.zero_ext(ext) } else { cnt8 }; // now same width as v_n1
+
+            // Rotate left V by cnt_ext
+            let rotated = v_n1.bvrotl(&cnt_ext);
+            // Extract low N bits for result value
+            let new_val = rotated.extract(n_bits - 1, 0);
+            Ok(ast::Dynamic::from_ast(&new_val))
+        }
+
         _ => {
             anyhow::bail!("Unsupported i386 opkind: {:?}", query.opkind);
         }

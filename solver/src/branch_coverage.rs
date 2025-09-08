@@ -126,7 +126,7 @@ impl BranchCoverage {
         // Branch is interesting if:
         // 1. It's the first time we see this transition
         // 2. The hit count is a power of 2 (exponential backoff)
-        current_count == 0 || (current_count & (current_count - 1)) == 0
+        current_count == 0 || Self::is_power_of_two(current_count as u32)
     }
     
     /// Record a branch execution with bitmap update

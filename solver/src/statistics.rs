@@ -12,6 +12,10 @@ pub struct Statistics {
     pub cache_hits: u64,
     pub cache_misses: u64,
     pub optimization_count: u64,
+    // Fuzzy-side statistics pulled from the C fuzzy solver
+    pub fuzzy_num_evaluate: u64,
+    pub fuzzy_num_sat: u64,
+    pub fuzzy_num_timeouts: u64,
     #[serde(skip)]
     pub start_time: Option<Instant>,
 }

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use log::debug;
 use std::collections::HashMap;
-use crate::expression::Expr;
+use crate::expression::{Expr, OpKind};
 
 /// Advanced expression simplification engine
 pub struct ExpressionSimplifier {
@@ -39,6 +39,24 @@ impl ExpressionSimplifier {
         simplifier.add_rule(Box::new(ConcatenationAdvancedRule));
         simplifier.add_rule(Box::new(SignExtensionRule));
         
+        simplifier
+    }
+    
+    /// Create a conservative simplifier that enables only safe rules.
+    /// This avoids advanced rewrites that could be unsound without full size tracking.
+    pub fn new_conservative() -> Self {
+        let mut simplifier = Self {
+            simplification_cache: HashMap::new(),
+            optimization_rules: Vec::new(),
+            max_simplification_depth: 4,
+        };
+        // Safe subset mirroring C peepholes
+        simplifier.add_rule(Box::new(ConstantFoldingRule));
+        simplifier.add_rule(Box::new(IdentityRule));
+        simplifier.add_rule(Box::new(BooleanSimplificationRule));
+        simplifier.add_rule(Box::new(BitvectorSimplificationRule));
+        // Extract optimization only for constant source and constant indices
+        simplifier.add_rule(Box::new(ExtractOptimizationRule));
         simplifier
     }
     
@@ -165,8 +183,8 @@ impl SimplificationRule for ConstantFoldingRule {
     fn name(&self) -> &str { "ConstantFolding" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        match expr.opkind {
-            1 => { // Add
+        match OpKind::try_from(expr.opkind).ok() {
+            Some(OpKind::Add) => {
                 if expr.op1_is_const != 0 && expr.op2_is_const != 0 {
                     // Both operands are constants, fold them
                     let val1 = expr.op1 as u64;
@@ -177,7 +195,7 @@ impl SimplificationRule for ConstantFoldingRule {
                         op1: result as *mut Expr,
                         op2: std::ptr::null_mut(),
                         op3: std::ptr::null_mut(),
-                        opkind: 0, // Constant
+                        opkind: OpKind::IsConst as u8,
                         op1_is_const: 1,
                         op2_is_const: 0,
                         op3_is_const: 0,
@@ -186,7 +204,7 @@ impl SimplificationRule for ConstantFoldingRule {
                     Ok(expr.clone())
                 }
             }
-            2 => { // Sub
+            Some(OpKind::Sub) => {
                 if expr.op1_is_const != 0 && expr.op2_is_const != 0 {
                     let val1 = expr.op1 as u64;
                     let val2 = expr.op2 as u64;
@@ -196,7 +214,7 @@ impl SimplificationRule for ConstantFoldingRule {
                         op1: result as *mut Expr,
                         op2: std::ptr::null_mut(),
                         op3: std::ptr::null_mut(),
-                        opkind: 0,
+                        opkind: OpKind::IsConst as u8,
                         op1_is_const: 1,
                         op2_is_const: 0,
                         op3_is_const: 0,
@@ -205,7 +223,7 @@ impl SimplificationRule for ConstantFoldingRule {
                     Ok(expr.clone())
                 }
             }
-            3 => { // Mul
+            Some(OpKind::Mul) => {
                 if expr.op1_is_const != 0 && expr.op2_is_const != 0 {
                     let val1 = expr.op1 as u64;
                     let val2 = expr.op2 as u64;
@@ -215,7 +233,7 @@ impl SimplificationRule for ConstantFoldingRule {
                         op1: result as *mut Expr,
                         op2: std::ptr::null_mut(),
                         op3: std::ptr::null_mut(),
-                        opkind: 0,
+                        opkind: OpKind::IsConst as u8,
                         op1_is_const: 1,
                         op2_is_const: 0,
                         op3_is_const: 0,
@@ -238,66 +256,34 @@ impl SimplificationRule for IdentityRule {
     fn name(&self) -> &str { "Identity" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        match expr.opkind {
-            1 => { // Add
+        match OpKind::try_from(expr.opkind).ok() {
+            Some(OpKind::Add) => {
                 // x + 0 = x
                 if expr.op2_is_const != 0 && expr.op2 as u64 == 0 {
-                    return Ok(Expr {
-                        op1: expr.op1,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op1_is_const != 0 { 0 } else { 100 }, // Variable or constant
-                        op1_is_const: expr.op1_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op1).clone() });
                 }
                 // 0 + x = x
                 if expr.op1_is_const != 0 && expr.op1 as u64 == 0 {
-                    return Ok(Expr {
-                        op1: expr.op2,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op2_is_const != 0 { 0 } else { 100 },
-                        op1_is_const: expr.op2_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op2).clone() });
                 }
             }
-            3 => { // Mul
+            Some(OpKind::Mul) => {
                 // x * 1 = x
                 if expr.op2_is_const != 0 && expr.op2 as u64 == 1 {
-                    return Ok(Expr {
-                        op1: expr.op1,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op1_is_const != 0 { 0 } else { 100 },
-                        op1_is_const: expr.op1_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op1).clone() });
                 }
                 // 1 * x = x
                 if expr.op1_is_const != 0 && expr.op1 as u64 == 1 {
-                    return Ok(Expr {
-                        op1: expr.op2,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op2_is_const != 0 { 0 } else { 100 },
-                        op1_is_const: expr.op2_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op2).clone() });
                 }
                 // x * 0 = 0
                 if (expr.op1_is_const != 0 && expr.op1 as u64 == 0) ||
                    (expr.op2_is_const != 0 && expr.op2 as u64 == 0) {
                     return Ok(Expr {
-                        op1: 0 as *mut Expr,
+                        op1: 0usize as *mut Expr,
                         op2: std::ptr::null_mut(),
                         op3: std::ptr::null_mut(),
-                        opkind: 0,
+                        opkind: OpKind::IsConst as u8,
                         op1_is_const: 1,
                         op2_is_const: 0,
                         op3_is_const: 0,
@@ -362,8 +348,12 @@ impl SimplificationRule for DistributivityRule {
     fn name(&self) -> &str { "Distributivity" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        // Placeholder - full implementation would handle cases like:
-        // a * (b + c) = (a * b) + (a * c)
+        // Conservative: disabled expansion/factoring since it requires allocating
+        // new intermediate nodes (e.g., (a*b) and (a*c)), which we do not create
+        // in the simplifier. The current architecture rewrites only by reusing
+        // existing child nodes or folding constants. Distributivity is sound for
+        // bitvectors but would require persistent nodes to avoid dangling pointers.
+        // Returning the expression unchanged is intentional and safer here.
         Ok(expr.clone())
     }
 }
@@ -375,73 +365,30 @@ impl SimplificationRule for BooleanSimplificationRule {
     fn name(&self) -> &str { "BooleanSimplification" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        match expr.opkind {
-            1 => { // IsConst
-                // Already constant, return as-is
-                return Ok(expr.clone());
-            },
-            3 => { // IsSymbolic
-                // Cannot simplify symbolic expressions
-                return Ok(expr.clone());
-            },
-            20 => { // And
-                // x && true = x
+        match OpKind::try_from(expr.opkind).ok() {
+            Some(OpKind::IsConst) | Some(OpKind::IsSymbolic) => Ok(expr.clone()),
+            Some(OpKind::And) => {
                 if expr.op2_is_const != 0 && expr.op2 as u64 == 1 {
-                    return Ok(Expr {
-                        op1: expr.op1,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op1_is_const != 0 { 0 } else { 100 },
-                        op1_is_const: expr.op1_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op1).clone() });
                 }
-                // x && false = false
                 if (expr.op1_is_const != 0 && expr.op1 as u64 == 0) ||
                    (expr.op2_is_const != 0 && expr.op2 as u64 == 0) {
-                    return Ok(Expr {
-                        op1: 0 as *mut Expr,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: 0,
-                        op1_is_const: 1,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(Expr { op1: 0usize as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 });
                 }
+                Ok(expr.clone())
             }
-            21 => { // Or
-                // x || false = x
+            Some(OpKind::Or) => {
                 if expr.op2_is_const != 0 && expr.op2 as u64 == 0 {
-                    return Ok(Expr {
-                        op1: expr.op1,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op1_is_const != 0 { 0 } else { 100 },
-                        op1_is_const: expr.op1_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op1).clone() });
                 }
-                // x || true = true
                 if (expr.op1_is_const != 0 && expr.op1 as u64 == 1) ||
                    (expr.op2_is_const != 0 && expr.op2 as u64 == 1) {
-                    return Ok(Expr {
-                        op1: 1 as *mut Expr,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: 0,
-                        op1_is_const: 1,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(Expr { op1: 1usize as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 });
                 }
+                Ok(expr.clone())
             }
-            _ => {}
+            _ => Ok(expr.clone())
         }
-        
-        Ok(expr.clone())
     }
     
     fn priority(&self) -> u32 { 120 }
@@ -454,15 +401,15 @@ impl SimplificationRule for ArithmeticSimplificationRule {
     fn name(&self) -> &str { "ArithmeticSimplification" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        match expr.opkind {
-            2 => { // Sub
+        match OpKind::try_from(expr.opkind).ok() {
+            Some(OpKind::Sub) => {
                 // x - x = 0
                 if expr.op1 == expr.op2 && expr.op1_is_const == expr.op2_is_const {
                     return Ok(Expr {
-                        op1: 0 as *mut Expr,
+                        op1: 0usize as *mut Expr,
                         op2: std::ptr::null_mut(),
                         op3: std::ptr::null_mut(),
-                        opkind: 1, // IsConst
+                        opkind: OpKind::IsConst as u8,
                         op1_is_const: 1,
                         op2_is_const: 0,
                         op3_is_const: 0,
@@ -470,63 +417,39 @@ impl SimplificationRule for ArithmeticSimplificationRule {
                 }
                 // x - 0 = x
                 if expr.op2_is_const != 0 && expr.op2 as u64 == 0 {
-                    return Ok(Expr {
-                        op1: expr.op1,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op1_is_const != 0 { 1 } else { expr.opkind },
-                        op1_is_const: expr.op1_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op1).clone() });
                 }
             }
-            4 => { // Div
+            Some(OpKind::Div) => {
                 // x / 1 = x
                 if expr.op2_is_const != 0 && expr.op2 as u64 == 1 {
-                    return Ok(Expr {
-                        op1: expr.op1,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op1_is_const != 0 { 1 } else { expr.opkind },
-                        op1_is_const: expr.op1_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op1).clone() });
                 }
                 // x / x = 1
                 if expr.op1 == expr.op2 && expr.op1_is_const == expr.op2_is_const {
                     return Ok(Expr {
-                        op1: 1 as *mut Expr,
+                        op1: 1usize as *mut Expr,
                         op2: std::ptr::null_mut(),
                         op3: std::ptr::null_mut(),
-                        opkind: 1, // IsConst
+                        opkind: OpKind::IsConst as u8,
                         op1_is_const: 1,
                         op2_is_const: 0,
                         op3_is_const: 0,
                     });
                 }
             }
-            12 => { // Xor
+            Some(OpKind::Xor) => {
                 // x ^ 0 = x
                 if expr.op2_is_const != 0 && expr.op2 as u64 == 0 {
-                    return Ok(Expr {
-                        op1: expr.op1,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op1_is_const != 0 { 0 } else { 100 },
-                        op1_is_const: expr.op1_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op1).clone() });
                 }
                 // x ^ x = 0
                 if expr.op1 == expr.op2 && expr.op1_is_const == expr.op2_is_const {
                     return Ok(Expr {
-                        op1: 0 as *mut Expr,
+                        op1: 0usize as *mut Expr,
                         op2: std::ptr::null_mut(),
                         op3: std::ptr::null_mut(),
-                        opkind: 0,
+                        opkind: OpKind::IsConst as u8,
                         op1_is_const: 1,
                         op2_is_const: 0,
                         op3_is_const: 0,
@@ -547,16 +470,16 @@ impl SimplificationRule for BitvectorSimplificationRule {
     fn name(&self) -> &str { "BitvectorSimplification" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        match expr.opkind {
-            10 => { // BitwiseAnd
+        match OpKind::try_from(expr.opkind).ok() {
+            Some(OpKind::And) => {
                 // x & 0 = 0
                 if (expr.op1_is_const != 0 && expr.op1 as u64 == 0) ||
                    (expr.op2_is_const != 0 && expr.op2 as u64 == 0) {
                     return Ok(Expr {
-                        op1: 0 as *mut Expr,
+                        op1: 0usize as *mut Expr,
                         op2: std::ptr::null_mut(),
                         op3: std::ptr::null_mut(),
-                        opkind: 0,
+                        opkind: OpKind::IsConst as u8,
                         op1_is_const: 1,
                         op2_is_const: 0,
                         op3_is_const: 0,
@@ -564,63 +487,31 @@ impl SimplificationRule for BitvectorSimplificationRule {
                 }
                 // x & x = x
                 if expr.op1 == expr.op2 && expr.op1_is_const == expr.op2_is_const {
-                    return Ok(Expr {
-                        op1: expr.op1,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op1_is_const != 0 { 0 } else { 100 },
-                        op1_is_const: expr.op1_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op1).clone() });
                 }
             }
-            11 => { // BitwiseOr
+            Some(OpKind::Or) => {
                 // x | 0 = x
                 if expr.op2_is_const != 0 && expr.op2 as u64 == 0 {
-                    return Ok(Expr {
-                        op1: expr.op1,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op1_is_const != 0 { 0 } else { 100 },
-                        op1_is_const: expr.op1_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op1).clone() });
                 }
                 // x | x = x
                 if expr.op1 == expr.op2 && expr.op1_is_const == expr.op2_is_const {
-                    return Ok(Expr {
-                        op1: expr.op1,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op1_is_const != 0 { 0 } else { 100 },
-                        op1_is_const: expr.op1_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op1).clone() });
                 }
             }
-            12 => { // BitwiseXor
+            Some(OpKind::Xor) => {
                 // x ^ 0 = x
                 if expr.op2_is_const != 0 && expr.op2 as u64 == 0 {
-                    return Ok(Expr {
-                        op1: expr.op1,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: if expr.op1_is_const != 0 { 0 } else { 100 },
-                        op1_is_const: expr.op1_is_const,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(unsafe { (*expr.op1).clone() });
                 }
                 // x ^ x = 0
                 if expr.op1 == expr.op2 && expr.op1_is_const == expr.op2_is_const {
                     return Ok(Expr {
-                        op1: 0 as *mut Expr,
+                        op1: 0usize as *mut Expr,
                         op2: std::ptr::null_mut(),
                         op3: std::ptr::null_mut(),
-                        opkind: 0,
+                        opkind: OpKind::IsConst as u8,
                         op1_is_const: 1,
                         op2_is_const: 0,
                         op3_is_const: 0,
@@ -641,83 +532,35 @@ impl SimplificationRule for ExtractOptimizationRule {
     fn name(&self) -> &str { "ExtractOptimization" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        if expr.opkind != 38 { // Extract
+        if OpKind::try_from(expr.opkind).ok() != Some(OpKind::Extract) {
             return Ok(expr.clone());
         }
-        
-        let op1 = unsafe { &*expr.op1 };
-        let high = (expr.op2 as u64 >> 32) as u32; // Extract high parameter
-        let low = (expr.op2 as u64 & 0xFFFFFFFF) as u32; // Extract low parameter
-        
-        // Pattern: extract from constant
-        if op1.opkind == 1 && op1.op1_is_const != 0 {
-            let value = op1.op1 as u64;
-            // Extract bits [high:low] from value
+        // Expect op2 to carry (high<<32 | low) as immediate (const) indices
+        if expr.op2_is_const == 0 || expr.op1.is_null() {
+            return Ok(expr.clone());
+        }
+        let params = expr.op2 as u64;
+        let high = (params >> 32) as u32;
+        let low = (params & 0xFFFF_FFFF) as u32;
+        if high < low { return Ok(expr.clone()); }
+
+        let op1_ref = unsafe { &*expr.op1 };
+        // Handle only constant source safely
+        if OpKind::try_from(op1_ref.opkind).ok() == Some(OpKind::IsConst) && op1_ref.op1_is_const != 0 {
+            let value = op1_ref.op1 as u64;
             let width = high - low + 1;
             let mask = if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
             let result = (value >> low) & mask;
-            
-            
             return Ok(Expr {
                 op1: result as *mut Expr,
                 op2: std::ptr::null_mut(),
                 op3: std::ptr::null_mut(),
-                opkind: 1, // IsConst
+                opkind: OpKind::IsConst as u8,
                 op1_is_const: 1,
                 op2_is_const: 0,
                 op3_is_const: 0,
             });
         }
-        
-        // Pattern: extract from concatenation
-        if op1.opkind == 34 { // Concat
-            let _arg1 = unsafe { &*op1.op1 }; // High part
-            let arg2 = unsafe { &*op1.op2 }; // Low part
-            let arg2_size = self.get_expr_size(arg2);
-            
-            // Keep only low part
-            if high < arg2_size {
-                return Ok(Expr {
-                    op1: op1.op2,
-                    op2: (((high as u64) << 32) | (low as u64)) as *mut Expr,
-                    op3: std::ptr::null_mut(),
-                    opkind: 38, // Extract
-                    op1_is_const: 0,
-                    op2_is_const: 1,
-                    op3_is_const: 0,
-                });
-            }
-            
-            // Keep only high part
-            if low >= arg2_size {
-                return Ok(Expr {
-                    op1: op1.op1,
-                    op2: ((((high - arg2_size) as u64) << 32) | ((low - arg2_size) as u64)) as *mut Expr,
-                    op3: std::ptr::null_mut(),
-                    opkind: 38, // Extract
-                    op1_is_const: 0,
-                    op2_is_const: 1,
-                    op3_is_const: 0,
-                });
-            }
-        }
-        
-        // Pattern: nested extract
-        if op1.opkind == 38 { // Extract
-            let _nested_high = (op1.op2 as u64 >> 32) as u32;
-            let nested_low = (op1.op2 as u64 & 0xFFFFFFFF) as u32;
-            
-            return Ok(Expr {
-                op1: op1.op1,
-                op2: ((((high + nested_low) as u64) << 32) | ((low + nested_low) as u64)) as *mut Expr,
-                op3: std::ptr::null_mut(),
-                opkind: 38, // Extract
-                op1_is_const: 0,
-                op2_is_const: 1,
-                op3_is_const: 0,
-            });
-        }
-        
         Ok(expr.clone())
     }
     
@@ -725,6 +568,7 @@ impl SimplificationRule for ExtractOptimizationRule {
 }
 
 impl ExtractOptimizationRule {
+    #[allow(dead_code)]
     fn get_expr_size(&self, _expr: &Expr) -> u32 {
         // Simplified size calculation - in full implementation would analyze expression
         32 // Default to 32-bit
@@ -738,38 +582,7 @@ impl SimplificationRule for ConcatenationOptimizationRule {
     fn name(&self) -> &str { "ConcatenationOptimization" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        if expr.opkind != 34 { // Concat
-            return Ok(expr.clone());
-        }
-        
-        let arg1 = unsafe { &*expr.op1 };
-        let arg2 = unsafe { &*expr.op2 };
-        
-        // Pattern: concat with zero constant
-        if arg1.opkind == 1 && arg1.op1_is_const != 0 && arg1.op1 as u64 == 0 {
-            // 0 .. X = X (with proper zero extension)
-            return Ok(arg2.clone());
-        }
-        
-        // Pattern: concat two constants
-        if arg1.opkind == 1 && arg1.op1_is_const != 0 &&
-           arg2.opkind == 1 && arg2.op1_is_const != 0 {
-            let val1 = arg1.op1 as u64;
-            let val2 = arg2.op1 as u64;
-            let size2 = self.get_expr_size(arg2);
-            let result = (val1 << size2) | val2;
-            
-            return Ok(Expr {
-                op1: result as *mut Expr,
-                op2: std::ptr::null_mut(),
-                op3: std::ptr::null_mut(),
-                opkind: 1, // IsConst
-                op1_is_const: 1,
-                op2_is_const: 0,
-                op3_is_const: 0,
-            });
-        }
-        
+        // Disabled for now to avoid incorrect size handling.
         Ok(expr.clone())
     }
     
@@ -777,6 +590,7 @@ impl SimplificationRule for ConcatenationOptimizationRule {
 }
 
 impl ConcatenationOptimizationRule {
+    #[allow(dead_code)]
     fn get_expr_size(&self, _expr: &Expr) -> u32 {
         // Simplified size calculation
         32
@@ -790,74 +604,7 @@ impl SimplificationRule for SubtractionTransformRule {
     fn name(&self) -> &str { "SubtractionTransform" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        // Pattern: 0 - X == Y  =>  X == -Y
-        if expr.opkind == 22 { // Eq
-            let left = unsafe { &*expr.op1 };
-            let right = unsafe { &*expr.op2 };
-            
-            if left.opkind == 6 && // Sub
-               left.op1_is_const != 0 && left.op1 as u64 == 0 &&
-               right.op1_is_const != 0 {
-                // Transform: (0 - X) == C  =>  X == -C
-                let neg_const = (-(right.op1 as i64)) as u64;
-                return Ok(Expr {
-                    op1: left.op2,
-                    op2: neg_const as *mut Expr,
-                    op3: std::ptr::null_mut(),
-                    opkind: 22, // Eq
-                    op1_is_const: 0,
-                    op2_is_const: 1,
-                    op3_is_const: 0,
-                });
-            }
-        }
-        
-        // Pattern: (X + C1) == C2  =>  X == (C2 - C1)
-        if expr.opkind == 22 { // Eq
-            let left = unsafe { &*expr.op1 };
-            let right = unsafe { &*expr.op2 };
-            
-            if left.opkind == 5 && // Add
-               left.op2_is_const != 0 && right.op1_is_const != 0 {
-                let c1 = left.op2 as u64;
-                let c2 = right.op1 as u64;
-                let result = c2.wrapping_sub(c1);
-                
-                return Ok(Expr {
-                    op1: left.op1,
-                    op2: result as *mut Expr,
-                    op3: std::ptr::null_mut(),
-                    opkind: 22, // Eq
-                    op1_is_const: 0,
-                    op2_is_const: 1,
-                    op3_is_const: 0,
-                });
-            }
-        }
-        
-        // Pattern: (X - C1) == C2  =>  X == (C2 + C1)
-        if expr.opkind == 22 { // Eq
-            let left = unsafe { &*expr.op1 };
-            let right = unsafe { &*expr.op2 };
-            
-            if left.opkind == 6 && // Sub
-               left.op2_is_const != 0 && right.op1_is_const != 0 {
-                let c1 = left.op2 as u64;
-                let c2 = right.op1 as u64;
-                let result = c2.wrapping_add(c1);
-                
-                return Ok(Expr {
-                    op1: left.op1,
-                    op2: result as *mut Expr,
-                    op3: std::ptr::null_mut(),
-                    opkind: 22, // Eq
-                    op1_is_const: 0,
-                    op2_is_const: 1,
-                    op3_is_const: 0,
-                });
-            }
-        }
-        
+        // Disabled for now to avoid risky algebraic rewrites.
         Ok(expr.clone())
     }
     
@@ -872,28 +619,28 @@ impl SimplificationRule for ZeroExtensionRule {
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         // Pattern: (0#M .. X) where we can eliminate zero extension
-        if expr.opkind == 34 { // Concat
+        if OpKind::try_from(expr.opkind).ok() == Some(OpKind::Concat) {
             let arg1 = unsafe { &*expr.op1 };
             let arg2 = unsafe { &*expr.op2 };
             
             // Zero concatenation elimination
-            if arg1.opkind == 1 && arg1.op1_is_const != 0 && arg1.op1 as u64 == 0 {
+            if OpKind::try_from(arg1.opkind).ok() == Some(OpKind::IsConst) && arg1.op1_is_const != 0 && arg1.op1 as u64 == 0 {
                 // In many contexts, 0#M .. X can be simplified to just X
                 return Ok(arg2.clone());
             }
         }
         
         // Pattern: extract from zero-extended value
-        if expr.opkind == 38 { // Extract
+        if OpKind::try_from(expr.opkind).ok() == Some(OpKind::Extract) {
             let op1 = unsafe { &*expr.op1 };
             let low = (expr.op2 as u64 & 0xFFFFFFFF) as u32;
             
-            if op1.opkind == 34 { // Concat
+            if OpKind::try_from(op1.opkind).ok() == Some(OpKind::Concat) {
                 let concat_arg1 = unsafe { &*op1.op1 };
                 let concat_arg2 = unsafe { &*op1.op2 };
                 
                 // Extract from (0#M .. X) where extract is within X
-                if concat_arg1.opkind == 1 && concat_arg1.op1_is_const != 0 && 
+                if OpKind::try_from(concat_arg1.opkind).ok() == Some(OpKind::IsConst) && concat_arg1.op1_is_const != 0 && 
                    concat_arg1.op1 as u64 == 0 && low == 0 {
                     return Ok(concat_arg2.clone());
                 }
@@ -914,24 +661,24 @@ impl SimplificationRule for ShiftOptimizationRule {
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         // Pattern: extract from shift operations
-        if expr.opkind == 38 { // Extract
+        if OpKind::try_from(expr.opkind).ok() == Some(OpKind::Extract) {
             let op1 = unsafe { &*expr.op1 };
             let high = (expr.op2 as u64 >> 32) as u32;
             let low = (expr.op2 as u64 & 0xFFFFFFFF) as u32;
             
             // Pattern: ((0#N .. X) << C)[high:0] => (X << C) or ((0#M .. X) << C)
-            if op1.opkind == 16 && // Shl
+            if OpKind::try_from(op1.opkind).ok() == Some(OpKind::Shl) &&
                low == 0 {
                 let shl_arg1 = unsafe { &*op1.op1 };
                 let shl_arg2 = unsafe { &*op1.op2 };
                 
-                if shl_arg1.opkind == 34 && // Concat
+                if OpKind::try_from(shl_arg1.opkind).ok() == Some(OpKind::Concat) &&
                    shl_arg2.op1_is_const != 0 {
                     let concat_arg1 = unsafe { &*shl_arg1.op1 };
                     let concat_arg2 = unsafe { &*shl_arg1.op2 };
                     
                     // Zero-extended shift optimization
-                    if concat_arg1.opkind == 1 && concat_arg1.op1_is_const != 0 && 
+                    if OpKind::try_from(concat_arg1.opkind).ok() == Some(OpKind::IsConst) && concat_arg1.op1_is_const != 0 && 
                        concat_arg1.op1 as u64 == 0 {
                         let x_size = self.get_expr_size(concat_arg2);
                         
@@ -941,7 +688,7 @@ impl SimplificationRule for ShiftOptimizationRule {
                                 op1: concat_arg2 as *const Expr as *mut Expr,
                                 op2: shl_arg2 as *const Expr as *mut Expr,
                                 op3: std::ptr::null_mut(),
-                                opkind: 16, // Shl
+                                opkind: OpKind::Shl as u8,
                                 op1_is_const: 0,
                                 op2_is_const: shl_arg2.op1_is_const,
                                 op3_is_const: 0,
@@ -952,17 +699,17 @@ impl SimplificationRule for ShiftOptimizationRule {
             }
             
             // Pattern: ((0#M .. X) >>l C)[high:0] => X >>l C (with conditions)
-            if op1.opkind == 17 && // Shr (logical)
+            if OpKind::try_from(op1.opkind).ok() == Some(OpKind::Shr) &&
                low == 0 && high > 7 {
                 let shr_arg1 = unsafe { &*op1.op1 };
                 let shr_arg2 = unsafe { &*op1.op2 };
                 
-                if shr_arg1.opkind == 34 && // Concat
+                if OpKind::try_from(shr_arg1.opkind).ok() == Some(OpKind::Concat) &&
                    shr_arg2.op1_is_const != 0 {
                     let concat_arg1 = unsafe { &*shr_arg1.op1 };
                     let concat_arg2 = unsafe { &*shr_arg1.op2 };
                     
-                    if concat_arg1.opkind == 1 && concat_arg1.op1_is_const != 0 && 
+                    if OpKind::try_from(concat_arg1.opkind).ok() == Some(OpKind::IsConst) && concat_arg1.op1_is_const != 0 && 
                        concat_arg1.op1 as u64 == 0 {
                         let x_size = self.get_expr_size(concat_arg2);
                         
@@ -971,7 +718,7 @@ impl SimplificationRule for ShiftOptimizationRule {
                                 op1: concat_arg2 as *const Expr as *mut Expr,
                                 op2: shr_arg2 as *const Expr as *mut Expr,
                                 op3: std::ptr::null_mut(),
-                                opkind: 17, // Shr
+                                opkind: OpKind::Shr as u8,
                                 op1_is_const: 0,
                                 op2_is_const: shr_arg2.op1_is_const,
                                 op3_is_const: 0,
@@ -1002,13 +749,13 @@ impl SimplificationRule for BitwiseOptimizationRule {
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         // Pattern: extract from bitwise operations with constants
-        if expr.opkind == 38 { // Extract
+        if OpKind::try_from(expr.opkind).ok() == Some(OpKind::Extract) {
             let op1 = unsafe { &*expr.op1 };
             let high = (expr.op2 as u64 >> 32) as u32;
             let low = (expr.op2 as u64 & 0xFFFFFFFF) as u32;
             
             // Pattern: (X & C)[high:0] => (X[high:0] & C#(high+1))
-            if op1.opkind == 13 && // And
+            if OpKind::try_from(op1.opkind).ok() == Some(OpKind::And) &&
                low == 0 {
                 let and_arg1 = unsafe { &*op1.op1 };
                 let and_arg2 = unsafe { &*op1.op2 };
@@ -1022,7 +769,7 @@ impl SimplificationRule for BitwiseOptimizationRule {
                         op1: and_arg1 as *const Expr as *mut Expr,
                         op2: masked_const as *mut Expr,
                         op3: std::ptr::null_mut(),
-                        opkind: 13, // And
+                        opkind: OpKind::And as u8,
                         op1_is_const: 0,
                         op2_is_const: 1,
                         op3_is_const: 0,
@@ -1031,7 +778,7 @@ impl SimplificationRule for BitwiseOptimizationRule {
             }
             
             // Pattern: (X ^ C)[high:0] => (X[high:0] ^ C#(high+1))
-            if op1.opkind == 15 && // Xor
+            if OpKind::try_from(op1.opkind).ok() == Some(OpKind::Xor) &&
                low == 0 {
                 let xor_arg1 = unsafe { &*op1.op1 };
                 let xor_arg2 = unsafe { &*op1.op2 };
@@ -1045,7 +792,7 @@ impl SimplificationRule for BitwiseOptimizationRule {
                         op1: xor_arg1 as *const Expr as *mut Expr,
                         op2: masked_const as *mut Expr,
                         op3: std::ptr::null_mut(),
-                        opkind: 15, // Xor
+                        opkind: OpKind::Xor as u8,
                         op1_is_const: 0,
                         op2_is_const: 1,
                         op3_is_const: 0,
@@ -1054,16 +801,16 @@ impl SimplificationRule for BitwiseOptimizationRule {
             }
             
             // Special pattern: (X & 0xffffffffffffff00)[7:0] => 0
-            if op1.opkind == 13 && // And
+            if OpKind::try_from(op1.opkind).ok() == Some(OpKind::And) &&
                low == 0 && high == 7 {
                 let and_arg2 = unsafe { &*op1.op2 };
                 
                 if and_arg2.op1_is_const != 0 && and_arg2.op1 as u64 == 0xffffffffffffff00 {
                     return Ok(Expr {
-                        op1: 0 as *mut Expr,
+                        op1: 0usize as *mut Expr,
                         op2: std::ptr::null_mut(),
                         op3: std::ptr::null_mut(),
-                        opkind: 1, // IsConst
+                        opkind: OpKind::IsConst as u8,
                         op1_is_const: 1,
                         op2_is_const: 0,
                         op3_is_const: 0,
@@ -1086,14 +833,14 @@ impl SimplificationRule for ArithmeticExtractRule {
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         // Pattern: (X op Y)[high:0] => X[high:0] op Y[high:0] for arithmetic ops
-        if expr.opkind == 38 { // Extract
+        if OpKind::try_from(expr.opkind).ok() == Some(OpKind::Extract) {
             let op1 = unsafe { &*expr.op1 };
             let high = (expr.op2 as u64 >> 32) as u32;
             let low = (expr.op2 as u64 & 0xFFFFFFFF) as u32;
             
             if low == 0 {
-                match op1.opkind {
-                    5 | 6 | 7 => { // Add, Sub, Mul
+                match OpKind::try_from(op1.opkind).ok() {
+                    Some(OpKind::Add) | Some(OpKind::Sub) | Some(OpKind::Mul) => {
                         let arith_arg1 = unsafe { &*op1.op1 };
                         let arith_arg2 = unsafe { &*op1.op2 };
                         
@@ -1104,7 +851,7 @@ impl SimplificationRule for ArithmeticExtractRule {
                             op1: arith_arg1 as *const Expr as *mut Expr,
                             op2: extract_params as *mut Expr,
                             op3: std::ptr::null_mut(),
-                            opkind: 38, // Extract
+                            opkind: OpKind::Extract as u8,
                             op1_is_const: 0,
                             op2_is_const: 1,
                             op3_is_const: 0,
@@ -1114,7 +861,7 @@ impl SimplificationRule for ArithmeticExtractRule {
                             op1: arith_arg2 as *const Expr as *mut Expr,
                             op2: extract_params as *mut Expr,
                             op3: std::ptr::null_mut(),
-                            opkind: 38, // Extract
+                            opkind: OpKind::Extract as u8,
                             op1_is_const: 0,
                             op2_is_const: 1,
                             op3_is_const: 0,
@@ -1150,12 +897,12 @@ impl SimplificationRule for ConditionalOptimizationRule {
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         // Pattern: extract from ITE
-        if expr.opkind == 38 { // Extract
+        if OpKind::try_from(expr.opkind).ok() == Some(OpKind::Extract) {
             let op1 = unsafe { &*expr.op1 };
             let high = (expr.op2 as u64 >> 32) as u32;
             let low = (expr.op2 as u64 & 0xFFFFFFFF) as u32;
             
-            if op1.opkind == 48 { // Ite
+            if OpKind::try_from(op1.opkind).ok() == Some(OpKind::Ite) {
                 let cond = unsafe { &*op1.op1 };
                 let then_branch = unsafe { &*op1.op2 };
                 let else_branch = unsafe { &*op1.op3 };
@@ -1172,7 +919,7 @@ impl SimplificationRule for ConditionalOptimizationRule {
                         op1: cond as *const Expr as *mut Expr,
                         op2: c1_bit as *mut Expr,
                         op3: c2_bit as *mut Expr,
-                        opkind: 48, // Ite
+                        opkind: OpKind::Ite as u8,
                         op1_is_const: 0,
                         op2_is_const: 1,
                         op3_is_const: 1,
@@ -1192,7 +939,7 @@ impl SimplificationRule for ConditionalOptimizationRule {
                             op1: result as *mut Expr,
                             op2: std::ptr::null_mut(),
                             op3: std::ptr::null_mut(),
-                            opkind: 1, // IsConst
+                            opkind: OpKind::IsConst as u8,
                             op1_is_const: 1,
                             op2_is_const: 0,
                             op3_is_const: 0,
@@ -1203,7 +950,7 @@ impl SimplificationRule for ConditionalOptimizationRule {
         }
         
         // Pattern: ITE with constant condition
-        if expr.opkind == 48 { // Ite
+        if OpKind::try_from(expr.opkind).ok() == Some(OpKind::Ite) {
             let cond = unsafe { &*expr.op1 };
             let then_branch = unsafe { &*expr.op2 };
             let else_branch = unsafe { &*expr.op3 };
@@ -1238,7 +985,7 @@ impl SimplificationRule for BitwiseOrOptimizationRule {
     fn name(&self) -> &str { "BitwiseOrOptimization" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        if expr.opkind != 14 { // Or
+        if OpKind::try_from(expr.opkind).ok() != Some(OpKind::Or) {
             return Ok(expr.clone());
         }
         
@@ -1265,13 +1012,13 @@ impl SimplificationRule for BitwiseOrOptimizationRule {
         }
         
         // Pattern: extract(0) | X = X
-        if op1.opkind == 38 { // Extract
+        if OpKind::try_from(op1.opkind).ok() == Some(OpKind::Extract) {
             let extract_op = unsafe { &*op1.op1 };
             if extract_op.op1_is_const != 0 && extract_op.op1 as u64 == 0 {
                 return Ok(op2.clone());
             }
         }
-        if op2.opkind == 38 { // Extract
+        if OpKind::try_from(op2.opkind).ok() == Some(OpKind::Extract) {
             let extract_op = unsafe { &*op2.op1 };
             if extract_op.op1_is_const != 0 && extract_op.op1 as u64 == 0 {
                 return Ok(op1.clone());
@@ -1297,7 +1044,7 @@ impl SimplificationRule for ConcatenationAdvancedRule {
     fn name(&self) -> &str { "ConcatenationAdvanced" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        if expr.opkind != 34 { // Concat
+        if OpKind::try_from(expr.opkind).ok() != Some(OpKind::Concat) {
             return Ok(expr.clone());
         }
         
@@ -1305,7 +1052,7 @@ impl SimplificationRule for ConcatenationAdvancedRule {
         let op2 = unsafe { &*expr.op2 };
         
         // Pattern: C1 .. (C2 .. X) => (C1 .. C2) .. X (constant folding)
-        if op1.op1_is_const != 0 && op2.opkind == 34 { // op2 is also concat
+        if op1.op1_is_const != 0 && OpKind::try_from(op2.opkind).ok() == Some(OpKind::Concat) {
             let op2_left = unsafe { &*op2.op1 };
             let op2_right = unsafe { &*op2.op2 };
             
@@ -1321,7 +1068,7 @@ impl SimplificationRule for ConcatenationAdvancedRule {
                         op1: combined_val as *mut Expr,
                         op2: std::ptr::null_mut(),
                         op3: std::ptr::null_mut(),
-                        opkind: 1, // IsConst
+                        opkind: OpKind::IsConst as u8,
                         op1_is_const: 1,
                         op2_is_const: 0,
                         op3_is_const: 0,
@@ -1331,7 +1078,7 @@ impl SimplificationRule for ConcatenationAdvancedRule {
                         op1: &combined_const as *const Expr as *mut Expr,
                         op2: op2_right as *const Expr as *mut Expr,
                         op3: std::ptr::null_mut(),
-                        opkind: 34, // Concat
+                        opkind: OpKind::Concat as u8,
                         op1_is_const: 1,
                         op2_is_const: 0,
                         op3_is_const: 0,
@@ -1341,12 +1088,12 @@ impl SimplificationRule for ConcatenationAdvancedRule {
         }
         
         // Pattern: Y .. ((0#M .. X)[high:0]) where size(X) == high + 1 => Y .. X
-        if op2.opkind == 38 { // Extract
+        if OpKind::try_from(op2.opkind).ok() == Some(OpKind::Extract) {
             let extract_op = unsafe { &*op2.op1 };
             let high = (op2.op2 as u64 >> 32) as u32;
             let low = (op2.op2 as u64 & 0xFFFFFFFF) as u32;
             
-            if extract_op.opkind == 34 { // Concat
+            if OpKind::try_from(extract_op.opkind).ok() == Some(OpKind::Concat) {
                 let concat_left = unsafe { &*extract_op.op1 };
                 let concat_right = unsafe { &*extract_op.op2 };
                 
@@ -1358,7 +1105,7 @@ impl SimplificationRule for ConcatenationAdvancedRule {
                             op1: op1 as *const Expr as *mut Expr,
                             op2: concat_right as *const Expr as *mut Expr,
                             op3: std::ptr::null_mut(),
-                            opkind: 34, // Concat
+                            opkind: OpKind::Concat as u8,
                             op1_is_const: op1.op1_is_const,
                             op2_is_const: 0,
                             op3_is_const: 0,
@@ -1388,12 +1135,12 @@ impl SimplificationRule for SignExtensionRule {
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         // Pattern: extract from sign extension
-        if expr.opkind == 38 { // Extract
+        if OpKind::try_from(expr.opkind).ok() == Some(OpKind::Extract) {
             let op1 = unsafe { &*expr.op1 };
             let high = (expr.op2 as u64 >> 32) as u32;
             let low = (expr.op2 as u64 & 0xFFFFFFFF) as u32;
             
-            if op1.opkind == 33 && low == 0 { // Sext (sign extension)
+            if OpKind::try_from(op1.opkind).ok() == Some(OpKind::Sext) && low == 0 {
                 let sext_arg = unsafe { &*op1.op1 };
                 let arg_size = self.get_expr_size(sext_arg);
                 
@@ -1406,7 +1153,7 @@ impl SimplificationRule for SignExtensionRule {
                         op1: sext_arg as *const Expr as *mut Expr,
                         op2: expr.op2,
                         op3: std::ptr::null_mut(),
-                        opkind: 38, // Extract
+                        opkind: OpKind::Extract as u8,
                         op1_is_const: 0,
                         op2_is_const: 1,
                         op3_is_const: 0,
@@ -1418,7 +1165,7 @@ impl SimplificationRule for SignExtensionRule {
                         op1: sext_arg as *const Expr as *mut Expr,
                         op2: extend_amount as *mut Expr,
                         op3: std::ptr::null_mut(),
-                        opkind: 33, // Sext
+                        opkind: OpKind::Sext as u8,
                         op1_is_const: 0,
                         op2_is_const: 1,
                         op3_is_const: 0,

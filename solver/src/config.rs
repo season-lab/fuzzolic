@@ -82,6 +82,10 @@ pub struct Config {
     /// Enable branch coverage
     #[arg(skip)]
     pub use_branch_coverage: bool,
+
+    /// Enable expression simplifier (conservative subset)
+    #[arg(skip)]
+    pub use_expr_simplifier: bool,
 }
 
 impl Config {
@@ -124,6 +128,8 @@ impl Config {
         self.polling_interval_ms = 10;
         self.use_shared_memory = true;
         self.use_branch_coverage = true;
+        // Expression simplifier disabled by default; enable with USE_EXPR_SIMPLIFIER=1
+        self.use_expr_simplifier = std::env::var("USE_EXPR_SIMPLIFIER").unwrap_or_default() == "1";
         
         Ok(self)
     }

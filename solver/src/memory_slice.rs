@@ -1,4 +1,3 @@
-// Memory slice reasoning placeholder
 use anyhow::Result;
 use log::{debug, warn};
 use std::collections::HashMap;

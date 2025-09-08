@@ -9,17 +9,14 @@ pub mod query_processor;
 pub mod dependency_graph;
 pub mod concrete_eval;
 pub mod memory_slice;
-pub mod fuzzy_solver;
-pub mod testcase_generator;
 pub mod memory_reasoning;
 pub mod dependency;
 pub mod z3_cache;
+pub mod fuzzy_ffi;
 
 #[cfg(test)]
 mod shared_memory_tests;
-pub mod testcase_loader;
 pub mod i386;
-pub mod benchmarking;
 pub mod expression_simplifier;
 
 pub use config::Config;
@@ -28,7 +25,6 @@ pub use testcase::Testcase;
 pub use crate::solver::{SMTSolver, SolverStatistics};
 pub use branch_coverage::BranchCoverage;
 pub use shared_memory::{SharedExprPool, QueryQueue};
-pub use fuzzy_solver::FuzzySolver;
 pub use query_processor::QueryProcessor;
 use anyhow::Result;
 use log::info;

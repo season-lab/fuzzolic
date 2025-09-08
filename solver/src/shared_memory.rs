@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::ptr;
 use std::sync::atomic::{fence, Ordering};
 use log::{info, debug, error};
-use libc::{shmget, shmat, shmdt, IPC_CREAT};
+use libc::{shmget, shmat, shmdt, shmctl, IPC_CREAT, IPC_RMID};
 
 /// Statistics for monitoring queue performance
 #[derive(Debug, Clone)]
@@ -30,8 +30,7 @@ pub struct SharedExprPool {
     pool: *mut Expr,
     capacity: usize,
     current_index: usize,
-    #[allow(dead_code)]
-    _shm_id: i32,
+    shm_id: i32,
 }
 
 // SAFETY: SharedExprPool manages shared memory that can be safely accessed across threads
@@ -67,7 +66,7 @@ impl SharedExprPool {
             pool,
             capacity,
             current_index: 0,
-            _shm_id: shm_id,
+            shm_id,
         })
     }
     
@@ -125,6 +124,8 @@ impl SharedExprPool {
 impl Drop for SharedExprPool {
     fn drop(&mut self) {
         unsafe {
+            // Mark segment for removal
+            let _ = shmctl(self.shm_id, IPC_RMID, std::ptr::null_mut());
             if shmdt(self.pool as *const libc::c_void) == -1 {
                 error!("Failed to detach from expression pool shared memory");
             }
@@ -138,8 +139,7 @@ pub struct QueryQueue {
     capacity: usize,
     read_index: usize,
     write_index: usize,
-    #[allow(dead_code)]
-    _shm_id: i32,
+    shm_id: i32,
 }
 
 // SAFETY: QueryQueue manages shared memory that can be safely accessed across threads
@@ -176,7 +176,7 @@ impl QueryQueue {
             capacity,
             read_index: 0,
             write_index: 0,
-            _shm_id: shm_id,
+            shm_id,
         })
     }
     
@@ -321,6 +321,8 @@ impl QueryQueue {
 impl Drop for QueryQueue {
     fn drop(&mut self) {
         unsafe {
+            // Mark segment for removal
+            let _ = shmctl(self.shm_id, IPC_RMID, std::ptr::null_mut());
             if shmdt(self.queue as *const libc::c_void) == -1 {
                 error!("Failed to detach from query queue shared memory");
             }

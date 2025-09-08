@@ -15,14 +15,25 @@ fn main() {
     
     // Link search paths for forked Z3
     println!("cargo:rustc-link-search=native={}", z3_build_path.display());
-    
-    // Only link fuzzy solver if explicitly requested
-    // For now, disable fuzzy solver linking to avoid undefined references
-    // The fuzzy solver library has missing symbols that need to be resolved
-    println!("cargo:warning=Fuzzy solver disabled - requires additional symbol resolution");
+    // Link fuzzy solver static library (libZ3Fuzzy.a)
+    let fuzzy_lib_dir = PathBuf::from(&manifest_dir).join("fuzzy-sat");
+    println!("cargo:rustc-link-search=native={}", fuzzy_lib_dir.display());
+    println!("cargo:rustc-link-lib=static=Z3Fuzzy");
+    // Also link libz3 (provided by fork build directory)
+    println!("cargo:rustc-link-lib=static=z3");
     
     // Link against system libraries that were used in the C version
     println!("cargo:rustc-link-lib=dylib=glib-2.0");
+    
+    // Build our local C bridge to the fuzzy solver API
+    let mut cc_build = cc::Build::new();
+    cc_build
+        .file("src/fuzz_bridge.c")
+        // include project root so #include "fuzzy-sat/z3-fuzzy.h" resolves
+        .include(&manifest_dir)
+        // include Z3 headers for <z3.h>
+        .include(z3_path.join("src/api"));
+    cc_build.compile("fuzz_bridge");
     
     // Rerun if libraries change
     println!("cargo:rerun-if-changed=fuzzy-sat/libZ3Fuzzy.a");

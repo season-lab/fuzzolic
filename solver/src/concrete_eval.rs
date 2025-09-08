@@ -48,6 +48,7 @@ impl ConcreteEvaluator {
     }
     
     /// Hash string like in C implementation
+    #[allow(dead_code)]
     fn hash_str(&self, s: &str) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -117,39 +118,61 @@ impl ConcreteEvaluator {
     /// Get inputs for expression (from eval.c get_inputs_expr)
     pub fn get_inputs_expr(&mut self, expr: &Dynamic) -> Vec<u64> {
         let hash = self.get_ast_id(expr);
-        
         if let Some(inputs) = self.ast_to_inputs.get(&hash) {
             return inputs.clone();
         }
-        
+
         let mut inputs = Vec::new();
-        self.collect_inputs_recursive(expr, &mut inputs);
-        
+        self.collect_inputs_structural(expr, &mut inputs);
+
+        // Fallback to string scan only if structural traversal found nothing
+        if inputs.is_empty() {
+            self.collect_inputs_string(expr, &mut inputs);
+        }
+
         self.ast_to_inputs.insert(hash, inputs.clone());
         inputs
     }
-    
-    fn collect_inputs_recursive(&self, expr: &Dynamic, inputs: &mut Vec<u64>) {
-        // Parse the expression and extract input symbols
-        // This is a simplified implementation that would need to be expanded
-        // based on the actual Z3 AST structure
-        
-        // For now, extract input IDs from the expression string representation
+
+    /// Structural traversal of Z3 AST to collect input_# symbols.
+    fn collect_inputs_structural(&self, expr: &Dynamic, inputs: &mut Vec<u64>) {
+        use z3::ast::Ast;
+        // If it's a constant, try to read its name via to_string()
+        if expr.is_const() {
+            let s = expr.to_string();
+            if let Some(id) = Self::parse_input_symbol(&s) {
+                if !inputs.contains(&id) { inputs.push(id); }
+            }
+            // Constants have no children; return
+            return;
+        }
+
+        // Recurse into children
+        for child in expr.children() {
+            self.collect_inputs_structural(&child, inputs);
+        }
+    }
+
+    /// Fallback: scan string form to find any lingering input_# substrings
+    fn collect_inputs_string(&self, expr: &Dynamic, inputs: &mut Vec<u64>) {
         let expr_str = expr.to_string();
-        if expr_str.contains("input_") {
-            // Extract input ID from string like "input_0", "input_1", etc.
-            for part in expr_str.split_whitespace() {
-                if part.starts_with("input_") {
-                    if let Some(id_str) = part.strip_prefix("input_") {
-                        if let Ok(id) = id_str.parse::<u64>() {
-                            if !inputs.contains(&id) {
-                                inputs.push(id);
-                            }
-                        }
-                    }
-                }
+        for token in expr_str.split(|c: char| c.is_whitespace() || c == '(' || c == ')' ) {
+            if let Some(id) = Self::parse_input_symbol(token) {
+                if !inputs.contains(&id) { inputs.push(id); }
             }
         }
+    }
+
+    /// Parse an input symbol of the form "input_<id>" and return the id.
+    fn parse_input_symbol(s: &str) -> Option<u64> {
+        if let Some(rest) = s.strip_prefix("input_") {
+            // Allow trailing characters like sort annotations rarely present in Z3 prints
+            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if !digits.is_empty() {
+                if let Ok(id) = digits.parse::<u64>() { return Some(id); }
+            }
+        }
+        None
     }
     
     /// Fuzzy query evaluation (from eval.c fuzz_query_eval)
@@ -356,6 +379,7 @@ impl ConcreteEvaluator {
     }
 
     /// Evaluate bit extraction
+    #[allow(dead_code)]
     fn eval_extract(&self, value: u64, high: u32, low: u32) -> Result<u64> {
         if high < low {
             return Ok(0);
@@ -367,6 +391,7 @@ impl ConcreteEvaluator {
     }
 
     /// Evaluate concatenation
+    #[allow(dead_code)]
     fn eval_concat(&self, left: u64, right: u64) -> Result<u64> {
         // Simple concatenation - in practice this would need size information
         Ok((left << 32) | (right & 0xFFFFFFFF))
@@ -401,6 +426,7 @@ impl ConcreteEvaluator {
 }
 
 /// Expression kind for concrete evaluation
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 enum ExprKind<'a> {
     Constant(u64),
@@ -413,6 +439,7 @@ enum ExprKind<'a> {
 }
 
 /// Binary operations
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 enum BinaryOp {
     Add, Sub, Mul, Div, Mod,
@@ -421,6 +448,7 @@ enum BinaryOp {
 }
 
 /// Unary operations
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 enum UnaryOp {
     Not, Neg,
