@@ -264,9 +264,13 @@ impl QueryProcessor {
                         for b in &extra_bools { all_refs.push(b); }
                         let conj = z3::ast::Bool::and(ctx, &all_refs);
                         let mut sat: bool = false;
-                        if self.config.use_fuzzy_solver {
-                            let raw = unsafe { raw_ast_from_bool(&conj) } as *mut c_void;
-                            sat = self.solver.fuzzy_check_light_raw_const(raw, std::ptr::null_mut()).unwrap_or(false);
+                        if self.config.use_fuzzy_solver && self.config.address_enum_use_fuzzy {
+                            // Ensure the AST stays alive during the FFI call
+                            let (ctx_raw, ast_raw) = unsafe { crate::fuzzy_ffi::inc_ref_bool(&conj) };
+                            sat = self.solver
+                                .fuzzy_check_light_raw_const(ast_raw as *mut c_void, std::ptr::null_mut())
+                                .unwrap_or(false);
+                            unsafe { crate::fuzzy_ffi::dec_ref(ctx_raw, ast_raw) };
                         }
                         if !sat {
                             let s = z3::Solver::new(ctx);
