@@ -567,13 +567,7 @@ impl SimplificationRule for ExtractOptimizationRule {
     fn priority(&self) -> u32 { 180 }
 }
 
-impl ExtractOptimizationRule {
-    #[allow(dead_code)]
-    fn get_expr_size(&self, _expr: &Expr) -> u32 {
-        // Simplified size calculation - in full implementation would analyze expression
-        32 // Default to 32-bit
-    }
-}
+// Removed unused ExtractOptimizationRule::get_expr_size helper (not used by conservative rules)
 
 /// Concatenation optimization rule
 pub struct ConcatenationOptimizationRule;
@@ -589,13 +583,7 @@ impl SimplificationRule for ConcatenationOptimizationRule {
     fn priority(&self) -> u32 { 170 }
 }
 
-impl ConcatenationOptimizationRule {
-    #[allow(dead_code)]
-    fn get_expr_size(&self, _expr: &Expr) -> u32 {
-        // Simplified size calculation
-        32
-    }
-}
+// Removed unused ConcatenationOptimizationRule::get_expr_size helper (not used)
 
 /// Subtraction transformation rule - implements subtraction-to-comparison patterns
 pub struct SubtractionTransformRule;

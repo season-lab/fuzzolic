@@ -9,7 +9,6 @@ pub mod query_processor;
 pub mod dependency_graph;
 pub mod concrete_eval;
 pub mod memory_slice;
-pub mod memory_reasoning;
 pub mod dependency;
 pub mod z3_cache;
 pub mod fuzzy_ffi;

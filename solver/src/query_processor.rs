@@ -1,6 +1,7 @@
 use crate::solver::SMTSolver;
 use crate::config::Config;
-use crate::expression::{Query, QueryType, OpKind, Expr};
+use crate::expression::{Query, QueryType, OpKind, Expr, ModelType};
+use crate::solver::ConstraintRecord;
 use crate::shared_memory::{QueryQueue, EXPR_QUERY_CAPACITY};
 use crate::branch_coverage::BranchCoverage;
 use crate::memory_slice::MemorySliceReasoner;
@@ -110,7 +111,7 @@ impl QueryProcessor {
             if let Ok(op) = OpKind::try_from(expr.opkind) {
                 match op {
                     OpKind::SymbolicPc | OpKind::SymbolicJumpTableAccess | OpKind::SymbolicLoad | OpKind::SymbolicStore => {
-                        self.process_expr_query_simple(expr, op)?;
+                        self.process_expr_query_simple(&query, expr, op)?;
                         let elapsed = start_time.elapsed();
                         debug!("Query processed in {:?}", elapsed);
                         return Ok(());
@@ -159,7 +160,7 @@ impl QueryProcessor {
     }
 
     /// Simple expression satisfiability query (SYMBOLIC_PC, JUMP_TABLE, LOAD/STORE)
-    fn process_expr_query_simple(&mut self, expr: &Expr, op: OpKind) -> Result<()> {
+    fn process_expr_query_simple(&mut self, query: &Query, expr: &Expr, op: OpKind) -> Result<()> {
         // In C: smt_expr_query(q, opkind) translates q->query->op1
         let target_ptr = expr.op1;
         if target_ptr.is_null() {
@@ -170,8 +171,7 @@ impl QueryProcessor {
         // Record dependencies for target expression
         let _ = self.solver.add_dependency_for_expr(target);
 
-        let ctx = &self.solver.ctx;
-        let z3_dyn = SMTSolver::translate_expression_static(ctx, target)?;
+        let z3_dyn = SMTSolver::translate_expression_static(&self.solver.ctx, target)?;
 
         // Collect inputs referenced by target expression
         let mut evaluator = ConcreteEvaluator::new();
@@ -216,11 +216,75 @@ impl QueryProcessor {
             if let Some(bv) = z3_dyn.as_bv() {
                 if matches!(op, OpKind::SymbolicLoad | OpKind::SymbolicStore) {
                     let width = bv.get_size();
-                    let sol_ast = z3::ast::BV::from_u64(ctx, solution, width);
+                    let sol_ast = z3::ast::BV::from_u64(&self.solver.ctx, solution, width);
                     let eq = bv._eq(&sol_ast);
                     // Notify fuzzy about the constraint
                     self.solver.fuzzy_notify_constraint(&eq);
-                    // We could also store this constraint and update dep caches akin to C
+                    // Store constraint and update dep-like caches akin to C
+                    let input_set: std::collections::HashSet<usize> = input_ids_u64.iter().map(|&x| x as usize).collect();
+                    let record = ConstraintRecord::EqBV { expr_ptr: target as *const Expr, value: solution };
+                    let qidx = query.get_index();
+                    self.solver.add_constraint_for_inputs(&input_set, qidx, record);
+
+                    // Bounded enumeration of alternative solutions
+                    // Strategy: ask fuzzy fast-check on (expr == alt) for several alt guesses derived
+                    // from toggling low bits. If fuzzy is disabled, fall back to a quick Z3 check.
+                    let mut tried = 0usize;
+                    let max_try = self.config.address_enum_limit;
+                    let mut alt_val = solution ^ 1; // start with 1-bit flip
+                    // Drop z3_dyn to release immutable borrow of ctx before potentially mut borrowing solver
+                    drop(z3_dyn);
+                    while tried < max_try {
+                        // Re-translate target fresh each iteration to avoid holding long borrows
+                        let ctx = &self.solver.ctx;
+                        let z3_t = SMTSolver::translate_expression_static(ctx, target)?;
+                        let bv2 = z3_t.as_bv().expect("target must be BV");
+                        let alt_ast = z3::ast::BV::from_u64(ctx, alt_val, width);
+                        let alt_eq = bv2._eq(&alt_ast);
+                        // Build deps and cached constraints
+                        let mut evaluator = ConcreteEvaluator::new();
+                        let inputs_vec = evaluator.get_inputs_expr(&z3_t);
+                        let input_set: std::collections::HashSet<usize> = inputs_vec.iter().map(|&x| x as usize).collect();
+                        let deps = self.solver.get_deps_for_inputs(&input_set);
+                        let mut dep_bools: Vec<z3::ast::Bool> = Vec::new();
+                        for expr_id in deps.expressions.iter() {
+                            let dep_ptr = *expr_id as *const crate::expression::Expr;
+                            if dep_ptr.is_null() { continue; }
+                            let dep_expr = unsafe { &*dep_ptr };
+                            if !self.solver.ensure_dep_is_bool(dep_expr) { continue; }
+                            if let Ok(dyn_ast) = SMTSolver::translate_expression_static(ctx, dep_expr) {
+                                if let Some(b) = dyn_ast.as_bool() { dep_bools.push(b); }
+                            }
+                        }
+                        let extra_bools = self.solver.get_constraint_bools_for_inputs(&input_set);
+                        // Decide SAT using Z3
+                        let mut all_refs: Vec<&z3::ast::Bool> = Vec::with_capacity(dep_bools.len() + extra_bools.len() + 1);
+                        all_refs.push(&alt_eq);
+                        for b in &dep_bools { all_refs.push(b); }
+                        for b in &extra_bools { all_refs.push(b); }
+                        let conj = z3::ast::Bool::and(ctx, &all_refs);
+                        let s = z3::Solver::new(ctx);
+                        s.assert(&conj);
+                        let sat: bool = matches!(s.check(), z3::SatResult::Sat);
+                        if sat {
+                            // Rebuild alt_eq and notify; then cache the alternative constraint
+                            let ctx = &self.solver.ctx;
+                            let z3_t2 = SMTSolver::translate_expression_static(ctx, target)?;
+                            let bv3 = z3_t2.as_bv().expect("target must be BV");
+                            let alt_ast2 = z3::ast::BV::from_u64(ctx, alt_val, width);
+                            let alt_eq2 = bv3._eq(&alt_ast2);
+                            self.solver.fuzzy_notify_constraint(&alt_eq2);
+                            // Cache using the same input set as earlier
+                            let mut evaluator = ConcreteEvaluator::new();
+                            let inputs_vec = evaluator.get_inputs_expr(&z3_t);
+                            let input_set: std::collections::HashSet<usize> = inputs_vec.iter().map(|&x| x as usize).collect();
+                            let rec = ConstraintRecord::EqBV { expr_ptr: target as *const Expr, value: alt_val };
+                            self.solver.add_constraint_for_inputs(&input_set, qidx, rec);
+                        }
+                        tried += 1;
+                        alt_val = alt_val.wrapping_add(1);
+                        if alt_val == solution { alt_val = alt_val.wrapping_add(1); }
+                    }
                 }
             }
             // In C they also explore multiple values (fuzzy/Z3). We rely on higher-level
@@ -268,6 +332,15 @@ impl QueryProcessor {
         let _ = self.solver.add_dependency_for_expr(target);
         let ctx = &self.solver.ctx;
         let z3_dyn = SMTSolver::translate_expression_static(ctx, target)?;
+        // Record constraint for involved inputs
+        let mut evaluator = ConcreteEvaluator::new();
+        let inputs_vec = evaluator.get_inputs_expr(&z3_dyn);
+        let input_set: std::collections::HashSet<usize> = inputs_vec.iter().map(|&x| x as usize).collect();
+        let record = ConstraintRecord::EqBV { expr_ptr: target as *const Expr, value: conc_val };
+        // We do not have the query idx here; when used from process_query we do. Use address as fallback key.
+        // Store with a synthetic index derived from address to keep constraints available.
+        let qidx = expr as *const Expr as usize;
+        self.solver.add_constraint_for_inputs(&input_set, qidx, record);
         if let Some(bv) = z3_dyn.as_bv() {
             let width = bv.get_size();
             let val = z3::ast::BV::from_u64(ctx, conc_val, width);
@@ -396,10 +469,13 @@ impl QueryProcessor {
                             }
                         }
                     }
+                    // Append cached constraints associated with inputs
+                    let extra_bools = self.solver.get_constraint_bools_for_inputs(&input_set);
                     // Build AND of neg_cond and deps
                     let mut all_refs: Vec<&z3::ast::Bool> = Vec::with_capacity(dep_bools.len() + 1);
                     all_refs.push(&neg_cond);
                     for b in &dep_bools { all_refs.push(b); }
+                    for b in &extra_bools { all_refs.push(b); }
                     let fuzzy_query = z3::ast::Bool::and(ctx, &all_refs);
                     let fq_raw = unsafe { raw_ast_from_bool(&fuzzy_query) } as *mut c_void;
                     let nc_raw = unsafe { raw_ast_from_bool(&neg_cond) } as *mut c_void;
@@ -452,21 +528,119 @@ impl QueryProcessor {
         debug!("Processing model query");
         if query.query.is_null() { return Ok(()); }
         let expr = unsafe { &*query.query };
-        // Record dependencies for analysis/debugging
-        let _ = self.solver.add_dependency_for_expr(expr);
-        let ctx = &self.solver.ctx;
-        let z3_expr = SMTSolver::translate_expression_static(ctx, expr)?;
-        let solver = z3::Solver::new(ctx);
-        // Model queries should be asserted as Bool conditions
-        let as_bool = z3_expr.as_bool().ok_or_else(|| anyhow::anyhow!("Model query expr not Bool"))?;
-        solver.assert(&as_bool);
-        match solver.check() {
-            z3::SatResult::Sat => {
-                debug!("Model query SAT");
-                // Skip testcase generation to match current C build
+        let qidx = query.get_index();
+        // Helper to unpack 4x16-bit fields from a packed u64
+        fn unpack4(x: u64) -> (u16, u16, u16, u16) {
+            let a = (x & 0xFFFF) as u16;
+            let b = ((x >> 16) & 0xFFFF) as u16;
+            let c = ((x >> 32) & 0xFFFF) as u16;
+            let d = ((x >> 48) & 0xFFFF) as u16;
+            (a, b, c, d)
+        }
+        // Helper to unpack 2x16-bit fields from a packed u64
+        fn unpack2(x: u64) -> (u16, u16) {
+            let a = (x & 0xFFFF) as u16;
+            let b = ((x >> 16) & 0xFFFF) as u16;
+            (a, b)
+        }
+
+        // Determine model type
+        let model = unsafe { query.args.model };
+        match model {
+            ModelType::Strcmp => {
+                let s1 = if expr.op1.is_null() { anyhow::bail!("STRCMP missing s1") } else { unsafe { &*expr.op1 } };
+                let s2 = if expr.op2.is_null() { anyhow::bail!("STRCMP missing s2") } else { unsafe { &*expr.op2 } };
+                let packed = expr.get_op3_const().unwrap_or(0) as u64;
+                let (res_u16, s1_len_u16, s2_len_u16, n_u16) = unpack4(packed);
+                let res = res_u16 as i32; // 0 means equal branch was taken
+                let s1_len = s1_len_u16 as usize;
+                let s2_len = s2_len_u16 as usize;
+                let _n = n_u16 as usize;
+                // Translate to ASTs to extract input sets
+                let ctx = &self.solver.ctx;
+                let z3_s1 = SMTSolver::translate_expression_static(ctx, s1)?;
+                let z3_s2 = SMTSolver::translate_expression_static(ctx, s2)?;
+                let mut evaluator = ConcreteEvaluator::new();
+                let mut inputs_set: std::collections::HashSet<usize> = evaluator
+                    .get_inputs_expr(&z3_s1)
+                    .into_iter().map(|x| x as usize).collect();
+                inputs_set.extend(evaluator.get_inputs_expr(&z3_s2).into_iter().map(|x| x as usize));
+                // Record stride equality (possibly inverted)
+                let record = ConstraintRecord::StrideCmpEq {
+                    left_ptr: s1 as *const Expr,
+                    right_ptr: s2 as *const Expr,
+                    len: s1_len.min(s2_len),
+                    invert: res != 0,
+                };
+                self.solver.add_constraint_for_inputs(&inputs_set, qidx, record);
             }
-            z3::SatResult::Unsat => debug!("Model query UNSAT"),
-            z3::SatResult::Unknown => warn!("Model query UNKNOWN"),
+            ModelType::Strlen => {
+                let s1 = if expr.op1.is_null() { anyhow::bail!("STRLEN missing s1") } else { unsafe { &*expr.op1 } };
+                let packed = expr.get_op2_const().unwrap_or(0) as u64;
+                let (s1_len_u16, n_u16) = unpack2(packed);
+                let s1_len = s1_len_u16 as usize;
+                let n = n_u16 as usize;
+                let ctx = &self.solver.ctx;
+                let z3_s1 = SMTSolver::translate_expression_static(ctx, s1)?;
+                let mut evaluator = ConcreteEvaluator::new();
+                let inputs_set: std::collections::HashSet<usize> = evaluator
+                    .get_inputs_expr(&z3_s1)
+                    .into_iter().map(|x| x as usize).collect();
+                let record = ConstraintRecord::StrlenConstraint { expr_ptr: s1 as *const Expr, s1_len, n };
+                self.solver.add_constraint_for_inputs(&inputs_set, qidx, record);
+            }
+            ModelType::Memcmp => {
+                let s1 = if expr.op1.is_null() { anyhow::bail!("MEMCMP missing s1") } else { unsafe { &*expr.op1 } };
+                let s2 = if expr.op2.is_null() { anyhow::bail!("MEMCMP missing s2") } else { unsafe { &*expr.op2 } };
+                let packed = expr.get_op3_const().unwrap_or(0) as u64;
+                let (res_u16, n_u16, _r2, _r3) = unpack4(packed);
+                let res = res_u16 as i32;
+                let n = n_u16 as usize;
+                let ctx = &self.solver.ctx;
+                let z3_s1 = SMTSolver::translate_expression_static(ctx, s1)?;
+                let z3_s2 = SMTSolver::translate_expression_static(ctx, s2)?;
+                let mut evaluator = ConcreteEvaluator::new();
+                let mut inputs_set: std::collections::HashSet<usize> = evaluator
+                    .get_inputs_expr(&z3_s1)
+                    .into_iter().map(|x| x as usize).collect();
+                inputs_set.extend(evaluator.get_inputs_expr(&z3_s2).into_iter().map(|x| x as usize));
+                let record = ConstraintRecord::StrideCmpEq {
+                    left_ptr: s1 as *const Expr,
+                    right_ptr: s2 as *const Expr,
+                    len: n,
+                    invert: res != 0,
+                };
+                self.solver.add_constraint_for_inputs(&inputs_set, qidx, record);
+            }
+            ModelType::Memchr => {
+                // op1 = haystack, op2 = needle byte (const), op3 packs (res, n, ..)
+                let s1 = if expr.op1.is_null() { anyhow::bail!("MEMCHR missing haystack") } else { unsafe { &*expr.op1 } };
+                let needle = expr.get_op2_const().unwrap_or(0) as u8;
+                let packed = expr.get_op3_const().unwrap_or(0) as u64;
+                let (_res, n_u16, _r2, _r3) = unpack4(packed);
+                let n = n_u16 as usize;
+                let ctx = &self.solver.ctx;
+                let z3_s1 = SMTSolver::translate_expression_static(ctx, s1)?;
+                let mut evaluator = ConcreteEvaluator::new();
+                let inputs_set: std::collections::HashSet<usize> = evaluator
+                    .get_inputs_expr(&z3_s1)
+                    .into_iter().map(|x| x as usize).collect();
+                let record = ConstraintRecord::MemchrConstraint { haystack_ptr: s1 as *const Expr, needle, n };
+                self.solver.add_constraint_for_inputs(&inputs_set, qidx, record);
+            }
+            ModelType::Malloc => {
+                // op1 holds requested size in bytes as const
+                let size = expr.get_op1_const().unwrap_or(0);
+                // We do not know which inputs this depends on (often none). Store under query id only.
+                let record = ConstraintRecord::MallocConstraint { size };
+                // Attach to a synthetic input id bucket 0 to make retrievable in future conjunctions.
+                let mut inputs = std::collections::HashSet::new();
+                inputs.insert(0usize);
+                self.solver.add_constraint_for_inputs(&inputs, qidx, record);
+            }
+            other => {
+                warn!("Model {:?} not yet implemented in Rust; skipping", other);
+            }
         }
         Ok(())
     }

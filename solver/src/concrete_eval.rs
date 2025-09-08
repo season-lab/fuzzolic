@@ -47,16 +47,6 @@ impl ConcreteEvaluator {
         }
     }
     
-    /// Hash string like in C implementation
-    #[allow(dead_code)]
-    fn hash_str(&self, s: &str) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        s.hash(&mut hasher);
-        hasher.finish()
-    }
-    
     /// Concrete evaluation with caching (from eval.c)
     pub fn conc_eval(&mut self, 
                      ctx: &Context,
@@ -390,12 +380,7 @@ impl ConcreteEvaluator {
         Ok((value >> low) & mask)
     }
 
-    /// Evaluate concatenation
-    #[allow(dead_code)]
-    fn eval_concat(&self, left: u64, right: u64) -> Result<u64> {
-        // Simple concatenation - in practice this would need size information
-        Ok((left << 32) | (right & 0xFFFFFFFF))
-    }
+    // Removed unused eval_concat helper
 
     /// Get evaluation statistics
     pub fn stats(&self) -> EvalStats {
@@ -413,10 +398,9 @@ impl ConcreteEvaluator {
         (value >> low) & mask
     }
 
-    /// Concatenate two values
+    /// Concatenate two values (simple 32-bit based concatenation)
     fn concat_values(&self, left: u64, right: u64) -> u64 {
-        // Simple concatenation - assumes 32-bit values for now
-        (left << 32) | (right & 0xFFFFFFFF)
+        (left << 32) | (right & 0xFFFF_FFFF)
     }
 
     /// Clear evaluation cache

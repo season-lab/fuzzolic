@@ -86,6 +86,10 @@ pub struct Config {
     /// Enable expression simplifier (conservative subset)
     #[arg(skip)]
     pub use_expr_simplifier: bool,
+
+    /// Bounded enumeration limit for address reasoning (number of alternative values to try)
+    #[arg(skip)]
+    pub address_enum_limit: usize,
 }
 
 impl Config {
@@ -130,6 +134,9 @@ impl Config {
         self.use_branch_coverage = true;
         // Expression simplifier disabled by default; enable with USE_EXPR_SIMPLIFIER=1
         self.use_expr_simplifier = std::env::var("USE_EXPR_SIMPLIFIER").unwrap_or_default() == "1";
+        // Address enumeration limit (bounded exploration), default 4
+        self.address_enum_limit = std::env::var("ADDRESS_ENUM_LIMIT").ok()
+            .and_then(|v| v.parse::<usize>().ok()).unwrap_or(4);
         
         Ok(self)
     }
