@@ -1,4 +1,4 @@
-use crate::expression::{Expr, OpKind};
+use crate::expressions::expression::{Expr, OpKind};
 use crate::solver::SMTSolver;
 use anyhow::Result;
 use z3::ast::{self, Ast};
@@ -542,7 +542,6 @@ pub fn smt_query_i386_to_z3<'ctx>(
     query: &Expr,
     width: usize,
 ) -> Result<ast::Dynamic<'ctx>> {
-    use crate::expression::OpKind;
     
     // Convert u8 opkind to OpKind enum for pattern matching
     let opkind = OpKind::try_from(query.opkind)?;
@@ -580,10 +579,12 @@ pub fn smt_query_i386_to_z3<'ctx>(
         }
         
         // EFLAGS binary operations (ADD, SUB, MUL, LOGIC, INC, DEC, SHL, SAR, BMILG)
+        // In C: eflags_all_binary(ctx, query, (uintptr_t)query->op3, ...)
         OpKind::EflagsAllAdd | OpKind::EflagsAllSub | OpKind::EflagsAllMul | 
         OpKind::EflagsAllLogic | OpKind::EflagsAllInc | OpKind::EflagsAllDec |
         OpKind::EflagsAllShl | OpKind::EflagsAllSar | OpKind::EflagsAllBmilg => {
-            let op_width = get_opkind_width(opkind);
+            let mut op_width = query.op3 as usize;
+            if op_width == 0 || op_width > 8 { op_width = 8; }
             let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, op_width)?;
             let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, op_width)?;
             
@@ -592,8 +593,10 @@ pub fn smt_query_i386_to_z3<'ctx>(
         }
         
         // EFLAGS RCL (CF/OF only)
+        // Align width with C by using (uintptr_t)query->op3
         OpKind::EflagsAllRcl => {
-            let op_width = get_opkind_width(opkind);
+            let mut op_width = query.op3 as usize;
+            if op_width == 0 || op_width > 8 { op_width = 8; }
             let val = translate_operand(ctx, query.op1, query.op1_is_const != 0, op_width)?;
             let cnt8 = translate_operand(ctx, query.op2, query.op2_is_const != 0, 1)?; // 8-bit count
             let cf_in = translate_operand(ctx, query.op3, query.op3_is_const != 0, 1)?; // carry in
@@ -614,8 +617,10 @@ pub fn smt_query_i386_to_z3<'ctx>(
         }
         
         // EFLAGS ADCX/ADOX operations
+        // In C: eflags_all_adcxo(ctx, query, (uintptr_t)query->op3, opkind, ...)
         OpKind::EflagsAllAdcx | OpKind::EflagsAllAdox | OpKind::EflagsAllAdcox => {
-            let op_width = get_opkind_width(opkind);
+            let mut op_width = query.op3 as usize;
+            if op_width == 0 || op_width > 8 { op_width = 8; }
             let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, op_width)?;
             let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, op_width)?;
             let carry = translate_operand(ctx, query.op3, false, 1)?;
@@ -624,10 +629,12 @@ pub fn smt_query_i386_to_z3<'ctx>(
             Ok(ast::Dynamic::from_ast(&result))
         }
         
-        // EFLAGS carry-only operations
+        // EFLAGS carry-only operations (CADD, CSUB, CMUL, CLOGIC, CSHL)
+        // In C: eflags_c_binary(ctx, query, (uintptr_t)query->op3, ...)
         OpKind::EflagsCAdd | OpKind::EflagsCSub | OpKind::EflagsCMul | 
-        OpKind::EflagsCLogic | OpKind::EflagsCShl => {
-            let op_width = get_opkind_width(opkind);
+        OpKind::EflagsCLogic | OpKind::EflagsCShl | OpKind::EflagsCBmilg => {
+            let mut op_width = query.op3 as usize;
+            if op_width == 0 || op_width > 8 { op_width = 8; }
             let dst = translate_operand(ctx, query.op1, query.op1_is_const != 0, op_width)?;
             let src1 = translate_operand(ctx, query.op2, query.op2_is_const != 0, op_width)?;
             

@@ -19,8 +19,8 @@ fn main() {
     let fuzzy_lib_dir = PathBuf::from(&manifest_dir).join("fuzzy-sat");
     println!("cargo:rustc-link-search=native={}", fuzzy_lib_dir.display());
     println!("cargo:rustc-link-lib=static=Z3Fuzzy");
-    // Also link libz3 (provided by fork build directory)
-    println!("cargo:rustc-link-lib=static=z3");
+    // Also link libz3 dynamically (provided by fork build directory). It contains custom symbols like Z3_custom_eval_depth.
+    println!("cargo:rustc-link-lib=dylib=z3");
     
     // Link against system libraries that were used in the C version
     println!("cargo:rustc-link-lib=dylib=glib-2.0");
@@ -28,7 +28,7 @@ fn main() {
     // Build our local C bridge to the fuzzy solver API
     let mut cc_build = cc::Build::new();
     cc_build
-        .file("src/fuzz_bridge.c")
+        .file("src/solver/fuzzy/fuzz_bridge.c")
         // include project root so #include "fuzzy-sat/z3-fuzzy.h" resolves
         .include(&manifest_dir)
         // include Z3 headers for <z3.h>

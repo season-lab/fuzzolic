@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::utils::config::Config;
 use anyhow::{Result, Context};
 use std::collections::HashMap;
 use std::fs::File;

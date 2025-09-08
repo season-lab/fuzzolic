@@ -1,7 +1,7 @@
 use anyhow::Result;
 use log::debug;
 use std::collections::HashMap;
-use crate::expression::{Expr, OpKind};
+use crate::expressions::expression::{Expr, OpKind};
 
 /// Advanced expression simplification engine
 pub struct ExpressionSimplifier {

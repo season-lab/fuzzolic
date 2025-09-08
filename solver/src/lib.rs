@@ -1,30 +1,16 @@
 pub mod solver;
-pub mod expression;
-pub mod config;
+pub mod expressions;
+pub mod utils;
 pub mod shared_memory;
-pub mod branch_coverage;
-pub mod statistics;
-pub mod testcase;
-pub mod query_processor;
-pub mod dependency_graph;
-pub mod concrete_eval;
-pub mod memory_slice;
-pub mod dependency;
-pub mod z3_cache;
-pub mod fuzzy_ffi;
+pub mod query;
+pub mod coverage;
 
 #[cfg(test)]
-mod shared_memory_tests;
-pub mod i386;
-pub mod expression_simplifier;
+mod tests;
 
-pub use config::Config;
-pub use expression::{Expr, OpKind, Query, QueryType};
-pub use testcase::Testcase;
-pub use crate::solver::{SMTSolver, SolverStatistics};
-pub use branch_coverage::BranchCoverage;
-pub use shared_memory::{SharedExprPool, QueryQueue};
-pub use query_processor::QueryProcessor;
+pub use utils::config::Config;
+pub use query::processor::QueryProcessor;
+
 use anyhow::Result;
 use log::info;
 

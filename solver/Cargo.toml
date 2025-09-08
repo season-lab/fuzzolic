@@ -16,8 +16,8 @@ name = "main-solver"
 path = "src/bin/main_solver.rs"
 
 [dependencies]
-# Z3 bindings for Rust - configured to use forked Z3 from fuzzy-sat
-z3 = { version = "0.12", features = ["static-link-z3"] }
+# Z3 bindings for Rust - use dynamic linking to the forked Z3 provided in build.rs
+z3 = { version = "0.12" }
 
 # Command line argument parsing (replacement for getopt)
 clap = { version = "4.0", features = ["derive"] }

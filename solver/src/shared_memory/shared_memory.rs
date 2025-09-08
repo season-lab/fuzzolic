@@ -1,5 +1,5 @@
-use crate::expression::{Expr, Query};
-use crate::config::Config;
+use crate::expressions::expression::{Expr, Query};
+use crate::utils::config::Config;
 use anyhow::Result;
 use std::ptr;
 use std::sync::atomic::{fence, Ordering};
