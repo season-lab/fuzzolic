@@ -98,6 +98,10 @@ pub struct Config {
     /// CLI override for enumeration method: "on" to use fuzzy, "off" to use Z3 only
     #[arg(long = "enum-fuzzy", value_name = "on|off")]
     pub enum_fuzzy: Option<String>,
+
+    /// CLI override for enumeration limit: max number of alternative values to attempt
+    #[arg(long = "enum-limit", value_name = "N")]
+    pub enum_limit: Option<usize>,
 }
 
 impl Config {
@@ -145,6 +149,10 @@ impl Config {
         // Address enumeration limit (bounded exploration), default 4
         self.address_enum_limit = std::env::var("ADDRESS_ENUM_LIMIT").ok()
             .and_then(|v| v.parse::<usize>().ok()).unwrap_or(4);
+        // CLI override takes precedence over env
+        if let Some(n) = self.enum_limit {
+            self.address_enum_limit = n;
+        }
         // Address enumeration method: use fuzzy (1) or Z3 (0). Default to 1 for parity with C.
         self.address_enum_use_fuzzy = std::env::var("ADDRESS_ENUM_USE_FUZZY").ok()
             .map(|v| v == "1").unwrap_or(true);
