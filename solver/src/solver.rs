@@ -326,6 +326,17 @@ impl SMTSolver {
         self.pull_fuzzy_stats();
         Ok(r != 0)
     }
+
+    /// Const variant for fast fuzzy checks that avoids mutable borrows.
+    /// Assumes the fuzzy context has been initialized earlier.
+    pub fn fuzzy_check_light_raw_const(&self, query_raw: *mut c_void, neg_raw: *mut c_void) -> anyhow::Result<bool> {
+        if !self.fuzzy_enabled { return Ok(false); }
+        if self.fuzzy_ctx.is_null() { return Ok(false); }
+        let mut proof: *const u8 = std::ptr::null();
+        let mut proof_len: u64 = 0;
+        let r = unsafe { fuzz_bridge_check_light(self.fuzzy_ctx, query_raw, neg_raw, &mut proof, &mut proof_len) };
+        Ok(r != 0)
+    }
     
     pub fn solve_query(&mut self, expr: &Expr) -> Result<crate::expression::SatResult> {
         let z3_expr = self.translate_expression(expr)?;

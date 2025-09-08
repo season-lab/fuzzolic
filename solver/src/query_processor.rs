@@ -257,15 +257,22 @@ impl QueryProcessor {
                             }
                         }
                         let extra_bools = self.solver.get_constraint_bools_for_inputs(&input_set);
-                        // Decide SAT using Z3
+                        // Decide SAT using fuzzy fast-check (raw AST) if enabled; fallback to Z3 otherwise
                         let mut all_refs: Vec<&z3::ast::Bool> = Vec::with_capacity(dep_bools.len() + extra_bools.len() + 1);
                         all_refs.push(&alt_eq);
                         for b in &dep_bools { all_refs.push(b); }
                         for b in &extra_bools { all_refs.push(b); }
                         let conj = z3::ast::Bool::and(ctx, &all_refs);
-                        let s = z3::Solver::new(ctx);
-                        s.assert(&conj);
-                        let sat: bool = matches!(s.check(), z3::SatResult::Sat);
+                        let mut sat: bool = false;
+                        if self.config.use_fuzzy_solver {
+                            let raw = unsafe { raw_ast_from_bool(&conj) } as *mut c_void;
+                            sat = self.solver.fuzzy_check_light_raw_const(raw, std::ptr::null_mut()).unwrap_or(false);
+                        }
+                        if !sat {
+                            let s = z3::Solver::new(ctx);
+                            s.assert(&conj);
+                            sat = matches!(s.check(), z3::SatResult::Sat);
+                        }
                         if sat {
                             // Rebuild alt_eq and notify; then cache the alternative constraint
                             let ctx = &self.solver.ctx;
