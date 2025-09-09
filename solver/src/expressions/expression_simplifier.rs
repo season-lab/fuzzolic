@@ -1,7 +1,57 @@
+/// BAND mask slicing rule: reduce AND with masks into extract/concat when possible
+pub struct BandMaskRule;
+
+impl SimplificationRule for BandMaskRule {
+    fn name(&self) -> &str { "BandMask" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        if OpKind::try_from(expr.opkind).ok() != Some(OpKind::And) || expr.op1.is_null() || expr.op2.is_null() {
+            return Ok(expr.clone());
+        }
+        let a = unsafe { &*expr.op1 };
+        let b = unsafe { &*expr.op2 };
+        let (x, mask) = if let Some(m) = get_const(a) { (b, m) } else if let Some(m) = get_const(b) { (a, m) } else { return Ok(expr.clone()) };
+        let width = infer_size(x).unwrap_or(64);
+        if width == 0 { return Ok(expr.clone()); }
+
+        // Case 1: mask keeps only low k bits: mask == (1<<k)-1
+        let plus1 = mask.wrapping_add(1);
+        if plus1.is_power_of_two() {
+            let k = plus1.trailing_zeros() as u32;
+            if k > 0 {
+                let params = (((k - 1) as u64) << 32) | 0u64;
+                return Ok(Expr { op1: x as *const Expr as *mut Expr, op2: params as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+            }
+        }
+
+        // Case 2: mask clears low k bits only: mask has k trailing zeros and ones above truncated to width
+        let tz = mask.trailing_zeros() as u32;
+        if tz > 0 {
+            let high_bits_mask = if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
+            let expected = (!0u64).wrapping_shl(tz as u32) & high_bits_mask;
+            if mask == expected {
+                // Concat(Extract(x, width-1:tz), zeros(tz))
+                let p = ((((width - 1) as u64) << 32) | (tz as u64)) as *mut Expr;
+                let ext = Expr { op1: x as *const Expr as *mut Expr, op2: p, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 };
+                let zero = Expr { op1: 0usize as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 };
+                if let (Some(ep), Some(zp)) = (tls_alloc_opt(ext), tls_alloc_opt(zero)) {
+                    return Ok(Expr { op1: ep, op2: zp, op3: std::ptr::null_mut(), opkind: OpKind::Concat as u8, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 });
+                }
+            }
+        }
+
+        Ok(expr.clone())
+    }
+
+    fn priority(&self) -> u32 { 126 }
+}
 use anyhow::Result;
 use log::debug;
 use std::collections::HashMap;
 use crate::expressions::expression::{Expr, OpKind};
+use crate::expressions::arena::tls_alloc_opt;
+use std::cell::RefCell;
+use std::collections::HashMap as StdHashMap;
 
 /// Advanced expression simplification engine
 pub struct ExpressionSimplifier {
@@ -38,6 +88,16 @@ impl ExpressionSimplifier {
         simplifier.add_rule(Box::new(BitwiseOrOptimizationRule));
         simplifier.add_rule(Box::new(ConcatenationAdvancedRule));
         simplifier.add_rule(Box::new(SignExtensionRule));
+        // New rules ported from C optimize_z3_query
+        simplifier.add_rule(Box::new(ComparisonOptimizationRule));
+        simplifier.add_rule(Box::new(AndIteMaskOptimizationRule));
+        simplifier.add_rule(Box::new(BandMaskRule));
+        simplifier.add_rule(Box::new(MulPow2Rule));
+        simplifier.add_rule(Box::new(DivRemPow2Rule));
+        simplifier.add_rule(Box::new(ShiftByConstRule));
+        simplifier.add_rule(Box::new(SignExtConcatZeroRule));
+        simplifier.add_rule(Box::new(NotSimplificationRule));
+        simplifier.add_rule(Box::new(EqIdentityRule));
         
         simplifier
     }
@@ -67,6 +127,7 @@ impl ExpressionSimplifier {
     
     /// Simplify expression using all available rules
     pub fn simplify(&mut self, expr: &Expr) -> Result<Expr> {
+        clear_width_cache();
         let expr_hash = self.compute_expression_hash(expr);
         
         // Check cache first
@@ -174,6 +235,92 @@ pub trait SimplificationRule {
     fn name(&self) -> &str;
     fn apply(&self, expr: &Expr) -> Result<Expr>;
     fn priority(&self) -> u32 { 100 } // Default priority
+}
+
+// Helper utilities used by several rules
+thread_local! {
+    static WIDTH_CACHE: RefCell<StdHashMap<usize, u32>> = RefCell::new(StdHashMap::new());
+}
+
+fn clear_width_cache() {
+    WIDTH_CACHE.with(|c| c.borrow_mut().clear());
+}
+
+fn width_cache_get(key: usize) -> Option<u32> {
+    WIDTH_CACHE.with(|c| c.borrow().get(&key).copied())
+}
+
+fn width_cache_set(key: usize, v: u32) {
+    WIDTH_CACHE.with(|c| { c.borrow_mut().insert(key, v); });
+}
+fn is_zero_const(e: &Expr) -> bool {
+    OpKind::try_from(e.opkind).ok() == Some(OpKind::IsConst) && e.op1_is_const != 0 && (e.op1 as u64) == 0
+}
+
+fn get_const(e: &Expr) -> Option<u64> {
+    if OpKind::try_from(e.opkind).ok() == Some(OpKind::IsConst) && e.op1_is_const != 0 {
+        Some(e.op1 as u64)
+    } else {
+        None
+    }
+}
+
+fn infer_size(e: &Expr) -> Option<u32> {
+    let key = e as *const Expr as usize;
+    if let Some(v) = width_cache_get(key) { return Some(v); }
+    match OpKind::try_from(e.opkind).ok()? {
+        OpKind::Extract => {
+            let params = e.op2 as u64;
+            let high = (params >> 32) as u32;
+            let low = (params & 0xFFFF_FFFF) as u32;
+            let v = high.saturating_sub(low) + 1;
+            width_cache_set(key, v);
+            Some(v)
+        }
+        OpKind::Concat => {
+            if e.op1.is_null() || e.op2.is_null() { return None; }
+            let a = unsafe { &*e.op1 };
+            let b = unsafe { &*e.op2 };
+            let sa = infer_size(a)?;
+            let sb = infer_size(b)?;
+            let v = sa + sb;
+            width_cache_set(key, v);
+            Some(v)
+        }
+        OpKind::Ite => {
+            if e.op2.is_null() || e.op3.is_null() { return None; }
+            let t = unsafe { &*e.op2 };
+            let el = unsafe { &*e.op3 };
+            let st = infer_size(t)?;
+            let se = infer_size(el)?;
+            if st == se { width_cache_set(key, st); Some(st) } else { None }
+        }
+        OpKind::Zext | OpKind::Sext => {
+            // op2 holds target bits as const
+            if e.op2_is_const != 0 { let v = e.op2 as u32; width_cache_set(key, v); Some(v) } else { None }
+        }
+        OpKind::IsSymbolic => {
+            // op2 may hold size in bytes; default to 8 bits
+            let v = if e.op2_is_const != 0 { (e.op2 as u32) * 8 } else { 8 };
+            width_cache_set(key, v);
+            Some(v)
+        }
+        // For common binary/unary ops, width equals operand width when known
+        OpKind::Add | OpKind::Sub | OpKind::Mul | OpKind::Mulu
+        | OpKind::Div | OpKind::Divu | OpKind::Rem | OpKind::Remu
+        | OpKind::And | OpKind::Or | OpKind::Xor
+        | OpKind::Shl | OpKind::Shr | OpKind::Sar | OpKind::Sal
+        | OpKind::Neg | OpKind::Not
+        | OpKind::Deposit | OpKind::QzExtract | OpKind::QsExtract | OpKind::QzExtract2
+        | OpKind::Rotl | OpKind::Rotr
+        | OpKind::MemorySlice | OpKind::MemorySliceAccess | OpKind::MemoryInputSliceAccess
+        | OpKind::SymbolicLoad | OpKind::SymbolicStore
+        | OpKind::Mov => {
+            if e.op1.is_null() { None } else { let v = infer_size(unsafe { &*e.op1 })?; width_cache_set(key, v); Some(v) }
+        }
+        OpKind::IsConst => None,
+        _ => None,
+    }
 }
 
 /// Constant folding rule - evaluates expressions with constant operands
@@ -292,7 +439,6 @@ impl SimplificationRule for IdentityRule {
             }
             _ => {}
         }
-        
         Ok(expr.clone())
     }
     
@@ -545,22 +691,92 @@ impl SimplificationRule for ExtractOptimizationRule {
         if high < low { return Ok(expr.clone()); }
 
         let op1_ref = unsafe { &*expr.op1 };
-        // Handle only constant source safely
+
+        // Safe: only extract from constant. More advanced rewrites require persistent nodes.
         if OpKind::try_from(op1_ref.opkind).ok() == Some(OpKind::IsConst) && op1_ref.op1_is_const != 0 {
             let value = op1_ref.op1 as u64;
             let width = high - low + 1;
             let mask = if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
             let result = (value >> low) & mask;
-            return Ok(Expr {
-                op1: result as *mut Expr,
-                op2: std::ptr::null_mut(),
-                op3: std::ptr::null_mut(),
-                opkind: OpKind::IsConst as u8,
-                op1_is_const: 1,
-                op2_is_const: 0,
-                op3_is_const: 0,
-            });
+            return Ok(Expr { op1: result as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 });
         }
+
+        // Extract over Concat: keep only right
+        if OpKind::try_from(op1_ref.opkind).ok() == Some(OpKind::Concat) && !op1_ref.op1.is_null() && !op1_ref.op2.is_null() {
+            let left = unsafe { &*op1_ref.op1 };
+            let right = unsafe { &*op1_ref.op2 };
+            if let (Some(_size_left), Some(size_right)) = (infer_size(left), infer_size(right)) {
+                if high < size_right {
+                    let new_params = (((high) as u64) << 32) | (low as u64);
+                    return Ok(Expr { op1: right as *const Expr as *mut Expr, op2: new_params as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+                }
+                if low >= size_right {
+                    let new_high = high - size_right;
+                    let new_low = low - size_right;
+                    let new_params = (((new_high) as u64) << 32) | (new_low as u64);
+                    return Ok(Expr { op1: left as *const Expr as *mut Expr, op2: new_params as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+                }
+                // Split across both sides: (Y..X)[high:low] => (extract(Y, a_high:0) .. extract(X, b_high:low))
+                let a_high = high - size_right;
+                let a_low = 0u32;
+                let b_high = size_right - 1;
+                let b_low = low;
+                let a_params = (((a_high as u64) << 32) | (a_low as u64)) as *mut Expr;
+                let b_params = (((b_high as u64) << 32) | (b_low as u64)) as *mut Expr;
+                let left_node = Expr { op1: left as *const Expr as *mut Expr, op2: a_params, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 };
+                let right_node = Expr { op1: right as *const Expr as *mut Expr, op2: b_params, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 };
+                if let (Some(lp), Some(rp)) = (tls_alloc_opt(left_node), tls_alloc_opt(right_node)) {
+                    return Ok(Expr { op1: lp, op2: rp, op3: std::ptr::null_mut(), opkind: OpKind::Concat as u8, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 });
+                }
+            }
+        }
+
+        // Extract of Extract -> single Extract
+        if OpKind::try_from(op1_ref.opkind).ok() == Some(OpKind::Extract) && op1_ref.op2_is_const != 0 {
+            let inner = unsafe { &*op1_ref.op1 };
+            let inner_params = op1_ref.op2 as u64;
+            let inner_low = (inner_params & 0xFFFF_FFFF) as u32;
+            let new_high = inner_low + high;
+            let new_low = inner_low + low;
+            let new_params = (((new_high as u64) << 32) | (new_low as u64)) as *mut Expr;
+            return Ok(Expr { op1: inner as *const Expr as *mut Expr, op2: new_params, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+        }
+
+        // Bit select from Concat: (Y .. X)[bit:bit]
+        if OpKind::try_from(op1_ref.opkind).ok() == Some(OpKind::Concat) && high == low {
+            let left = unsafe { &*op1_ref.op1 };
+            let right = unsafe { &*op1_ref.op2 };
+            if let Some(size_right) = infer_size(right) {
+                if low < size_right {
+                    let p = (((low as u64) << 32) | (low as u64)) as *mut Expr;
+                    return Ok(Expr { op1: right as *const Expr as *mut Expr, op2: p, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+                } else {
+                    let adj = low - size_right;
+                    let p = (((adj as u64) << 32) | (adj as u64)) as *mut Expr;
+                    return Ok(Expr { op1: left as *const Expr as *mut Expr, op2: p, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+                }
+            }
+        }
+
+        // Special OR-with-AND-mask case: (A | (B & 0xffffffffffffff00))[7:0] => B[7:0]
+        if high == 7 && low == 0 && OpKind::try_from(op1_ref.opkind).ok() == Some(OpKind::Or) {
+            let left = unsafe { &*op1_ref.op1 };
+            let right = unsafe { &*op1_ref.op2 };
+            let check_side = |side: &Expr| -> Option<*mut Expr> {
+                if OpKind::try_from(side.opkind).ok() == Some(OpKind::And) {
+                    let s_left = unsafe { &*side.op1 };
+                    let s_right = unsafe { &*side.op2 };
+                    if get_const(s_right) == Some(0xffffffffffffff00) { return Some(s_left as *const Expr as *mut Expr); }
+                    if get_const(s_left) == Some(0xffffffffffffff00) { return Some(s_right as *const Expr as *mut Expr); }
+                }
+                None
+            };
+            if let Some(bptr) = check_side(left).or_else(|| check_side(right)) {
+                let p = (((7u64) << 32) | (0u64)) as *mut Expr;
+                return Ok(Expr { op1: bptr, op2: p, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+            }
+        }
+
         Ok(expr.clone())
     }
     
@@ -725,7 +941,7 @@ impl SimplificationRule for ShiftOptimizationRule {
 
 impl ShiftOptimizationRule {
     fn get_expr_size(&self, _expr: &Expr) -> u32 {
-        32 // Simplified size calculation
+        32 // Deprecated helper; kept for compatibility in tests
     }
 }
 
@@ -813,6 +1029,347 @@ impl SimplificationRule for BitwiseOptimizationRule {
     fn priority(&self) -> u32 { 125 }
 }
 
+/// Comparison rewrites: port key rules from C
+pub struct ComparisonOptimizationRule;
+
+impl SimplificationRule for ComparisonOptimizationRule {
+    fn name(&self) -> &str { "ComparisonOptimization" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        match OpKind::try_from(expr.opkind).ok() {
+            Some(OpKind::Eq) | Some(OpKind::Leu) | Some(OpKind::Geu) | Some(OpKind::Ltu) | Some(OpKind::Gtu) => {
+                if expr.op1.is_null() || expr.op2.is_null() { return Ok(expr.clone()); }
+                let op1 = unsafe { &*expr.op1 };
+                let op2 = unsafe { &*expr.op2 };
+
+                // X - Y == 0  =>  X == Y
+                if OpKind::try_from(expr.opkind).ok() == Some(OpKind::Eq) {
+                    if OpKind::try_from(op1.opkind).ok() == Some(OpKind::Sub) && get_const(op2) == Some(0) {
+                        let a = unsafe { &*op1.op1 };
+                        let b = unsafe { &*op1.op2 };
+                        return Ok(Expr { op1: a as *const Expr as *mut Expr, op2: b as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 });
+                    }
+                    if OpKind::try_from(op2.opkind).ok() == Some(OpKind::Sub) && get_const(op1) == Some(0) {
+                        let a = unsafe { &*op2.op1 };
+                        let b = unsafe { &*op2.op2 };
+                        return Ok(Expr { op1: a as *const Expr as *mut Expr, op2: b as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 });
+                    }
+                }
+
+                // (X + C1) == C2  =>  X == (C2 - C1)
+                if OpKind::try_from(expr.opkind).ok() == Some(OpKind::Eq) {
+                    if OpKind::try_from(op1.opkind).ok() == Some(OpKind::Add) { 
+                        let rhs = get_const(op2);
+                        let c1 = unsafe { &*op1.op2 };
+                        if let (Some(c2), Some(k1)) = (rhs, get_const(c1)) {
+                            let new_c = c2.wrapping_sub(k1);
+                            let x = unsafe { &*op1.op1 };
+                            return Ok(Expr { op1: x as *const Expr as *mut Expr, op2: new_c as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+                        }
+                    }
+                    if OpKind::try_from(op1.opkind).ok() == Some(OpKind::Sub) { 
+                        let rhs = get_const(op2);
+                        let c1 = unsafe { &*op1.op2 };
+                        if let (Some(c2), Some(k1)) = (rhs, get_const(c1)) {
+                            let new_c = c2.wrapping_add(k1);
+                            let x = unsafe { &*op1.op1 };
+                            return Ok(Expr { op1: x as *const Expr as *mut Expr, op2: new_c as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+                        }
+                    }
+                }
+
+                // (0..X)[high:0] op C  with C <= mask(high+1)  => X op C
+                if let Some((src, high, low)) = match OpKind::try_from(op1.opkind).ok() { 
+                    Some(OpKind::Extract) => Some((unsafe { &*op1.op1 }, (op1.op2 as u64 >> 32) as u32, (op1.op2 as u64 & 0xFFFF_FFFF) as u32)),
+                    _ => None,
+                } {
+                    if low == 0 {
+                        if OpKind::try_from(src.opkind).ok() == Some(OpKind::Concat) {
+                            let a = unsafe { &*src.op1 };
+                            let b = unsafe { &*src.op2 };
+                            if is_zero_const(a) {
+                                if let Some(cval) = get_const(op2) {
+                                    let width = (high + 1) as u64;
+                                    let mask = if width >= 64 { u64::MAX } else { (1u64 << width) - 1 };
+                                    if cval <= mask {
+                                        return Ok(Expr { op1: b as *const Expr as *mut Expr, op2: cval as *mut Expr, op3: std::ptr::null_mut(), opkind: expr.opkind, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // (0..X) op (0..Y) for unsigned ops => X op Y
+                if let (Some(lhs_inner), Some(rhs_inner)) = (
+                    match OpKind::try_from(op1.opkind).ok() {
+                        Some(OpKind::Concat) => {
+                            let la = unsafe { &*op1.op1 }; let lb = unsafe { &*op1.op2 };
+                            if is_zero_const(la) { Some(lb) } else { None }
+                        }
+                        _ => None,
+                    },
+                    match OpKind::try_from(op2.opkind).ok() {
+                        Some(OpKind::Concat) => {
+                            let ra = unsafe { &*op2.op1 }; let rb = unsafe { &*op2.op2 };
+                            if is_zero_const(ra) { Some(rb) } else { None }
+                        }
+                        _ => None,
+                    }
+                ) {
+                    return Ok(Expr { op1: lhs_inner as *const Expr as *mut Expr, op2: rhs_inner as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: expr.opkind, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 });
+                }
+
+                Ok(expr.clone())
+            }
+            _ => Ok(expr.clone())
+        }
+    }
+
+    fn priority(&self) -> u32 { 135 }
+}
+
+/// ITE & 0xFF folding when both branches are small
+pub struct AndIteMaskOptimizationRule;
+
+impl SimplificationRule for AndIteMaskOptimizationRule {
+    fn name(&self) -> &str { "AndIteMaskOptimization" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        if OpKind::try_from(expr.opkind).ok() != Some(OpKind::And) || expr.op1.is_null() || expr.op2.is_null() {
+            return Ok(expr.clone());
+        }
+        let a = unsafe { &*expr.op1 };
+        let b = unsafe { &*expr.op2 };
+        let (ite, _mask) = if OpKind::try_from(a.opkind).ok() == Some(OpKind::Ite) && get_const(b) == Some(0xFF) { (a, b) }
+                           else if OpKind::try_from(b.opkind).ok() == Some(OpKind::Ite) && get_const(a) == Some(0xFF) { (b, a) }
+                           else { return Ok(expr.clone()) };
+        let then_b = unsafe { &*ite.op2 };
+        let else_b = unsafe { &*ite.op3 };
+        if let (Some(c1), Some(c2)) = (get_const(then_b), get_const(else_b)) {
+            if c1 <= 0xFF && c2 <= 0xFF {
+                return Ok(Expr { op1: ite.op1, op2: ite.op2, op3: ite.op3, opkind: OpKind::Ite as u8, op1_is_const: unsafe { (&*ite.op1).op1_is_const }, op2_is_const: then_b.op1_is_const, op3_is_const: else_b.op1_is_const });
+            }
+        }
+        Ok(expr.clone())
+    }
+
+    fn priority(&self) -> u32 { 128 }
+}
+
+/// Multiply by power-of-two => shift left
+pub struct MulPow2Rule;
+
+impl SimplificationRule for MulPow2Rule {
+    fn name(&self) -> &str { "MulPow2" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        if OpKind::try_from(expr.opkind).ok() != Some(OpKind::Mul) && OpKind::try_from(expr.opkind).ok() != Some(OpKind::Mulu) {
+            return Ok(expr.clone());
+        }
+        if expr.op1.is_null() || expr.op2.is_null() { return Ok(expr.clone()); }
+        let a = unsafe { &*expr.op1 };
+        let b = unsafe { &*expr.op2 };
+        let (x, cval) = if let Some(v) = get_const(a) { (b, v) } else if let Some(v) = get_const(b) { (a, v) } else { return Ok(expr.clone()) };
+        if cval == 0 { return Ok(Expr { op1: 0usize as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 }); }
+        if cval.is_power_of_two() {
+            let shift = cval.trailing_zeros() as u64;
+            return Ok(Expr { op1: x as *const Expr as *mut Expr, op2: shift as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Shl as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+        }
+        Ok(expr.clone())
+    }
+
+    fn priority(&self) -> u32 { 122 }
+}
+
+/// Div/Rem by power-of-two => shifts and masks (unsigned variants)
+pub struct DivRemPow2Rule;
+
+impl SimplificationRule for DivRemPow2Rule {
+    fn name(&self) -> &str { "DivRemPow2" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        match OpKind::try_from(expr.opkind).ok() {
+            Some(OpKind::Divu) => {
+                if expr.op1.is_null() || expr.op2.is_null() { return Ok(expr.clone()); }
+                let a = unsafe { &*expr.op1 };
+                let b = unsafe { &*expr.op2 };
+                if let Some(v) = get_const(b) { if v.is_power_of_two() {
+                    if v == 1 { return Ok(a.clone()); }
+                    let n = v.trailing_zeros() as u64;
+                    return Ok(Expr { op1: a as *const Expr as *mut Expr, op2: n as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Shr as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+                }}
+                Ok(expr.clone())
+            }
+            Some(OpKind::Remu) => {
+                if expr.op1.is_null() || expr.op2.is_null() { return Ok(expr.clone()); }
+                let a = unsafe { &*expr.op1 };
+                let b = unsafe { &*expr.op2 };
+                if let Some(v) = get_const(b) { if v.is_power_of_two() {
+                    if v == 1 { return Ok(Expr { op1: 0usize as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 }); }
+                    let n = v.trailing_zeros() as u64;
+                    let mask = (1u128 << n) - 1; // up to 64 bits anyway
+                    return Ok(Expr { op1: a as *const Expr as *mut Expr, op2: (mask as u64) as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::And as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+                }}
+                Ok(expr.clone())
+            }
+            _ => Ok(expr.clone())
+        }
+    }
+
+    fn priority(&self) -> u32 { 121 }
+}
+
+/// Shifts by constant amounts rewritten to extract/concat patterns (when sizes are known)
+pub struct ShiftByConstRule;
+
+impl SimplificationRule for ShiftByConstRule {
+    fn name(&self) -> &str { "ShiftByConst" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        match OpKind::try_from(expr.opkind).ok() {
+            Some(OpKind::Shl) => {
+                if expr.op1.is_null() || expr.op2.is_null() { return Ok(expr.clone()); }
+                let x = unsafe { &*expr.op1 };
+                let s = unsafe { &*expr.op2 };
+                if let Some(shift) = get_const(s) {
+                    if shift == 0 { return Ok(x.clone()); }
+                    if let Some(sz) = infer_size(x) { 
+                        if (shift as u32) >= sz { return Ok(Expr { op1: 0usize as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 }); }
+                        // concat(extract(sz-shift-1:0, x), 0^shift)
+                        let high = sz - 1 - shift as u32;
+                        let low = 0u32;
+                        let p = (((high as u64) << 32) | (low as u64)) as *mut Expr;
+                        let ext_node = Expr { op1: x as *const Expr as *mut Expr, op2: p, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 };
+                        let zero_node = Expr { op1: 0usize as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 };
+                        let ext_ptr = match tls_alloc_opt(ext_node) { Some(p) => p, None => return Ok(expr.clone()) };
+                        let zero_ptr = match tls_alloc_opt(zero_node) { Some(p) => p, None => return Ok(expr.clone()) };
+                        return Ok(Expr { op1: ext_ptr, op2: zero_ptr, op3: std::ptr::null_mut(), opkind: OpKind::Concat as u8, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 });
+                    }
+                }
+                Ok(expr.clone())
+            }
+            Some(OpKind::Shr) => { // logical right
+                if expr.op1.is_null() || expr.op2.is_null() { return Ok(expr.clone()); }
+                let x = unsafe { &*expr.op1 };
+                let s = unsafe { &*expr.op2 };
+                if let Some(shift) = get_const(s) {
+                    if shift == 0 { return Ok(x.clone()); }
+                    if let Some(sz) = infer_size(x) {
+                        let high = sz - 1;
+                        let low = (shift as u32).min(sz);
+                        let p = (((high as u64) << 32) | (low as u64)) as *mut Expr;
+                        let ext_node = Expr { op1: x as *const Expr as *mut Expr, op2: p, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 };
+                        let zero_node = Expr { op1: 0u64 as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 };
+                        let zero_ptr = match tls_alloc_opt(zero_node) { Some(p) => p, None => return Ok(expr.clone()) };
+                        let ext_ptr = match tls_alloc_opt(ext_node) { Some(p) => p, None => return Ok(expr.clone()) };
+                        return Ok(Expr { op1: zero_ptr, op2: ext_ptr, op3: std::ptr::null_mut(), opkind: OpKind::Concat as u8, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 });
+                    }
+                }
+                Ok(expr.clone())
+            }
+            Some(OpKind::Sar) => { // arithmetic right
+                if expr.op1.is_null() || expr.op2.is_null() { return Ok(expr.clone()); }
+                let x = unsafe { &*expr.op1 };
+                let s = unsafe { &*expr.op2 };
+                if let Some(shift) = get_const(s) {
+                    if shift == 0 { return Ok(x.clone()); }
+                    if let Some(sz) = infer_size(x) {
+                        // determine msb if constant
+                        let msb_p = (((sz as u64 - 1) << 32) | (sz as u64 - 1)) as *mut Expr;
+                        let msb = Expr { op1: x as *const Expr as *mut Expr, op2: msb_p, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 };
+                        if let Some(bit) = get_const(&msb) { // only if known
+                            let high = sz - 1;
+                            let low = (shift as u32).min(sz);
+                            let p = (((high as u64) << 32) | (low as u64)) as *mut Expr;
+                            let ext_node = Expr { op1: x as *const Expr as *mut Expr, op2: p, op3: std::ptr::null_mut(), opkind: OpKind::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 };
+                            let fill_val = if bit == 0 { 0u64 } else { u64::MAX };
+                            let fill_node = Expr { op1: fill_val as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 };
+                            let fill_ptr = match tls_alloc_opt(fill_node) { Some(p) => p, None => return Ok(expr.clone()) };
+                            let ext_ptr = match tls_alloc_opt(ext_node) { Some(p) => p, None => return Ok(expr.clone()) };
+                            return Ok(Expr { op1: fill_ptr, op2: ext_ptr, op3: std::ptr::null_mut(), opkind: OpKind::Concat as u8, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 });
+                        }
+                    }
+                }
+                Ok(expr.clone())
+            }
+            _ => Ok(expr.clone())
+        }
+    }
+
+    fn priority(&self) -> u32 { 124 }
+}
+
+/// Normalize Sext over Concat with zero-high
+pub struct SignExtConcatZeroRule;
+
+impl SimplificationRule for SignExtConcatZeroRule {
+    fn name(&self) -> &str { "SignExtConcatZero" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        if OpKind::try_from(expr.opkind).ok() != Some(OpKind::Sext) || expr.op1.is_null() { return Ok(expr.clone()); }
+        let x = unsafe { &*expr.op1 };
+        if OpKind::try_from(x.opkind).ok() == Some(OpKind::Concat) {
+            let left = unsafe { &*x.op1 };
+            if is_zero_const(left) {
+                // sext(concat(0..Y)) => concat(0, concat(0..Y)) using immediate zero left
+                return Ok(Expr { op1: 0usize as *mut Expr, op2: x as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Concat as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 });
+            }
+        }
+        Ok(expr.clone())
+    }
+
+    fn priority(&self) -> u32 { 101 }
+}
+
+/// NOT simplification: !true -> false; !false -> true
+pub struct NotSimplificationRule;
+
+impl SimplificationRule for NotSimplificationRule {
+    fn name(&self) -> &str { "NotSimplification" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        if OpKind::try_from(expr.opkind).ok() != Some(OpKind::Not) || expr.op1.is_null() {
+            return Ok(expr.clone());
+        }
+        let a = unsafe { &*expr.op1 };
+        if let Some(v) = get_const(a) {
+            let r = if v == 0 { 1u64 } else { 0u64 };
+            return Ok(Expr { op1: r as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 });
+        }
+        Ok(expr.clone())
+    }
+
+    fn priority(&self) -> u32 { 119 }
+}
+
+/// Equality identities
+pub struct EqIdentityRule;
+
+impl SimplificationRule for EqIdentityRule {
+    fn name(&self) -> &str { "EqIdentity" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        if OpKind::try_from(expr.opkind).ok() != Some(OpKind::Eq) || expr.op1.is_null() || expr.op2.is_null() {
+            return Ok(expr.clone());
+        }
+        let a = unsafe { &*expr.op1 };
+        let b = unsafe { &*expr.op2 };
+        // X == X -> true
+        if (expr.op1 as usize) == (expr.op2 as usize) && a.op1_is_const == b.op1_is_const && a.op2_is_const == b.op2_is_const && a.op3_is_const == b.op3_is_const && a.opkind == b.opkind {
+            return Ok(Expr { op1: 1usize as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 });
+        }
+        // const == const -> bool
+        if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
+            let r = if va == vb { 1u64 } else { 0u64 };
+            return Ok(Expr { op1: r as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: OpKind::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 });
+        }
+        Ok(expr.clone())
+    }
+
+    fn priority(&self) -> u32 { 118 }
+}
+
 /// Arithmetic extract optimization rule
 pub struct ArithmeticExtractRule;
 
@@ -835,7 +1392,7 @@ impl SimplificationRule for ArithmeticExtractRule {
                         // Create extracted operands
                         let extract_params = ((high as u64) << 32) | (low as u64);
                         
-                        let left_extract = Expr {
+                        let left_node = Expr {
                             op1: arith_arg1 as *const Expr as *mut Expr,
                             op2: extract_params as *mut Expr,
                             op3: std::ptr::null_mut(),
@@ -844,8 +1401,7 @@ impl SimplificationRule for ArithmeticExtractRule {
                             op2_is_const: 1,
                             op3_is_const: 0,
                         };
-                        
-                        let right_extract = Expr {
+                        let right_node = Expr {
                             op1: arith_arg2 as *const Expr as *mut Expr,
                             op2: extract_params as *mut Expr,
                             op3: std::ptr::null_mut(),
@@ -854,17 +1410,9 @@ impl SimplificationRule for ArithmeticExtractRule {
                             op2_is_const: 1,
                             op3_is_const: 0,
                         };
-                        
-                        // This is a simplified representation - in practice would need proper memory management
-                        return Ok(Expr {
-                            op1: &left_extract as *const Expr as *mut Expr,
-                            op2: &right_extract as *const Expr as *mut Expr,
-                            op3: std::ptr::null_mut(),
-                            opkind: op1.opkind, // Same operation
-                            op1_is_const: 0,
-                            op2_is_const: 0,
-                            op3_is_const: 0,
-                        });
+                        let lptr = match tls_alloc_opt(left_node) { Some(p) => p, None => return Ok(expr.clone()) };
+                        let rptr = match tls_alloc_opt(right_node) { Some(p) => p, None => return Ok(expr.clone()) };
+                        return Ok(Expr { op1: lptr, op2: rptr, op3: std::ptr::null_mut(), opkind: op1.opkind, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 });
                     }
                     _ => {}
                 }
@@ -989,7 +1537,7 @@ impl SimplificationRule for BitwiseOrOptimizationRule {
         }
         
         // Pattern: X | FF_MASK = FF_MASK
-        let expr_size = self.get_expr_size(expr);
+        let expr_size = infer_size(expr).unwrap_or(32);
         let ff_mask = if expr_size >= 64 { u64::MAX } else { (1u64 << expr_size) - 1 };
         
         if op1.op1_is_const != 0 && op1.op1 as u64 == ff_mask {
@@ -1019,11 +1567,7 @@ impl SimplificationRule for BitwiseOrOptimizationRule {
     fn priority(&self) -> u32 { 110 }
 }
 
-impl BitwiseOrOptimizationRule {
-    fn get_expr_size(&self, _expr: &Expr) -> u32 {
-        32 // Simplified size calculation
-    }
-}
+// Removed: BitwiseOrOptimizationRule::get_expr_size (replaced by infer_size())
 
 /// Concatenation advanced optimization rule
 pub struct ConcatenationAdvancedRule;
@@ -1047,30 +1591,12 @@ impl SimplificationRule for ConcatenationAdvancedRule {
             if op2_left.op1_is_const != 0 {
                 let c1_val = op1.op1 as u64;
                 let c2_val = op2_left.op1 as u64;
-                let c1_size = self.get_expr_size(op1);
-                let c2_size = self.get_expr_size(op2_left);
+                let c1_size = infer_size(op1).unwrap_or(32);
+                let c2_size = infer_size(op2_left).unwrap_or(32);
                 
                 if c1_size + c2_size <= 64 {
                     let combined_val = (c1_val << c2_size) | c2_val;
-                    let combined_const = Expr {
-                        op1: combined_val as *mut Expr,
-                        op2: std::ptr::null_mut(),
-                        op3: std::ptr::null_mut(),
-                        opkind: OpKind::IsConst as u8,
-                        op1_is_const: 1,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    };
-                    
-                    return Ok(Expr {
-                        op1: &combined_const as *const Expr as *mut Expr,
-                        op2: op2_right as *const Expr as *mut Expr,
-                        op3: std::ptr::null_mut(),
-                        opkind: OpKind::Concat as u8,
-                        op1_is_const: 1,
-                        op2_is_const: 0,
-                        op3_is_const: 0,
-                    });
+                    return Ok(Expr { op1: combined_val as *mut Expr, op2: op2_right as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Concat as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 });
                 }
             }
         }

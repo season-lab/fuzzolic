@@ -4,17 +4,29 @@ pub mod utils;
 pub mod shared_memory;
 pub mod query;
 pub mod coverage;
+pub mod ffi;
 
 #[cfg(test)]
 mod tests;
 
 pub use utils::config::Config;
 pub use query::processor::QueryProcessor;
+// Re-export C-ABI types for header generation via cbindgen
+pub use expressions::expression::{
+    Expr,
+    OpKind,
+    Query,
+    QueryArgs,
+    QueryArgs8,
+    QueryArgs16,
+    QueryType,
+    ModelType,
+};
 
 use anyhow::Result;
 use log::info;
 
-/// Main solver runner function - production implementation
+/// Main solver runner function
 pub fn run_solver(config: Config, use_fuzzy: bool) -> Result<()> {
     info!("Starting Fuzzolic SMT solver (fuzzy: {})", use_fuzzy);
     

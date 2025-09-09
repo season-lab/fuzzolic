@@ -1,5 +1,5 @@
-use crate::shared_memory::{SharedExprPool, QueryQueue};
-use crate::expression::{Expr, OpKind, QueryType, Query, QueryArgs, QueryArgs8};
+use crate::shared_memory::shared_memory::{SharedExprPool, QueryQueue};
+use crate::expressions::expression::{Expr, OpKind, QueryType, Query, QueryArgs, QueryArgs8};
 use std::ptr;
 
 #[cfg(test)]

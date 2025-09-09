@@ -64,6 +64,7 @@ tempfile = "3.8"
 
 [build-dependencies]
 cc = "1.0"
+cbindgen = "0.26"
 
 [features]
 default = []

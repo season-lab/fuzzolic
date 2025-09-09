@@ -1,6 +1,8 @@
 use anyhow::Result;
 use z3::ast::Ast;
 use crate::expressions::expression::{Expr, OpKind};
+use crate::expressions::expression_simplifier::ExpressionSimplifier;
+use crate::expressions::arena::ArenaScope;
 use crate::solver::SMTSolver;
 use crate::solver::i386;
 
@@ -23,87 +25,91 @@ impl SMTSolver {
 
     /// Static expression translation method for avoiding borrowing conflicts
     pub fn translate_expression_static<'a>(ctx: &'a z3::Context, expr: &Expr) -> Result<z3::ast::Dynamic<'a>> {
-        let op = OpKind::try_from(expr.opkind)?;
+        // Apply conservative simplification before translation to emulate C optimize_z3_query
+        let _arena_scope = ArenaScope::enter();
+        let mut simp = ExpressionSimplifier::new_conservative();
+        let s = simp.simplify_recursive(expr).unwrap_or_else(|_| expr.clone());
+        let op = OpKind::try_from(s.opkind)?;
         match op {
             OpKind::Not => {
-                let v = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
+                let v = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
                 if let Some(b) = v.as_bool() { Ok(b.not().into()) } else { Ok(v.as_bv().ok_or_else(|| anyhow::anyhow!("Not op1 not BV/bool"))?.bvnot().into()) }
             }
             OpKind::Neg => {
-                let v = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
+                let v = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
                 Ok(v.as_bv().ok_or_else(|| anyhow::anyhow!("Neg op1 not BV"))?.bvneg().into())
             }
             OpKind::IsConst => {
-                let value = expr.op1 as u64;
+                let value = s.op1 as u64;
                 Ok(z3::ast::BV::from_u64(ctx, value, 64).into())
             }
             // Create a BV symbol for input bytes: input_{id}
             OpKind::IsSymbolic => {
-                let input_id = expr.op1 as u64;
+                let input_id = s.op1 as u64;
                 // Default to 8-bit symbols (byte-level) unless size is provided as const in op2
-                let n_bits: u32 = if expr.op2_is_const != 0 { (expr.op2 as usize as u32) * 8 } else { 8 };
+                let n_bits: u32 = if s.op2_is_const != 0 { (s.op2 as usize as u32) * 8 } else { 8 };
                 let name = format!("input_{}", input_id);
                 Ok(z3::ast::BV::new_const(ctx, name, n_bits).into())
             }
             OpKind::Add => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Add lhs not BV"))?
                     .bvadd(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Add rhs not BV"))?)
                     .into())
             }
             OpKind::Sub => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Sub lhs not BV"))?
                     .bvsub(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Sub rhs not BV"))?)
                     .into())
             }
             OpKind::Mul => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Mul lhs not BV"))?
                     .bvmul(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Mul rhs not BV"))?)
                     .into())
             }
             OpKind::Mulu => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Mulu lhs not BV"))?
                     .bvmul(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Mulu rhs not BV"))?)
                     .into())
             }
             OpKind::Div => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Div lhs not BV"))?
                     .bvsdiv(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Div rhs not BV"))?)
                     .into())
             }
             OpKind::Divu => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Divu lhs not BV"))?
                     .bvudiv(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Divu rhs not BV"))?)
                     .into())
             }
             OpKind::Rem => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Rem lhs not BV"))?
                     .bvsrem(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Rem rhs not BV"))?)
                     .into())
             }
             OpKind::Remu => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Remu lhs not BV"))?
                     .bvurem(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Remu rhs not BV"))?)
                     .into())
             }
             OpKind::And => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 if let (Some(lb), Some(rb)) = (l.as_bool(), r.as_bool()) {
                     Ok(z3::ast::Bool::and(ctx, &[&lb, &rb]).into())
                 } else {
@@ -113,8 +119,8 @@ impl SMTSolver {
                 }
             }
             OpKind::Or => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 if let (Some(lb), Some(rb)) = (l.as_bool(), r.as_bool()) {
                     Ok(z3::ast::Bool::or(ctx, &[&lb, &rb]).into())
                 } else {
@@ -124,135 +130,135 @@ impl SMTSolver {
                 }
             }
             OpKind::Xor => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Xor lhs not BV"))?
                     .bvxor(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Xor rhs not BV"))?)
                     .into())
             }
             OpKind::Shl | OpKind::Sal => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Shl lhs not BV"))?
                     .bvshl(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Shl rhs not BV"))?)
                     .into())
             }
             OpKind::Shr => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Shr lhs not BV"))?
                     .bvlshr(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Shr rhs not BV"))?)
                     .into())
             }
             OpKind::Sar => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Sar lhs not BV"))?
                     .bvashr(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Sar rhs not BV"))?)
                     .into())
             }
             OpKind::Eq => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l._eq(&r).into())
             }
             OpKind::Ne => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l._eq(&r).not().into())
             }
             OpKind::Lt => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Lt lhs not BV"))?
                     .bvslt(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Lt rhs not BV"))?)
                     .into())
             }
             OpKind::Le => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Le lhs not BV"))?
                     .bvsle(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Le rhs not BV"))?)
                     .into())
             }
             OpKind::Gt => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Gt lhs not BV"))?
                     .bvsgt(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Gt rhs not BV"))?)
                     .into())
             }
             OpKind::Ge => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Ge lhs not BV"))?
                     .bvsge(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Ge rhs not BV"))?)
                     .into())
             }
             OpKind::Ltu => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Ltu lhs not BV"))?
                     .bvult(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Ltu rhs not BV"))?)
                     .into())
             }
             OpKind::Leu => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Leu lhs not BV"))?
                     .bvule(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Leu rhs not BV"))?)
                     .into())
             }
             OpKind::Gtu => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Gtu lhs not BV"))?
                     .bvugt(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Gtu rhs not BV"))?)
                     .into())
             }
             OpKind::Geu => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Geu lhs not BV"))?
                     .bvuge(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Geu rhs not BV"))?)
                     .into())
             }
             OpKind::Extract => {
-                let v = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
+                let v = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
                 let bv = v.as_bv().ok_or_else(|| anyhow::anyhow!("Extract op1 not BV"))?;
-                if expr.op2_is_const == 0 || expr.op3_is_const == 0 { anyhow::bail!("Extract requires const high/low indices") }
-                let high = expr.op2 as u32;
-                let low = expr.op3 as u32;
+                if s.op2_is_const == 0 || s.op3_is_const == 0 { anyhow::bail!("Extract requires const high/low indices") }
+                let high = s.op2 as u32;
+                let low = s.op3 as u32;
                 Ok(bv.extract(high, low).into())
             }
             OpKind::Extract8 => {
-                let v = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
+                let v = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
                 let bv = v.as_bv().ok_or_else(|| anyhow::anyhow!("Extract8 op1 not BV"))?;
-                if expr.op2_is_const == 0 { anyhow::bail!("Extract8 requires const byte index") }
-                let byte_index = expr.op2 as u32;
+                if s.op2_is_const == 0 { anyhow::bail!("Extract8 requires const byte index") }
+                let byte_index = s.op2 as u32;
                 let high = ((byte_index + 1) * 8) - 1;
                 let low = byte_index * 8;
                 Ok(bv.extract(high, low).into())
             }
             OpKind::Concat => {
-                let l = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let r = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
+                let l = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let r = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
                 Ok(l.as_bv().ok_or_else(|| anyhow::anyhow!("Concat lhs not BV"))?
                     .concat(&r.as_bv().ok_or_else(|| anyhow::anyhow!("Concat rhs not BV"))?)
                     .into())
             }
             OpKind::Zext => {
-                let v = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
+                let v = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
                 let bv = v.as_bv().ok_or_else(|| anyhow::anyhow!("Zext op1 not BV"))?;
-                let target_bits = expr.op2 as u32;
+                let target_bits = s.op2 as u32;
                 let cur = bv.get_size();
                 let extend_by = if target_bits > cur { target_bits - cur } else { 0 };
                 Ok(bv.zero_ext(extend_by).into())
             }
             OpKind::Sext => {
-                let v = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
+                let v = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
                 let bv = v.as_bv().ok_or_else(|| anyhow::anyhow!("Sext op1 not BV"))?;
-                let target_bits = expr.op2 as u32;
+                let target_bits = s.op2 as u32;
                 let cur = bv.get_size();
                 let extend_by = if target_bits > cur { target_bits - cur } else { 0 };
                 Ok(bv.sign_ext(extend_by).into())
@@ -314,13 +320,13 @@ impl SMTSolver {
             | OpKind::EflagsCSub | OpKind::EflagsCMul | OpKind::EflagsCSbbb | OpKind::EflagsCSbbw | OpKind::EflagsCSbbl | OpKind::EflagsCSbbq
             | OpKind::EflagsCLogic | OpKind::EflagsCShl => {
                 let width = std::mem::size_of::<usize>();
-                i386::smt_query_i386_to_z3(ctx, expr, width)
+                i386::smt_query_i386_to_z3(ctx, &s, width)
             }
             OpKind::IteEqZero => {
                 // (ite (== op1 0) op2 op3) treating op1 as BV if needed
-                let c = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let t = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
-                let e = Self::translate_operand_static(ctx, expr.op3, expr.op3_is_const)?;
+                let c = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let t = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
+                let e = Self::translate_operand_static(ctx, s.op3, s.op3_is_const)?;
                 let cond = if let Some(cb) = c.as_bool() {
                     cb._eq(&z3::ast::Bool::from_bool(ctx, true)) // rarely used; prefer BV route
                 } else if let Some(cbv) = c.as_bv() {
@@ -339,9 +345,9 @@ impl SMTSolver {
             }
             OpKind::IteNeZero => {
                 // (ite (!= op1 0) op2 op3)
-                let c = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const)?;
-                let t = Self::translate_operand_static(ctx, expr.op2, expr.op2_is_const)?;
-                let e = Self::translate_operand_static(ctx, expr.op3, expr.op3_is_const)?;
+                let c = Self::translate_operand_static(ctx, s.op1, s.op1_is_const)?;
+                let t = Self::translate_operand_static(ctx, s.op2, s.op2_is_const)?;
+                let e = Self::translate_operand_static(ctx, s.op3, s.op3_is_const)?;
                 let cond = if let Some(cb) = c.as_bool() {
                     cb // already boolean
                 } else if let Some(cbv) = c.as_bv() {
