@@ -1,0 +1,32 @@
+language = "C"
+include_guard = "FUZZOLIC_GENERATED_H"
+pragma_once = false
+
+[parse]
+# Do not parse dependencies
+parse_deps = false
+
+[export]
+# Explicitly include only base C ABI types; we'll inject Query manually to match tracer
+include = [
+  "OpKind",
+  "ModelType",
+  "Expr",
+  "CQueryArgs8",
+  "CExtendKind"
+]
+
+[export.rename]
+OpKind = "OPKIND"
+ModelType = "MODEL_T"
+Expr = "Expr"
+QueryArgs8 = "QueryArgs8"
+CQueryArgs8 = "QueryArgs8"
+CExtendKind = "EXTENDKIND"
+
+[enum]
+rename_variants = "ScreamingSnakeCase"
+
+[defines]
+# No feature-based defines for now
+

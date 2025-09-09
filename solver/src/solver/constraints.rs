@@ -48,52 +48,56 @@ impl SMTSolver {
                 for rec in records {
                     match rec {
                         ConstraintRecord::EqBV { expr_ptr, value } => {
-                            if expr_ptr.is_null() { continue; }
-                            // SAFETY: expr_ptr originates from shared memory pool; translate on demand
-                            let e = unsafe { &**expr_ptr };
-                            if let Ok(dyn_ast) = Self::translate_expression_static(&self.ctx, e) {
-                                if let Some(bv) = dyn_ast.as_bv() {
-                                    let width = bv.get_size();
-                                    let v = BV::from_u64(&self.ctx, *value, width);
-                                    let eq = bv._eq(&v);
-                                    bools.push(eq);
+                            if Expr::with_ref_from_ptr(*expr_ptr, |e| {
+                                if let Ok(dyn_ast) = Self::translate_expression_static(&self.ctx, e) {
+                                    if let Some(bv) = dyn_ast.as_bv() {
+                                        let width = bv.get_size();
+                                        let v = BV::from_u64(&self.ctx, *value, width);
+                                        let eq = bv._eq(&v);
+                                        bools.push(eq);
+                                    }
                                 }
-                            }
+                            }).is_none() { continue; }
                         }
                         ConstraintRecord::StrideCmpEq { left_ptr, right_ptr, len, invert } => {
-                            if left_ptr.is_null() || right_ptr.is_null() { continue; }
-                            let le = unsafe { &**left_ptr };
-                            let re = unsafe { &**right_ptr };
-                            if let (Ok(ld), Ok(rd)) = (
-                                Self::translate_expression_static(&self.ctx, le),
-                                Self::translate_expression_static(&self.ctx, re),
-                            ) {
-                                if let (Some(lbv), Some(rbv)) = (ld.as_bv(), rd.as_bv()) {
-                                    let mut b = self.build_stride_cmpeq_bool(&lbv, &rbv, *len);
-                                    if *invert { b = b.not(); }
-                                    bools.push(b);
-                                }
-                            }
+                            let mut pushed = false;
+                            let left_ok = Expr::with_ref_from_ptr(*left_ptr, |le| {
+                                let right_ok = Expr::with_ref_from_ptr(*right_ptr, |re| {
+                                    if let (Ok(ld), Ok(rd)) = (
+                                        Self::translate_expression_static(&self.ctx, le),
+                                        Self::translate_expression_static(&self.ctx, re),
+                                    ) {
+                                        if let (Some(lbv), Some(rbv)) = (ld.as_bv(), rd.as_bv()) {
+                                            let mut b = self.build_stride_cmpeq_bool(&lbv, &rbv, *len);
+                                            if *invert { b = b.not(); }
+                                            bools.push(b);
+                                            pushed = true;
+                                        }
+                                    }
+                                });
+                                if right_ok.is_none() { /* no-op */ }
+                            });
+                            if left_ok.is_none() || !pushed { continue; }
                         }
                         ConstraintRecord::StrlenConstraint { expr_ptr, s1_len, n } => {
-                            if expr_ptr.is_null() { continue; }
-                            let e = unsafe { &**expr_ptr };
-                            if let Ok(dyn_ast) = Self::translate_expression_static(&self.ctx, e) {
-                                if let Some(bv) = dyn_ast.as_bv() {
-                                    let b = self.build_strlen_bool(&bv, *s1_len, *n);
-                                    bools.push(b);
+                            if Expr::with_ref_from_ptr(*expr_ptr, |e| {
+                                if let Ok(dyn_ast) = Self::translate_expression_static(&self.ctx, e) {
+                                    if let Some(bv) = dyn_ast.as_bv() {
+                                        let b = self.build_strlen_bool(&bv, *s1_len, *n);
+                                        bools.push(b);
+                                    }
                                 }
-                            }
+                            }).is_none() { continue; }
                         }
                         ConstraintRecord::MemchrConstraint { haystack_ptr, needle, n } => {
-                            if haystack_ptr.is_null() { continue; }
-                            let e = unsafe { &**haystack_ptr };
-                            if let Ok(dyn_ast) = Self::translate_expression_static(&self.ctx, e) {
-                                if let Some(bv) = dyn_ast.as_bv() {
-                                    let b = self.build_memchr_bool(&bv, *needle, *n);
-                                    bools.push(b);
+                            if Expr::with_ref_from_ptr(*haystack_ptr, |e| {
+                                if let Ok(dyn_ast) = Self::translate_expression_static(&self.ctx, e) {
+                                    if let Some(bv) = dyn_ast.as_bv() {
+                                        let b = self.build_memchr_bool(&bv, *needle, *n);
+                                        bools.push(b);
+                                    }
                                 }
-                            }
+                            }).is_none() { continue; }
                         }
                         ConstraintRecord::MallocConstraint { .. } => {
                             // No direct Bool constraint to assert here; kept for parity.

@@ -19,7 +19,6 @@ pub use expressions::expression::{
     QueryArgs,
     QueryArgs8,
     QueryArgs16,
-    QueryType,
     ModelType,
 };
 

@@ -1,8 +1,8 @@
 use crate::solver::SMTSolver;
 use crate::utils::config::Config;
-use crate::expressions::expression::{Query, QueryType, OpKind, Expr};
+use crate::expressions::expression::{Query, OpKind, Expr};
 use crate::solver::ConstraintRecord;
-use crate::shared_memory::shared_memory::{QueryQueue, EXPR_QUERY_CAPACITY};
+use crate::shared_memory::shared_memory::{QueryQueue, SharedExprPool, EXPR_QUERY_CAPACITY, memory_barrier, FINAL_QUERY, BranchBitmapShm};
 use crate::coverage::branch_coverage::BranchCoverage;
 use crate::query::memory_slice::MemorySliceReasoner;
 use anyhow::Result;
@@ -17,6 +17,8 @@ use z3::ast::Ast;
 pub struct QueryProcessor {
     solver: SMTSolver,
     query_queue: QueryQueue,
+    expr_pool: SharedExprPool,
+    branch_bitmap_shm: Option<BranchBitmapShm>,
     branch_coverage: BranchCoverage,
     memory_slice_reasoner: MemorySliceReasoner,
     config: Config,
@@ -31,14 +33,54 @@ impl QueryProcessor {
     pub fn new(config: Config) -> Result<Self> {
         let solver = SMTSolver::new(&config)?;
         // Use configured shared memory key and capacity matching C layout
-        let query_queue = QueryQueue::new(config.query_shm_key, EXPR_QUERY_CAPACITY)?;
+        // Mirror C's user-facing prints so external launcher scripts can parse keys
+        println!(
+            "[SOLVER] Creating shared memory #1 (key={} / 0x{:x})...",
+            config.expr_pool_shm_key, config.expr_pool_shm_key
+        );
+        let mut expr_pool = SharedExprPool::new(
+            config.expr_pool_shm_key,
+            crate::shared_memory::shared_memory::EXPR_POOL_CAPACITY,
+        )?;
+        println!(
+            "[SOLVER] Creating shared memory #2 (key={} / 0x{:x})...",
+            config.query_shm_key, config.query_shm_key
+        );
+        let mut query_queue = QueryQueue::new(config.query_shm_key, EXPR_QUERY_CAPACITY)?;
+        // Optional: branch bitmap shared memory (#3)
+        let mut branch_bitmap_shm: Option<BranchBitmapShm> = None;
+        if let Some(key) = config.bitmap_shm_key {
+            println!(
+                "[SOLVER] Creating shared memory #3 (key={} / 0x{:x})...",
+                key, key
+            );
+            let mut bm = BranchBitmapShm::new(key)?;
+            bm.clear();
+            branch_bitmap_shm = Some(bm);
+        }
         let branch_coverage = BranchCoverage::new(&config)?;
         
         let memory_slice_reasoner = MemorySliceReasoner::new();
         
+        // Handshake sequence with tracer (mirrors C main.c)
+        // 1) Clear pool and queue
+        expr_pool.clear();
+        query_queue.clear();
+        // 2) Write SHM_READY into first slot and issue memory barrier
+        query_queue.set_ready();
+        memory_barrier();
+        // Announce attach (C prints this right after shmat)
+        println!("[SOLVER] Attached to shared memories...");
+        // 3) Wait for tracer to set SHM_DONE and then skip first slot
+        println!("[SOLVER] Waiting for the tracer...");
+        query_queue.wait_tracer_ready_and_skip();
+        memory_barrier();
+
         Ok(QueryProcessor {
             solver,
             query_queue,
+            expr_pool,
+            branch_bitmap_shm,
             branch_coverage,
             memory_slice_reasoner,
             config: config.clone(),
@@ -70,6 +112,13 @@ impl QueryProcessor {
             }
             
             // Try to get next query from queue
+            crate::shared_memory::shared_memory::memory_barrier();
+            let peek_ptr = self.query_queue.peek_current_ptr();
+            debug!(
+                "Queue state: read_index={} peek_ptr=0x{:x}",
+                self.query_queue.get_stats().read_index,
+                peek_ptr
+            );
             match self.query_queue.next_query() {
                 Some(query) => {
                     if self.is_final_query(&query) {
@@ -85,6 +134,7 @@ impl QueryProcessor {
                 }
                 None => {
                     // No query available, short sleep
+                    debug!("No query at index (ptr=0x{:x}); sleeping", peek_ptr);
                     std::thread::sleep(Duration::from_millis(1));
                     
                     // If no queries for too long, assume tracer crashed
@@ -101,56 +151,74 @@ impl QueryProcessor {
     
     /// Process a single query
     fn process_query(&mut self, query: Query) -> Result<()> {
-        debug!("Processing query: {:?}", query.query_type);
+        let qidx = query.get_index();
+        let a8 = query.args8_copy();
+        println!(
+            "[SOLVER] Processing query: idx={} addr=0x{:x} expr_ptr={:?} args8=[{:#04x},{:#04x},{:#04x},{:#04x}]",
+            qidx, query.address, query.query, a8.arg0, a8.arg1, a8.arg2, a8.arg3
+        );
+        debug!("Processing query: ptr={:?} addr=0x{:x}", query.query, query.address);
         let start_time = Instant::now();
         
         // First mirror the C smt_query dispatch by opkind when possible
-        if !query.query.is_null() {
-            let expr = unsafe { &*query.query };
-            if let Ok(op) = OpKind::try_from(expr.opkind) {
+        if let Some(expr) = query.query_expr() {
+            if let Ok(op) = expr.try_opkind() {
                 match op {
                     OpKind::SymbolicPc | OpKind::SymbolicJumpTableAccess | OpKind::SymbolicLoad | OpKind::SymbolicStore => {
+                        println!("[SOLVER] Detected simple expr query kind: {:?}", op);
                         self.process_expr_query_simple(&query, expr, op)?;
                         let elapsed = start_time.elapsed();
                         debug!("Query processed in {:?}", elapsed);
                         return Ok(());
                     }
                     OpKind::MemorySliceAccess | OpKind::MemoryInputSliceAccess => {
+                        println!("[SOLVER] Detected slice access query kind: {:?}", op);
                         self.process_slice_query(&query)?;
                         let elapsed = start_time.elapsed();
                         debug!("Query processed in {:?}", elapsed);
                         return Ok(());
                     }
                     OpKind::MemoryConcretization => {
+                        println!("[SOLVER] Detected memory concretization query");
                         self.process_mem_concretization(expr)?;
                         let elapsed = start_time.elapsed();
                         debug!("Query processed in {:?}", elapsed);
                         return Ok(());
                     }
                     OpKind::ConsistencyCheck => {
+                        println!("[SOLVER] Detected consistency check query");
                         self.process_consistency_query_q(&query)?;
                         let elapsed = start_time.elapsed();
                         debug!("Query processed in {:?}", elapsed);
                         return Ok(());
                     }
                     OpKind::Model => {
+                        println!("[SOLVER] Detected model query");
                         self.process_model_query(&query)?;
                         let elapsed = start_time.elapsed();
                         debug!("Query processed in {:?}", elapsed);
                         return Ok(());
                     }
+                    // Comparison ops -> branch condition
+                    OpKind::Eq | OpKind::Ne | OpKind::Lt | OpKind::Le | OpKind::Ge | OpKind::Gt
+                    | OpKind::Ltu | OpKind::Leu | OpKind::Geu | OpKind::Gtu => {
+                        println!("[SOLVER] Detected branch condition: {:?}", op);
+                        self.process_branch_query(&query)?;
+                        let elapsed = start_time.elapsed();
+                        debug!("Branch query processed in {:?}", elapsed);
+                        return Ok(());
+                    }
                     _ => {}
                 }
+                println!("[SOLVER] OpKind={:?} not explicitly handled; treating as branch", op);
+            } else {
+                println!("[SOLVER] Unknown OpKind byte={} — treating as branch", expr.opkind);
             }
         }
 
-        // Fallback to Rust query_type routing
-        let result = match query.query_type {
-            QueryType::Branch => self.process_branch_query(&query),
-            QueryType::Slice => self.process_slice_query(&query),
-            QueryType::Model => self.process_model_query(&query),
-            QueryType::Dependency => self.process_dependency_query(&query),
-        };
+        // Fallback: default to branch processing when we cannot infer from opkind
+        println!("[SOLVER] Processing as branch query (fallback)");
+        let result = self.process_branch_query(&query);
         
         let elapsed = start_time.elapsed();
         debug!("Query processed in {:?}", elapsed);
@@ -161,11 +229,11 @@ impl QueryProcessor {
     /// Simple expression satisfiability query (SYMBOLIC_PC, JUMP_TABLE, LOAD/STORE)
     fn process_expr_query_simple(&mut self, query: &Query, expr: &Expr, op: OpKind) -> Result<()> {
         // In C: smt_expr_query(q, opkind) translates q->query->op1
-        let target_ptr = expr.op1;
-        if target_ptr.is_null() {
-            anyhow::bail!("Expr {:?} missing op1 target", op);
-        }
-        let target = unsafe { &*target_ptr };
+        let target = expr.op1_ref().ok_or_else(|| anyhow::anyhow!("Expr {:?} missing op1 target", op))?;
+        println!(
+            "[SOLVER] Simple expr query: kind={:?} target_ptr={:?}",
+            op, target as *const Expr
+        );
 
         // Record dependencies for target expression
         let _ = self.solver.add_dependency_for_expr(target);
@@ -200,10 +268,12 @@ impl QueryProcessor {
         }
 
         if !has_real_inputs {
+            println!("[SOLVER] Simple expr query skipped: no real inputs in target");
             // Skip as in C
             return Ok(());
         }
         if inputs_are_concretized {
+            println!("[SOLVER] Simple expr query skipped: inputs already concretized");
             // Address likely already concretized; skip
             return Ok(());
         }
@@ -331,8 +401,8 @@ impl QueryProcessor {
     
     /// Check if this is the final query marker
     fn is_final_query(&self, query: &Query) -> bool {
-        // Final query marker: null query pointer (mirrors C code behavior)
-        query.query.is_null()
+        // Final query marker matches C constant FINAL_QUERY (0xDEAD)
+        (query.query as *const std::os::raw::c_void) == FINAL_QUERY
     }
     
     /// Process model queries

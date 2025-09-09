@@ -22,8 +22,12 @@ pub const EXPR_POOL_CAPACITY: usize = 1024 * 1024 * 8;
 pub const EXPR_QUERY_CAPACITY: usize = 1024 * 1024;
 pub const EXPR_POOL_ADDR: *const libc::c_void = 0x7f05c8cc7000 as *const libc::c_void;
 pub const FINAL_QUERY: *const libc::c_void = 0xDEAD as *const libc::c_void;
-pub const SHM_READY: u32 = 0xDEADBEEF;
+// In C: next_query[0].query = (void*)SHM_READY; treat as pointer sentinel
+pub const SHM_READY: *const libc::c_void = 0xDEADBEEF as usize as *const libc::c_void;
 pub const SHM_DONE: *const libc::c_void = 0xABCDABCD as *const libc::c_void;
+
+/// Branch bitmap size as used by coverage (AFL-style)
+pub const BRANCH_BITMAP_SIZE: usize = 65536;
 
 /// Shared expression pool implementation matching C version
 pub struct SharedExprPool {
@@ -60,7 +64,10 @@ impl SharedExprPool {
             anyhow::bail!("Failed to attach to shared memory segment");
         }
         
-        info!("Attached to expression pool shared memory (key: {}, size: {} bytes)", shm_key, size);
+        info!(
+            "Attached to expression pool shared memory (key: {}, size: {} bytes) at addr={:?}",
+            shm_key, size, pool
+        );
         
         Ok(SharedExprPool {
             pool,
@@ -68,6 +75,15 @@ impl SharedExprPool {
             current_index: 0,
             shm_id,
         })
+    }
+    
+    /// Zero-initialize the entire expression pool (parity with C memset)
+    pub fn clear(&mut self) {
+        unsafe {
+            let byte_len = self.capacity * std::mem::size_of::<Expr>();
+            std::ptr::write_bytes(self.pool as *mut u8, 0u8, byte_len);
+        }
+        info!("Cleared expression pool shared memory ({} bytes)", self.capacity * std::mem::size_of::<Expr>());
     }
     
     pub fn add_expr(&mut self, expr: Expr) -> Result<usize> {
@@ -169,7 +185,10 @@ impl QueryQueue {
             anyhow::bail!("Failed to attach to query queue shared memory");
         }
         
-        info!("Attached to query queue shared memory (key: {}, size: {} bytes)", shm_key, size);
+        info!(
+            "Attached to query queue shared memory (key: {}, size: {} bytes) at addr={:?}",
+            shm_key, size, queue
+        );
         
         Ok(QueryQueue {
             queue,
@@ -178,6 +197,57 @@ impl QueryQueue {
             write_index: 0,
             shm_id,
         })
+    }
+    
+    /// Zero-initialize the whole query queue (parity with C memset)
+    pub fn clear(&mut self) {
+        unsafe {
+            let byte_len = self.capacity * std::mem::size_of::<Query>();
+            std::ptr::write_bytes(self.queue as *mut u8, 0u8, byte_len);
+        }
+        info!("Cleared query queue shared memory ({} bytes)", self.capacity * std::mem::size_of::<Query>());
+    }
+    
+    /// Write the SHM_READY sentinel into the first slot to signal the tracer
+    pub fn set_ready(&mut self) {
+        unsafe {
+            let slot0 = self.queue;
+            // Cast SHM_READY pointer sentinel to Expr* as in C
+            (*slot0).query = SHM_READY as *mut Expr;
+        }
+        let val = unsafe { self.queue.as_ref().map(|q| q.query as usize).unwrap_or(0) };
+        info!("Wrote SHM_READY sentinel to query queue[0], value=0x{:x}", val);
+    }
+    
+    /// Wait until the tracer flips the first slot to SHM_DONE; then skip slot 0
+    pub fn wait_tracer_ready_and_skip(&mut self) {
+        use std::time::Duration;
+        let sleep_dur = Duration::from_nanos(5000); // matches C EXPR_QUEUE_POLLING_TIME_NS
+        // Log constants and sizes for diagnosis
+        info!(
+            "[SOLVER] Waiting for the tracer... SHM_READY=0x{:x} SHM_DONE=0x{:x} FINAL_QUERY=0x{:x} sizeof(Query)={} sizeof(Expr)={} EXPR_POOL_ADDR={:?}",
+            SHM_READY as usize,
+            SHM_DONE as usize,
+            FINAL_QUERY as usize,
+            std::mem::size_of::<Query>(),
+            std::mem::size_of::<Expr>(),
+            EXPR_POOL_ADDR
+        );
+        loop {
+            let done = unsafe {
+                let slot0 = &*self.queue;
+                (slot0.query as *const libc::c_void) == SHM_DONE
+            };
+            if done {
+                break;
+            }
+            // let probe = unsafe { (*self.queue).query as usize };
+            // debug!("[SOLVER] tracer wait: queue[0].query=0x{:x}", probe);
+            std::thread::sleep(sleep_dur);
+        }
+        // Skip the first slot as C does (next_query++)
+        self.read_index = 1 % self.capacity;
+        info!("[SOLVER] Tracer is ready; starting to consume queries");
     }
     
     /// Pop a query from the queue (legacy helper)
@@ -219,39 +289,48 @@ impl QueryQueue {
             anyhow::bail!("Query queue is full");
         }
         
-        let query_type = query.query_type;
         unsafe {
             ptr::write(self.queue.add(self.write_index), query);
         }
         
         self.write_index = next_write;
-        debug!("Added query at index {} (type: {:?})", self.write_index, query_type);
+        debug!("Added query at index {}", self.write_index);
         Ok(())
     }
     
     pub fn next_query(&mut self) -> Option<Query> {
-        if self.read_index == self.write_index {
-            return None; // Queue is empty
+        if self.read_index >= self.capacity { return None; }
+        let q = unsafe { ptr::read(self.queue.add(self.read_index)) };
+        // Stop when producer indicates end (NULL in C loop) — caller will sleep/retry
+        if q.query.is_null() {
+            return None;
         }
-        
-        let query = unsafe { ptr::read(self.queue.add(self.read_index)) };
-        
-        self.read_index = (self.read_index + 1) % self.capacity;
-        debug!("Retrieved query from index {} (type: {:?})", self.read_index, query.query_type);
-        Some(query)
+        self.read_index = self.read_index + 1;
+        debug!("Retrieved query from index {} (query_ptr={:?} addr=0x{:x})", self.read_index - 1, q.query, q.address);
+        Some(q)
+    }
+
+    /// Peek the current slot's query pointer (raw) without advancing, for diagnostics
+    pub fn peek_current_ptr(&self) -> usize {
+        if self.read_index >= self.capacity { return 0; }
+        unsafe { (*self.queue.add(self.read_index)).query as usize }
+    }
+
+    /// Peek current slot words: (query_ptr, address, args64) without advancing
+    pub fn peek_current_words(&self) -> (usize, usize, usize) {
+        if self.read_index >= self.capacity { return (0, 0, 0); }
+        unsafe {
+            let slot = self.queue.add(self.read_index);
+            let qptr = (*slot).query as usize;
+            let addr = (*slot).address as usize;
+            let args64 = (*slot).args.args64;
+            (qptr, addr, args64)
+        }
     }
     
-    pub fn len(&self) -> usize {
-        if self.write_index >= self.read_index {
-            self.write_index - self.read_index
-        } else {
-            self.capacity - self.read_index + self.write_index
-        }
-    }
+    pub fn len(&self) -> usize { 0 }
     
-    pub fn is_empty(&self) -> bool {
-        self.read_index == self.write_index
-    }
+    pub fn is_empty(&self) -> bool { true }
     
     /// Get queue statistics for monitoring
     pub fn get_stats(&self) -> QueueStats {
@@ -325,6 +404,50 @@ impl Drop for QueryQueue {
             let _ = shmctl(self.shm_id, IPC_RMID, std::ptr::null_mut());
             if shmdt(self.queue as *const libc::c_void) == -1 {
                 error!("Failed to detach from query queue shared memory");
+            }
+        }
+    }
+}
+
+/// Optional branch bitmap shared memory (third segment in C main.c)
+pub struct BranchBitmapShm {
+    pub bitmap: *mut u8,
+    pub shm_id: i32,
+}
+
+unsafe impl Send for BranchBitmapShm {}
+unsafe impl Sync for BranchBitmapShm {}
+
+impl BranchBitmapShm {
+    pub fn new(shm_key: u64) -> Result<Self> {
+        let size = BRANCH_BITMAP_SIZE * std::mem::size_of::<u8>();
+        let shm_id = unsafe { shmget(shm_key as i32, size, IPC_CREAT | 0o666) };
+        if shm_id == -1 {
+            anyhow::bail!("Failed to create shared memory for branch bitmap");
+        }
+        let bitmap = unsafe { shmat(shm_id, std::ptr::null(), 0) as *mut u8 };
+        if bitmap.is_null() || (bitmap as isize) == -1 {
+            anyhow::bail!("Failed to attach branch bitmap shared memory");
+        }
+        info!(
+            "Attached to branch bitmap shared memory (key: {}, size: {} bytes) at addr={:?}",
+            shm_key, size, bitmap
+        );
+        Ok(Self { bitmap, shm_id })
+    }
+
+    pub fn clear(&mut self) {
+        unsafe { std::ptr::write_bytes(self.bitmap, 0u8, BRANCH_BITMAP_SIZE); }
+        info!("Cleared branch bitmap shared memory ({} bytes)", BRANCH_BITMAP_SIZE);
+    }
+}
+
+impl Drop for BranchBitmapShm {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = shmctl(self.shm_id, IPC_RMID, std::ptr::null_mut());
+            if shmdt(self.bitmap as *const libc::c_void) == -1 {
+                error!("Failed to detach branch bitmap shared memory");
             }
         }
     }

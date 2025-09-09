@@ -5,8 +5,7 @@ use crate::solver::SMTSolver;
 
 pub fn handle_dependency(solver: &mut SMTSolver, query: &Query) -> Result<()> {
     debug!("Processing dependency query");
-    if query.query.is_null() { return Ok(()); }
-    let expr = unsafe { &*query.query };
+    let expr = if let Some(e) = query.query_expr() { e } else { return Ok(()); };
     // Record dependencies for the queried expression
     let _ = solver.add_dependency_for_expr(expr);
     let ctx = &solver.ctx;

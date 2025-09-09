@@ -303,7 +303,33 @@ pub struct Expr {
     pub op3_is_const: u8,
 }
 
-/// QueryArgs8 struct matching C definition (fields arg0..arg7)
+/// Ergonomic representation of an operand for `Expr`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Operand {
+    /// The operand is encoded as an immediate constant stored in the pointer
+    Const(usize),
+    /// The operand is a pointer to another `Expr` node
+    Node(*mut Expr),
+    /// No operand present (null pointer and not a const)
+    Empty,
+}
+
+impl Operand {
+    #[inline]
+    pub fn is_const(self) -> bool { matches!(self, Operand::Const(_)) }
+
+    #[inline]
+    pub fn as_const(self) -> Option<usize> {
+        if let Operand::Const(v) = self { Some(v) } else { None }
+    }
+
+    #[inline]
+    pub fn as_ptr(self) -> Option<*mut Expr> {
+        if let Operand::Node(p) = self { Some(p) } else { None }
+    }
+}
+
+/// QueryArgs8 struct matching generated C header (4 bytes arg0..arg3)
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct QueryArgs8 {
@@ -311,10 +337,6 @@ pub struct QueryArgs8 {
     pub arg1: u8,
     pub arg2: u8,
     pub arg3: u8,
-    pub arg4: u8,
-    pub arg5: u8,
-    pub arg6: u8,
-    pub arg7: u8,
 }
 
 /// Query union args matching C definition
@@ -322,6 +344,7 @@ pub struct QueryArgs8 {
 pub union QueryArgs {
     pub args8: std::mem::ManuallyDrop<QueryArgs8>,
     pub args64: usize,
+    pub args16: QueryArgs16,
     pub model: ModelType,
 }
 
@@ -335,25 +358,14 @@ pub struct QueryArgs16 {
     pub count_inv: u16,
 }
 
-/// QueryType enum matching C definition
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum QueryType {
-    Branch = 0,
-    Slice = 1,
-    Model = 2,
-    Dependency = 3,
-}
-
 /// Query structure matching C definition
 /// Layout mirrors C (symbolic-struct.h):
-/// struct Query { uintptr_t address; Expr* query; union { ... } args; uint8_t query_type; };
+/// struct Query { Expr* query; uintptr_t address; union { ... } args; };
 #[repr(C)]
 pub struct Query {
-    pub address: usize,
     pub query: *mut Expr,
+    pub address: usize,
     pub args: QueryArgs,
-    pub query_type: QueryType,
 }
 
 impl Expr {
@@ -471,6 +483,141 @@ impl Expr {
             _ => 0,
         }
     }
+
+    // =========================
+    // Auxiliary ergonomic helpers
+    // =========================
+
+    /// Convert raw `opkind` byte to strongly-typed `OpKind`.
+    #[inline]
+    pub fn try_opkind(&self) -> Result<OpKind> { OpKind::try_from(self.opkind) }
+
+    /// Check if the expression has the specified operation kind.
+    #[inline]
+    pub fn opkind_is(&self, k: OpKind) -> bool { self.opkind == k as u8 }
+
+    /// Whether this node is a constant (`OpKind::IsConst`) with an embedded value.
+    #[inline]
+    pub fn is_const_node(&self) -> bool { self.opkind == OpKind::IsConst as u8 && self.op1_is_const != 0 }
+
+    /// Constant value for `IsConst` nodes, if available.
+    #[inline]
+    pub fn const_value(&self) -> Option<usize> { if self.is_const_node() { Some(self.op1 as usize) } else { None } }
+
+    /// Whether this node represents a symbolic input (`OpKind::IsSymbolic`).
+    #[inline]
+    pub fn is_symbolic_node(&self) -> bool { self.opkind == OpKind::IsSymbolic as u8 }
+
+    /// Get operand 1 as an ergonomic `Operand` (Const/Node/Empty).
+    #[inline]
+    pub fn op1_operand(&self) -> Operand {
+        if self.op1_is_const != 0 { Operand::Const(self.op1 as usize) }
+        else if self.op1.is_null() { Operand::Empty } else { Operand::Node(self.op1) }
+    }
+
+    /// Get operand 2 as an ergonomic `Operand` (Const/Node/Empty).
+    #[inline]
+    pub fn op2_operand(&self) -> Operand {
+        if self.op2_is_const != 0 { Operand::Const(self.op2 as usize) }
+        else if self.op2.is_null() { Operand::Empty } else { Operand::Node(self.op2) }
+    }
+
+    /// Get operand 3 as an ergonomic `Operand` (Const/Node/Empty).
+    #[inline]
+    pub fn op3_operand(&self) -> Operand {
+        if self.op3_is_const != 0 { Operand::Const(self.op3 as usize) }
+        else if self.op3.is_null() { Operand::Empty } else { Operand::Node(self.op3) }
+    }
+
+    /// Indexed accessor for operands: 0->op1, 1->op2, 2->op3
+    #[inline]
+    pub fn operand(&self, idx: usize) -> Operand {
+        match idx { 0 => self.op1_operand(), 1 => self.op2_operand(), 2 => self.op3_operand(), _ => Operand::Empty }
+    }
+
+    /// Borrow operand 1 as `&Expr` if it is a node pointer (non-const and non-null).
+    #[inline]
+    pub fn op1_ref(&self) -> Option<&Expr> {
+        self.op_ref(self.op1_is_const, self.op1)
+    }
+
+    /// Borrow operand 2 as `&Expr` if it is a node pointer (non-const and non-null).
+    #[inline]
+    pub fn op2_ref(&self) -> Option<&Expr> {
+        self.op_ref(self.op2_is_const, self.op2)
+    }
+
+    /// Borrow operand 3 as `&Expr` if it is a node pointer (non-const and non-null).
+    #[inline]
+    pub fn op3_ref(&self) -> Option<&Expr> {
+        self.op_ref(self.op3_is_const, self.op3)
+    }
+
+    /// Internal helper to convert a raw operand pointer into a shared reference safely.
+    /// Returns None for const operands or null pointers.
+    #[inline]
+    fn op_ref<'a>(&'a self, is_const: u8, ptr: *mut Expr) -> Option<&'a Expr> {
+        if is_const != 0 || ptr.is_null() { return None; }
+        // Guard against immediates encoded without the const flag: only deref
+        // pointers that lie within the shared expression pool address space.
+        let ptr_val = ptr as usize;
+        let pool_base = crate::shared_memory::shared_memory::EXPR_POOL_ADDR as usize;
+        if ptr_val < pool_base { return None; }
+        // SAFETY: The shared memory producer guarantees that non-const operands
+        // are valid pointers to Expr nodes during the solver's processing window.
+        // We expose only an immutable borrow to prevent mutation.
+        unsafe { Some(&*ptr) }
+    }
+
+    /// Central helper: with-borrow API for a raw operand pointer.
+    /// Executes `f` with a shared reference to the node if the pointer is non-null and not a const-immediate.
+    #[inline]
+    pub fn with_operand_ref_from_raw<T, F: FnOnce(&Expr) -> T>(is_const: u8, ptr: *mut Expr, f: F) -> Option<T> {
+        if is_const != 0 || ptr.is_null() { return None; }
+        // Only deref pointers that are in the shared pool; treat tiny raw values as immediates.
+        let ptr_val = ptr as usize;
+        let pool_base = crate::shared_memory::shared_memory::EXPR_POOL_ADDR as usize;
+        if ptr_val < pool_base { return None; }
+        // SAFETY: pointer originates from shared memory; we only take an immutable reference scoped to `f`.
+        unsafe { Some(f(&*ptr)) }
+    }
+
+    /// Central helper: with-borrow API for a raw node pointer (not a const-immediate).
+    /// Executes `f` with a shared reference to the node if the pointer is non-null.
+    #[inline]
+    pub fn with_ref_from_ptr<T, F: FnOnce(&Expr) -> T>(ptr: *const Expr, f: F) -> Option<T> {
+        if ptr.is_null() { return None; }
+        // SAFETY: pointer originates from shared memory; immutable reference scoped to `f`.
+        unsafe { Some(f(&*ptr)) }
+    }
+
+    /// Convenience: set operand 1 as a node pointer and clear its const flag.
+    #[inline]
+    pub fn set_op1_expr(&mut self, ptr: *mut Expr) { self.op1 = ptr; self.op1_is_const = 0; }
+
+    /// Convenience: set operand 2 as a node pointer and clear its const flag.
+    #[inline]
+    pub fn set_op2_expr(&mut self, ptr: *mut Expr) { self.op2 = ptr; self.op2_is_const = 0; }
+
+    /// Convenience: set operand 3 as a node pointer and clear its const flag.
+    #[inline]
+    pub fn set_op3_expr(&mut self, ptr: *mut Expr) { self.op3 = ptr; self.op3_is_const = 0; }
+
+    /// Utility: pack two u32 values into a pointer-sized immediate (used by some encodings, e.g., Extract ranges).
+    #[inline]
+    pub fn pack_u32_pair_to_ptr(high: u32, low: u32) -> *mut Expr {
+        let v = ((high as u64) << 32) | (low as u64);
+        v as usize as *mut Expr
+    }
+
+    /// Utility: unpack two u32 values from a pointer-sized immediate produced by `pack_u32_pair_to_ptr`.
+    #[inline]
+    pub fn unpack_u32_pair_from_ptr(ptr: *mut Expr) -> (u32, u32) {
+        let v = ptr as usize as u64;
+        let high = (v >> 32) as u32;
+        let low = (v & 0xFFFF_FFFF) as u32;
+        (high, low)
+    }
 }
 
 /// Expression pool for managing shared expressions
@@ -573,19 +720,59 @@ impl DependencyGraph {
 impl Query {
     pub fn new() -> Self {
         Query {
-            address: 0,
             query: std::ptr::null_mut(),
+            address: 0,
             args: QueryArgs { args8: std::mem::ManuallyDrop::new(QueryArgs8::default()) },
-            query_type: QueryType::Branch, // Default
         }
     }
     
     pub fn get_index(&self) -> usize {
-        unsafe { self.args.args64 } // Mirrors GET_QUERY_IDX(q) usage when index is stuffed here
+        self.args64()
     }
-    
-    pub fn get_query_type(&self) -> QueryType {
-        self.query_type
+
+    /// Return the underlying expression pointer as an immutable reference if present.
+    #[inline]
+    pub fn query_expr(&self) -> Option<&Expr> {
+        if self.query.is_null() { None } else { unsafe { Some(&*self.query) } }
+    }
+
+    /// Read the 64-bit args union view (copy out). Unsafe is encapsulated here.
+    #[inline]
+    pub fn args64(&self) -> usize {
+        unsafe { self.args.args64 }
+    }
+
+    /// Overwrite the args union with a 64-bit value.
+    #[inline]
+    pub fn set_args64(&mut self, v: usize) {
+        self.args = QueryArgs { args64: v };
+    }
+
+    /// Read the 8x u8 args as a copy. Safe wrapper around union read.
+    #[inline]
+    pub fn args8_copy(&self) -> QueryArgs8 {
+        // SAFETY: read a copy of the ManuallyDrop-wrapped value without moving/dropping the original
+        let md: std::mem::ManuallyDrop<QueryArgs8> = unsafe { std::ptr::read(&self.args.args8) };
+        std::mem::ManuallyDrop::into_inner(md)
+    }
+
+    /// Read the args16 view (idx,count,idx_inv,count_inv) as a copy
+    #[inline]
+    pub fn args16_copy(&self) -> QueryArgs16 {
+        // SAFETY: QueryArgs is a union; args16 is POD and we read a copy
+        unsafe { std::ptr::read(&self.args.args16) }
+    }
+
+    /// Set the 8x u8 args; wraps the union write safely.
+    #[inline]
+    pub fn set_args8(&mut self, a: QueryArgs8) {
+        self.args = QueryArgs { args8: std::mem::ManuallyDrop::new(a) };
+    }
+
+    /// Read the model discriminator from the union.
+    #[inline]
+    pub fn model(&self) -> ModelType {
+        unsafe { self.args.model }
     }
 }
 

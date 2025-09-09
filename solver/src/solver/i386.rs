@@ -503,11 +503,11 @@ fn translate_operand<'ctx>(
         let value = operand as usize as u64;
         return Ok(smt_new_const(ctx, value, (width * 8) as u32));
     }
-    if operand.is_null() {
-        anyhow::bail!("Null (non-const) operand in i386::translate_operand");
-    }
     // Recursively translate non-const operand via unified translator
-    let dyn_ast = SMTSolver::translate_expression_static(ctx, unsafe { &*operand })?;
+    let dyn_ast = match Expr::with_operand_ref_from_raw(0, operand, |e| SMTSolver::translate_expression_static(ctx, e)) {
+        Some(r) => r?,
+        None => anyhow::bail!("Null (non-const) operand in i386::translate_operand"),
+    };
     if let Some(bv) = dyn_ast.as_bv() {
         let expected = (width * 8) as u32;
         let cur = bv.get_size();
@@ -544,7 +544,7 @@ pub fn smt_query_i386_to_z3<'ctx>(
 ) -> Result<ast::Dynamic<'ctx>> {
     
     // Convert u8 opkind to OpKind enum for pattern matching
-    let opkind = OpKind::try_from(query.opkind)?;
+    let opkind = query.try_opkind()?;
     
     match opkind {
         // Comparison operations

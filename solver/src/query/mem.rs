@@ -9,10 +9,9 @@ use z3::ast::Ast;
 use crate::query::memory_slice;
 
 pub fn handle_consistency(solver: &mut SMTSolver, query: &Query) -> Result<()> {
-    if query.query.is_null() { return Ok(()); }
-    let expr = unsafe { &*query.query };
+    let expr = if let Some(e) = query.query_expr() { e } else { return Ok(()); };
     // Consistency expression is in op1; concrete expected value in op2
-    let target = if expr.op1.is_null() { anyhow::bail!("Consistency expr missing op1") } else { unsafe { &*expr.op1 } };
+    let target = expr.op1_ref().ok_or_else(|| anyhow::anyhow!("Consistency expr missing op1"))?;
     let expected = expr.get_op2_const().unwrap_or(0) as u64;
 
     let ctx = &solver.ctx;
@@ -38,7 +37,7 @@ pub fn handle_consistency(solver: &mut SMTSolver, query: &Query) -> Result<()> {
 
 pub fn handle_mem_concretization(solver: &mut SMTSolver, expr: &Expr) -> Result<()> {
     // Target expression is in op1; concrete value in op2
-    let target = if expr.op1.is_null() { anyhow::bail!("Mem concretization missing op1") } else { unsafe { &*expr.op1 } };
+    let target = expr.op1_ref().ok_or_else(|| anyhow::anyhow!("Mem concretization missing op1"))?;
     let conc_val = expr.get_op2_const().unwrap_or(0) as u64;
     // Record deps first to avoid borrowing conflicts
     let _ = solver.add_dependency_for_expr(target);
@@ -60,20 +59,20 @@ pub fn handle_mem_concretization(solver: &mut SMTSolver, expr: &Expr) -> Result<
 
 pub fn handle_slice(_solver: &mut SMTSolver, reasoner: &mut MemorySliceReasoner, _config: &Config, query: &Query) -> Result<()> {
     // Prefer the C-style layout: q->query points to the slice node; the next node is the s_load descriptor.
-    if query.query.is_null() {
+    if query.query_expr().is_none() {
         // Fallback to args if no expression pointer is provided
-        let slice_args = unsafe { &query.args.args8 };
-        let addr_conc = slice_args.arg1 as u64;
-        let size = slice_args.arg2 as usize;
-        let load_id = slice_args.arg3 as u64;
+        let args = query.args8_copy();
+        let addr_conc = args.arg1 as u64;
+        let size = args.arg2 as usize;
+        let load_id = args.arg3 as u64;
         debug!("[slice:fallback] addr={:x}, size={}, load_id={}", addr_conc, size, load_id);
         reasoner.process_slice_access(addr_conc, size, load_id)?;
         return Ok(());
     }
 
     // SAFETY: query.query is a valid pointer to an Expr in shared memory
-    let slice_node = unsafe { &*query.query };
-    let opkind = OpKind::try_from(slice_node.opkind)?;
+    let slice_node = query.query_expr().unwrap();
+    let opkind = slice_node.try_opkind()?;
     // The C code handles MEMORY_SLICE and MEMORY_SLICE_ACCESS similarly and inspects the adjacent s_load node.
     if opkind != OpKind::MemorySlice && opkind != OpKind::MemorySliceAccess {
         anyhow::bail!("Unexpected opkind for slice query: {:?}", opkind);
@@ -87,7 +86,7 @@ pub fn handle_slice(_solver: &mut SMTSolver, reasoner: &mut MemorySliceReasoner,
     let s_load_ptr = unsafe { query.query.add(1) };
     if s_load_ptr.is_null() { anyhow::bail!("Missing s_load descriptor after slice node"); }
     let s_load = unsafe { &*s_load_ptr };
-    if OpKind::try_from(s_load.opkind)? != OpKind::IsSymbolic {
+    if !s_load.opkind_is(OpKind::IsSymbolic) {
         anyhow::bail!("s_load descriptor not IS_SYMBOLIC");
     }
     // Validate s_load_id

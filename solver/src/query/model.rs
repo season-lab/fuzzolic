@@ -6,8 +6,7 @@ use crate::solver::concrete_eval::ConcreteEvaluator;
 
 pub fn handle_model(solver: &mut SMTSolver, query: &Query) -> Result<()> {
     debug!("Processing model query");
-    if query.query.is_null() { return Ok(()); }
-    let expr = unsafe { &*query.query };
+    let expr = if let Some(e) = query.query_expr() { e } else { return Ok(()); };
     let qidx = query.get_index();
 
     fn unpack4(x: u64) -> (u16, u16, u16, u16) {
@@ -23,11 +22,11 @@ pub fn handle_model(solver: &mut SMTSolver, query: &Query) -> Result<()> {
         (a, b)
     }
 
-    let model = unsafe { query.args.model };
+    let model = query.model();
     match model {
         ModelType::Strcmp => {
-            let s1 = if expr.op1.is_null() { anyhow::bail!("STRCMP missing s1") } else { unsafe { &*expr.op1 } };
-            let s2 = if expr.op2.is_null() { anyhow::bail!("STRCMP missing s2") } else { unsafe { &*expr.op2 } };
+            let s1 = if let Some(s) = expr.op1_ref() { s } else { anyhow::bail!("STRCMP missing s1") };
+            let s2 = if let Some(s) = expr.op2_ref() { s } else { anyhow::bail!("STRCMP missing s2") };
             let packed = expr.get_op3_const().unwrap_or(0) as u64;
             let (res_u16, s1_len_u16, s2_len_u16, _n_u16) = unpack4(packed);
             let res = res_u16 as i32; // 0 means equal branch was taken
@@ -50,7 +49,7 @@ pub fn handle_model(solver: &mut SMTSolver, query: &Query) -> Result<()> {
             solver.add_constraint_for_inputs(&inputs_set, qidx, record);
         }
         ModelType::Strlen => {
-            let s1 = if expr.op1.is_null() { anyhow::bail!("STRLEN missing s1") } else { unsafe { &*expr.op1 } };
+            let s1 = if let Some(s) = expr.op1_ref() { s } else { anyhow::bail!("STRLEN missing s1") };
             let packed = expr.get_op2_const().unwrap_or(0) as u64;
             let (s1_len_u16, n_u16) = unpack2(packed);
             let s1_len = s1_len_u16 as usize;
@@ -65,8 +64,8 @@ pub fn handle_model(solver: &mut SMTSolver, query: &Query) -> Result<()> {
             solver.add_constraint_for_inputs(&inputs_set, qidx, record);
         }
         ModelType::Memcmp => {
-            let s1 = if expr.op1.is_null() { anyhow::bail!("MEMCMP missing s1") } else { unsafe { &*expr.op1 } };
-            let s2 = if expr.op2.is_null() { anyhow::bail!("MEMCMP missing s2") } else { unsafe { &*expr.op2 } };
+            let s1 = if let Some(s) = expr.op1_ref() { s } else { anyhow::bail!("MEMCMP missing s1") };
+            let s2 = if let Some(s) = expr.op2_ref() { s } else { anyhow::bail!("MEMCMP missing s2") };
             let packed = expr.get_op3_const().unwrap_or(0) as u64;
             let (res_u16, n_u16, _r2, _r3) = unpack4(packed);
             let res = res_u16 as i32;
@@ -88,7 +87,7 @@ pub fn handle_model(solver: &mut SMTSolver, query: &Query) -> Result<()> {
             solver.add_constraint_for_inputs(&inputs_set, qidx, record);
         }
         ModelType::Memchr => {
-            let s1 = if expr.op1.is_null() { anyhow::bail!("MEMCHR missing haystack") } else { unsafe { &*expr.op1 } };
+            let s1 = if let Some(s) = expr.op1_ref() { s } else { anyhow::bail!("MEMCHR missing haystack") };
             let needle = expr.get_op2_const().unwrap_or(0) as u8;
             let packed = expr.get_op3_const().unwrap_or(0) as u64;
             let (_res, n_u16, _r2, _r3) = unpack4(packed);

@@ -27,7 +27,7 @@ pub struct Config {
     pub branch_alt_bitmap_path: Option<PathBuf>,
     
     /// Path to context bitmap
-    #[arg(long)]
+    #[arg(short = 'c', long)]
     pub context_bitmap_path: Option<PathBuf>,
     
     /// Path to branch coverage
@@ -112,20 +112,31 @@ impl Config {
     
     pub fn load_env_vars(mut self) -> Result<Self> {
         // Parse environment variables
-        self.expr_pool_shm_key = std::env::var("EXPR_POOL_SHM_KEY")
-            .context("Missing EXPR_POOL_SHM_KEY environment variable")?
-            .parse::<u64>()
-            .context("Invalid EXPR_POOL_SHM_KEY format")?;
+        // Keys are provided as hex strings (parity with C: strtoull(..., 16))
+        let expr_key = std::env::var("EXPR_POOL_SHM_KEY")
+            .context("Missing EXPR_POOL_SHM_KEY environment variable")?;
+        let expr_key_trim = expr_key.trim();
+        let expr_key_hex = expr_key_trim.trim_start_matches("0x").trim_start_matches("0X");
+        self.expr_pool_shm_key = u64::from_str_radix(expr_key_hex, 16)
+            .or_else(|_| expr_key_trim.parse::<u64>())
+            .with_context(|| format!("Invalid EXPR_POOL_SHM_KEY format: '{}'", expr_key))?;
             
-        self.query_shm_key = std::env::var("QUERY_SHM_KEY")
-            .context("Missing QUERY_SHM_KEY environment variable")?
-            .parse::<u64>()
-            .context("Invalid QUERY_SHM_KEY format")?;
+        let query_key = std::env::var("QUERY_SHM_KEY")
+            .context("Missing QUERY_SHM_KEY environment variable")?;
+        let query_key_trim = query_key.trim();
+        let query_key_hex = query_key_trim.trim_start_matches("0x").trim_start_matches("0X");
+        self.query_shm_key = u64::from_str_radix(query_key_hex, 16)
+            .or_else(|_| query_key_trim.parse::<u64>())
+            .with_context(|| format!("Invalid QUERY_SHM_KEY format: '{}'", query_key))?;
             
         // Optional environment variables
         if let Ok(bitmap_key) = std::env::var("BITMAP_SHM_KEY") {
-            self.bitmap_shm_key = Some(bitmap_key.parse()
-                .context("Invalid BITMAP_SHM_KEY format")?);
+            let bitmap_key_trim = bitmap_key.trim();
+            let bitmap_key_hex = bitmap_key_trim.trim_start_matches("0x").trim_start_matches("0X");
+            let parsed = u64::from_str_radix(bitmap_key_hex, 16)
+                .or_else(|_| bitmap_key_trim.parse::<u64>())
+                .with_context(|| format!("Invalid BITMAP_SHM_KEY format: '{}'", bitmap_key))?;
+            self.bitmap_shm_key = Some(parsed);
         }
         
         if let Ok(timeout) = std::env::var("SOLVER_TIMEOUT") {

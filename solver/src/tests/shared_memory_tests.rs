@@ -1,5 +1,5 @@
 use crate::shared_memory::shared_memory::{SharedExprPool, QueryQueue};
-use crate::expressions::expression::{Expr, OpKind, QueryType, Query, QueryArgs, QueryArgs8};
+use crate::expressions::expression::{Expr, OpKind, Query, QueryArgs, QueryArgs8};
 use std::ptr;
 
 #[cfg(test)]
@@ -30,12 +30,7 @@ mod tests {
                 arg1: 0,
                 arg2: 0,
                 arg3: 0,
-                arg4: 0,
-                arg5: 0,
-                arg6: 0,
-                arg7: 0,
             })},
-            query_type: QueryType::Branch,
         };
         
         // Test adding query
@@ -108,12 +103,7 @@ mod tests {
                     arg1: 0,
                     arg2: 0,
                     arg3: 0,
-                    arg4: 0,
-                    arg5: 0,
-                    arg6: 0,
-                    arg7: 0,
                 })},
-                query_type: QueryType::Branch,
             };
             
             queue.add_query(query).expect("Failed to add query");

@@ -7,7 +7,7 @@ pub mod concrete_eval;
 use anyhow::Result;
 use z3::Context;
 use crate::coverage::branch_coverage::BranchCoverage;
-use crate::expressions::expression::{Expr, DependencyGraph};
+use crate::expressions::expression::{Expr, DependencyGraph, OpKind};
 use crate::utils::statistics::Statistics;
 use crate::utils::testcase::Testcase;
 use crate::expressions::expression;
@@ -28,6 +28,32 @@ pub struct SolverStatistics {
     pub cache_hits: u64,
     pub cache_misses: u64,
     pub optimization_count: u64,
+}
+
+/// Walk the Expr DAG directly to collect input IDs (IsSymbolic nodes), avoiding Z3 AST construction.
+fn collect_inputs_from_expr(root: &Expr) -> std::collections::HashSet<usize> {
+    use std::collections::HashSet;
+    let mut inputs: HashSet<usize> = HashSet::new();
+    let mut stack: Vec<*const Expr> = Vec::new();
+    let mut visited: HashSet<usize> = HashSet::new();
+    stack.push(root as *const Expr);
+    let pool_base = crate::shared_memory::shared_memory::EXPR_POOL_ADDR as usize;
+    while let Some(ptr) = stack.pop() {
+        if ptr.is_null() { continue; }
+        let key = ptr as usize;
+        if !visited.insert(key) { continue; }
+        let e = unsafe { &*ptr };
+        if let Ok(opk) = e.try_opkind() {
+            if opk == OpKind::IsSymbolic {
+                inputs.insert(e.op1 as usize);
+            }
+        }
+        // push non-const, in-pool children
+        if e.op1_is_const == 0 && (e.op1 as usize) >= pool_base && !e.op1.is_null() { stack.push(e.op1 as *const Expr); }
+        if e.op2_is_const == 0 && (e.op2 as usize) >= pool_base && !e.op2.is_null() { stack.push(e.op2 as *const Expr); }
+        if e.op3_is_const == 0 && (e.op3 as usize) >= pool_base && !e.op3.is_null() { stack.push(e.op3 as *const Expr); }
+    }
+    inputs
 }
 
 pub struct SMTSolver {
@@ -78,9 +104,7 @@ impl SMTSolver {
 
     /// Record dependency information for an expression into the dependency graph.
     pub fn add_dependency_for_expr(&mut self, expr: &Expr) -> Result<()> {
-        let z3_expr = Self::translate_expression_static(&self.ctx, expr)?;
-        let mut evaluator = concrete_eval::ConcreteEvaluator::new();
-        let inputs = evaluator.get_inputs_expr(&z3_expr);
+        let inputs = collect_inputs_from_expr(expr);
         let expr_id = expr as *const Expr as usize;
         for input_id in inputs { self.dependency_graph.add_dependency(input_id as usize, expr_id); }
         Ok(())
