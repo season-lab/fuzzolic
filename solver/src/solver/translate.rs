@@ -49,7 +49,8 @@ impl SMTSolver {
         let _arena_scope = ArenaScope::enter();
         let mut simp = ExpressionSimplifier::new_conservative();
         let s = simp.simplify_recursive(expr).unwrap_or_else(|_| expr.clone());
-        Self::translate_expression_inner(ctx, &s, &mut cache)
+        let d = Self::translate_expression_inner(ctx, &s, &mut cache)?;
+        Ok(d.simplify())
     }
     /// Helper: translate an operand that can be either a constant (embedded in the pointer)
     /// or a pointer to another Expr node. Mirrors the C-side encoding using op*_is_const flags.
