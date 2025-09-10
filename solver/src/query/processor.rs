@@ -164,6 +164,7 @@ impl QueryProcessor {
         
         // Update statistics - increment queries processed
         self.solver.statistics.queries_processed += 1;
+        debug!("Query processed, total count: {}", self.solver.statistics.queries_processed);
         
         // First mirror the C smt_query dispatch by opkind when possible
         if let Some(expr) = query.query_expr() {
@@ -228,8 +229,11 @@ impl QueryProcessor {
         let elapsed = start_time.elapsed();
         debug!("Query processed in {:?}", elapsed);
         
-        // Update timing statistics
-        self.solver.statistics.solving_time += elapsed.as_millis() as u64;
+        // Update timing statistics - use microseconds for better precision
+        let elapsed_us = elapsed.as_micros() as u64;
+        let elapsed_ms = (elapsed_us + 999) / 1000; // Round up to nearest millisecond
+        self.solver.statistics.solving_time += elapsed_ms;
+        debug!("Added {}μs ({}ms) to solving time, total: {}ms", elapsed_us, elapsed_ms, self.solver.statistics.solving_time);
         
         result
     }
@@ -246,11 +250,14 @@ impl QueryProcessor {
         // Record dependencies for target expression
         let _ = self.solver.add_dependency_for_expr(target);
 
-        // Track translation time
+        // Track translation time - use microseconds for better precision
         let translate_start = Instant::now();
         let z3_dyn = SMTSolver::translate_expression_static(&self.solver.ctx, target)?;
         let translate_elapsed = translate_start.elapsed();
-        self.solver.statistics.translation_time += translate_elapsed.as_millis() as u64;
+        let translate_us = translate_elapsed.as_micros() as u64;
+        let translate_ms = (translate_us + 999) / 1000; // Round up to nearest millisecond
+        self.solver.statistics.translation_time += translate_ms;
+        debug!("Added {}μs ({}ms) to translation time, total: {}ms", translate_us, translate_ms, self.solver.statistics.translation_time);
 
         // Collect inputs referenced by target expression
         let mut evaluator = ConcreteEvaluator::new();

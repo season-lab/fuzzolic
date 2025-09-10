@@ -158,6 +158,8 @@ impl SMTSolver {
     pub fn print_statistics(&self) {
         println!("SMT Solver Statistics:");
         println!("  Queries processed: {}", self.statistics.queries_processed);
+        println!("  SAT count: {}", self.statistics.sat_count);
+        println!("  UNSAT count: {}", self.statistics.unsat_count);
         println!("  Timeout count: {}", self.statistics.timeout_count);
         println!("  Translation time: {}ms", self.statistics.translation_time);
         println!("  Solving time: {}ms", self.statistics.solving_time);

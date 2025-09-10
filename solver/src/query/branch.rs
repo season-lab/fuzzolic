@@ -38,7 +38,12 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
         {
             let ctx = &solver.ctx;
             println!("[SOLVER] Z3: translating branch condition at 0x{:x}", addr_conc);
+            let translate_start = std::time::Instant::now();
             let z3_cond = SMTSolver::translate_expression_static(ctx, cond_expr)?;
+            let translate_elapsed = translate_start.elapsed();
+            let translate_us = translate_elapsed.as_micros() as u64;
+            let translate_ms = (translate_us + 999) / 1000; // Round up to nearest millisecond
+            solver.statistics.translation_time += translate_ms;
             println!("[SOLVER] Z3: condition AST: {}", z3_cond.to_string());
             if let Some(cond_bool) = z3_cond.as_bool() {
                 // Create negated expression at Expr level, simplify it, then translate
@@ -53,7 +58,13 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
                     println!("[SOLVER] Branch: Simplification completed");
                     
                     // Translate the simplified expression to Z3
-                    SMTSolver::translate_expression_static(ctx, &simplified)?
+                    let simplify_translate_start = std::time::Instant::now();
+                    let result = SMTSolver::translate_expression_static(ctx, &simplified)?;
+                    let simplify_translate_elapsed = simplify_translate_start.elapsed();
+                    let simplify_translate_us = simplify_translate_elapsed.as_micros() as u64;
+                    let simplify_translate_ms = (simplify_translate_us + 999) / 1000; // Round up to nearest millisecond
+                    solver.statistics.translation_time += simplify_translate_ms;
+                    result
                 } else {
                     z3_cond.clone()
                 };
@@ -73,6 +84,7 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
                 // Translate dependency expressions into Bool constraints
                 let current_id = (cond_expr as *const expression::Expr) as usize;
                 let mut dep_bools: Vec<z3::ast::Bool> = Vec::new();
+                let deps_translate_start = std::time::Instant::now();
                 for expr_id in deps.expressions.iter() {
                     if *expr_id == current_id { continue; }
                     let dep_ptr = *expr_id as *const expression::Expr;
@@ -83,6 +95,10 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
                         }
                     });
                 }
+                let deps_translate_elapsed = deps_translate_start.elapsed();
+                let deps_translate_us = deps_translate_elapsed.as_micros() as u64;
+                let deps_translate_ms = (deps_translate_us + 999) / 1000; // Round up to nearest millisecond
+                solver.statistics.translation_time += deps_translate_ms;
                 let s = z3::Solver::new(ctx);
                 println!("[SOLVER] Z3: asserting opposite branch with {} deps (taken={})",
                          dep_bools.len(), taken);
@@ -104,7 +120,13 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
                 s.set_params(&params);
                 println!("[SOLVER] Z3: timeout set to {} ms", to_ms);
                 println!("[SOLVER] Z3: checking...");
-                match s.check() {
+                let solve_start = std::time::Instant::now();
+                let result = s.check();
+                let solve_elapsed = solve_start.elapsed();
+                let solve_us = solve_elapsed.as_micros() as u64;
+                let solve_ms = (solve_us + 999) / 1000; // Round up to nearest millisecond
+                solver.statistics.solving_time += solve_ms;
+                match result {
                     z3::SatResult::Sat => {
                         info!("Opposite branch at 0x{:x} is SAT", addr_conc);
                         println!("[SOLVER] Opposite branch at 0x{:x} is SAT (Z3)", addr_conc);
@@ -164,10 +186,13 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
             // Build raw ASTs inside an immutable scope; rely on raw export to keep them valid
             let (query_raw, neg_raw): (*mut c_void, *mut c_void) = {
                 let ctx = &solver.ctx;
+                // Translate condition to Z3
                 let translate_start = std::time::Instant::now();
                 let z3_condition = SMTSolver::translate_expression_static(ctx, cond_expr)?;
                 let translate_elapsed = translate_start.elapsed();
-                solver.statistics.translation_time += translate_elapsed.as_millis() as u64;
+                let translate_us = translate_elapsed.as_micros() as u64;
+                let translate_ms = (translate_us + 999) / 1000; // Round up to nearest millisecond
+                solver.statistics.translation_time += translate_ms;
                 let cond_bool = z3_condition.as_bool().expect("branch condition must be Bool");
                 let neg_cond = cond_bool.not();
                 // Reuse dependency-building path
