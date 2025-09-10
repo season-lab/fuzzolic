@@ -108,6 +108,8 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
                     z3::SatResult::Sat => {
                         info!("Opposite branch at 0x{:x} is SAT", addr_conc);
                         println!("[SOLVER] Opposite branch at 0x{:x} is SAT (Z3)", addr_conc);
+                        // Update statistics
+                        solver.statistics.sat_count += 1;
                         branch_cov.mark_sat_branch();
                         // Dump model to disk (C parity)
                         if let Some(model) = s.get_model() {
@@ -143,10 +145,14 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
                     z3::SatResult::Unsat => {
                         debug!("Opposite branch at 0x{:x} is UNSAT", addr_conc);
                         println!("[SOLVER] Opposite branch at 0x{:x} is UNSAT (Z3)", addr_conc);
+                        // Update statistics
+                        solver.statistics.unsat_count += 1;
                     }
                     z3::SatResult::Unknown => {
                         warn!("Opposite branch at 0x{:x} is UNKNOWN", addr_conc);
                         println!("[SOLVER] Opposite branch at 0x{:x} is UNKNOWN (Z3)", addr_conc);
+                        // Update statistics - treat Unknown as timeout
+                        solver.statistics.timeout_count += 1;
                     }
                 }
             } else {
@@ -158,12 +164,15 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
             // Build raw ASTs inside an immutable scope; rely on raw export to keep them valid
             let (query_raw, neg_raw): (*mut c_void, *mut c_void) = {
                 let ctx = &solver.ctx;
-                let z3_cond = SMTSolver::translate_expression_static(ctx, cond_expr)?;
-                let cond_bool = z3_cond.as_bool().expect("branch condition must be Bool");
+                let translate_start = std::time::Instant::now();
+                let z3_condition = SMTSolver::translate_expression_static(ctx, cond_expr)?;
+                let translate_elapsed = translate_start.elapsed();
+                solver.statistics.translation_time += translate_elapsed.as_millis() as u64;
+                let cond_bool = z3_condition.as_bool().expect("branch condition must be Bool");
                 let neg_cond = cond_bool.not();
                 // Reuse dependency-building path
                 let mut evaluator = ConcreteEvaluator::new();
-                let inputs_vec = evaluator.get_inputs_expr(&z3_cond);
+                let inputs_vec = evaluator.get_inputs_expr(&z3_condition);
                 let input_set: std::collections::HashSet<usize> = inputs_vec.iter().map(|&x| x as usize).collect();
                 let deps = solver.get_deps_for_inputs(&input_set);
                 let current_id = (cond_expr as *const expression::Expr) as usize;

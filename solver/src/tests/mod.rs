@@ -9,3 +9,4 @@ pub mod test_extract_simplifications;
 pub mod test_identity_simplifications;
 pub mod test_concat_extract_simplifications;
 pub mod test_simplification_framework;
+pub mod test_nested_simplify;

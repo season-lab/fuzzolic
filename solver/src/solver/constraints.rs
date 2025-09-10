@@ -42,19 +42,18 @@ impl SMTSolver {
         inputs: &std::collections::HashSet<usize>,
     ) -> Vec<Bool> {
         let mut bools = Vec::new();
-        let map = self.constraints_by_input.borrow();
-        for &inp in inputs {
-            if let Some(records) = map.get(&inp) {
-                for rec in records {
-                    match rec {
+        let constraints_map = self.constraints_by_input.borrow();
+        
+        for input_id in inputs {
+            if let Some(constraint_list) = constraints_map.get(input_id) {
+                for constraint in constraint_list {
+                    match constraint {
                         ConstraintRecord::EqBV { expr_ptr, value } => {
                             if Expr::with_ref_from_ptr(*expr_ptr, |e| {
                                 if let Ok(dyn_ast) = Self::translate_expression_static(&self.ctx, e) {
                                     if let Some(bv) = dyn_ast.as_bv() {
-                                        let width = bv.get_size();
-                                        let v = BV::from_u64(&self.ctx, *value, width);
-                                        let eq = bv._eq(&v);
-                                        bools.push(eq);
+                                        let val_bv = BV::from_u64(&self.ctx, *value, bv.get_size());
+                                        bools.push(bv._eq(&val_bv));
                                     }
                                 }
                             }).is_none() { continue; }
@@ -106,6 +105,7 @@ impl SMTSolver {
                 }
             }
         }
+        
         bools
     }
 

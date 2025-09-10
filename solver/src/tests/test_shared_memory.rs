@@ -131,7 +131,7 @@ mod tests {
         
         // Test waiting for query with timeout when queue is empty
         let start = std::time::Instant::now();
-        let result = queue.wait_for_query(100);
+        let _result = queue.wait_for_query(100);
         let elapsed = start.elapsed();
         
         // The timeout behavior may vary depending on system conditions and implementation

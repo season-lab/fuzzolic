@@ -162,6 +162,9 @@ impl QueryProcessor {
         debug!("Processing query: ptr={:?} addr=0x{:x}", query.query, query.address);
         let start_time = Instant::now();
         
+        // Update statistics - increment queries processed
+        self.solver.statistics.queries_processed += 1;
+        
         // First mirror the C smt_query dispatch by opkind when possible
         if let Some(expr) = query.query_expr() {
             if let Ok(op) = expr.try_opkind() {
@@ -225,6 +228,9 @@ impl QueryProcessor {
         let elapsed = start_time.elapsed();
         debug!("Query processed in {:?}", elapsed);
         
+        // Update timing statistics
+        self.solver.statistics.solving_time += elapsed.as_millis() as u64;
+        
         result
     }
 
@@ -240,7 +246,11 @@ impl QueryProcessor {
         // Record dependencies for target expression
         let _ = self.solver.add_dependency_for_expr(target);
 
+        // Track translation time
+        let translate_start = Instant::now();
         let z3_dyn = SMTSolver::translate_expression_static(&self.solver.ctx, target)?;
+        let translate_elapsed = translate_start.elapsed();
+        self.solver.statistics.translation_time += translate_elapsed.as_millis() as u64;
 
         // Collect inputs referenced by target expression
         let mut evaluator = ConcreteEvaluator::new();
@@ -327,26 +337,43 @@ impl QueryProcessor {
                                 if let Some(b) = dyn_ast.as_bool() { dep_bools.push(b); }
                             }
                         }
-                        let extra_bools = self.solver.get_constraint_bools_for_inputs(&input_set);
-                        // Decide SAT using fuzzy fast-check (raw AST) if enabled; fallback to Z3 otherwise
-                        let mut all_refs: Vec<&z3::ast::Bool> = Vec::with_capacity(dep_bools.len() + extra_bools.len() + 1);
-                        all_refs.push(&alt_eq);
-                        for b in &dep_bools { all_refs.push(b); }
-                        for b in &extra_bools { all_refs.push(b); }
-                        let conj = z3::ast::Bool::and(ctx, &all_refs);
                         let mut sat: bool = false;
-                        if self.config.use_fuzzy_solver && self.config.address_enum_use_fuzzy {
-                            // Ensure the AST stays alive during the FFI call
-                            let (ctx_raw, ast_raw) = unsafe { crate::solver::fuzzy::fuzzy_ffi::inc_ref_bool(&conj) };
-                            sat = self.solver
-                                .fuzzy_check_light_raw_const(ast_raw as *mut c_void, std::ptr::null_mut())
-                                .unwrap_or(false);
-                            unsafe { crate::solver::fuzzy::fuzzy_ffi::dec_ref(ctx_raw, ast_raw) };
-                        }
-                        if !sat {
-                            let s = z3::Solver::new(ctx);
-                            s.assert(&conj);
-                            sat = matches!(s.check(), z3::SatResult::Sat);
+                        let mut z3_result: Option<z3::SatResult> = None;
+                        
+                        // Scope the borrow to avoid conflicts
+                        {
+                            let extra_bools = self.solver.get_constraint_bools_for_inputs(&input_set);
+                            // Decide SAT using fuzzy fast-check (raw AST) if enabled; fallback to Z3 otherwise
+                            let mut all_refs: Vec<&z3::ast::Bool> = Vec::with_capacity(dep_bools.len() + extra_bools.len() + 1);
+                            all_refs.push(&alt_eq);
+                            for b in &dep_bools { all_refs.push(b); }
+                            for b in &extra_bools { all_refs.push(b); }
+                            let conj = z3::ast::Bool::and(ctx, &all_refs);
+                            
+                            if self.config.use_fuzzy_solver && self.config.address_enum_use_fuzzy {
+                                // Ensure the AST stays alive during the FFI call
+                                let (ctx_raw, ast_raw) = unsafe { crate::solver::fuzzy::fuzzy_ffi::inc_ref_bool(&conj) };
+                                sat = self.solver
+                                    .fuzzy_check_light_raw_const(ast_raw as *mut c_void, std::ptr::null_mut())
+                                    .unwrap_or(false);
+                                unsafe { crate::solver::fuzzy::fuzzy_ffi::dec_ref(ctx_raw, ast_raw) };
+                            }
+                            if !sat {
+                                let s = z3::Solver::new(ctx);
+                                s.assert(&conj);
+                                let result = s.check();
+                                sat = matches!(result, z3::SatResult::Sat);
+                                z3_result = Some(result);
+                            }
+                        } // extra_bools is dropped here, releasing the borrow
+                        
+                        // Update statistics based on Z3 result
+                        if let Some(result) = z3_result {
+                            match result {
+                                z3::SatResult::Sat => self.solver.statistics.sat_count += 1,
+                                z3::SatResult::Unsat => self.solver.statistics.unsat_count += 1,
+                                z3::SatResult::Unknown => self.solver.statistics.timeout_count += 1,
+                            }
                         }
                         if sat {
                             // Rebuild alt_eq and notify; then cache the alternative constraint
