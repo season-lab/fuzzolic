@@ -535,6 +535,13 @@ impl Expr {
         match idx { 0 => self.op1_operand(), 1 => self.op2_operand(), 2 => self.op3_operand(), _ => Operand::Empty }
     }
 
+    /// Helper method for operand reference access
+    #[inline]
+    fn op_ref(&self, is_const: u8, ptr: *mut Expr) -> Option<&Expr> {
+        if is_const != 0 || ptr.is_null() { return None; }
+        unsafe { Some(&*ptr) }
+    }
+
     /// Borrow operand 1 as `&Expr` if it is a node pointer (non-const and non-null).
     #[inline]
     pub fn op1_ref(&self) -> Option<&Expr> {
@@ -553,20 +560,13 @@ impl Expr {
         self.op_ref(self.op3_is_const, self.op3)
     }
 
-    /// Internal helper to convert a raw operand pointer into a shared reference safely.
-    /// Returns None for const operands or null pointers.
+    /// Central helper: with-borrow API for a raw operand pointer (not a const-immediate).
+    /// Executes `f` with a shared reference to the node if the pointer is non-null.
     #[inline]
-    fn op_ref<'a>(&'a self, is_const: u8, ptr: *mut Expr) -> Option<&'a Expr> {
-        if is_const != 0 || ptr.is_null() { return None; }
-        // Guard against immediates encoded without the const flag: only deref
-        // pointers that lie within the shared expression pool address space.
-        let ptr_val = ptr as usize;
-        let pool_base = crate::shared_memory::shared_memory::EXPR_POOL_ADDR as usize;
-        if ptr_val < pool_base { return None; }
-        // SAFETY: The shared memory producer guarantees that non-const operands
-        // are valid pointers to Expr nodes during the solver's processing window.
-        // We expose only an immutable borrow to prevent mutation.
-        unsafe { Some(&*ptr) }
+    pub fn with_operand_ref<T, F: FnOnce(&Expr) -> T>(ptr: *mut Expr, f: F) -> Option<T> {
+        if ptr.is_null() { return None; }
+        // SAFETY: pointer should be valid - either from shared memory or arena allocation
+        unsafe { Some(f(&*ptr)) }
     }
 
     /// Central helper: with-borrow API for a raw operand pointer.
@@ -574,11 +574,7 @@ impl Expr {
     #[inline]
     pub fn with_operand_ref_from_raw<T, F: FnOnce(&Expr) -> T>(is_const: u8, ptr: *mut Expr, f: F) -> Option<T> {
         if is_const != 0 || ptr.is_null() { return None; }
-        // Only deref pointers that are in the shared pool; treat tiny raw values as immediates.
-        let ptr_val = ptr as usize;
-        let pool_base = crate::shared_memory::shared_memory::EXPR_POOL_ADDR as usize;
-        if ptr_val < pool_base { return None; }
-        // SAFETY: pointer originates from shared memory; we only take an immutable reference scoped to `f`.
+        // SAFETY: pointer should be valid - either from shared memory or arena allocation
         unsafe { Some(f(&*ptr)) }
     }
 
@@ -617,6 +613,80 @@ impl Expr {
         let high = (v >> 32) as u32;
         let low = (v & 0xFFFF_FFFF) as u32;
         (high, low)
+    }
+
+    /// Check if operand 1 should be treated as a valid node pointer for this opkind
+    pub fn has_valid_op1(&self) -> bool {
+        match self.try_opkind() {
+            Ok(OpKind::Reserved) => false,
+            Ok(OpKind::IsConst) => false, // op1 is embedded constant
+            Ok(OpKind::IsSymbolic) => false, // op1 is embedded constant (symbol ID)
+            _ => self.op1_is_const == 0 && !self.op1.is_null()
+        }
+    }
+
+    /// Check if operand 2 should be treated as a valid node pointer for this opkind
+    pub fn has_valid_op2(&self) -> bool {
+        match self.try_opkind() {
+            Ok(OpKind::Reserved) => false,
+            Ok(OpKind::IsConst) => false,
+            Ok(OpKind::IsSymbolic) => false, // op2 is embedded constant (size)
+            Ok(OpKind::Not) => false, // unary operation
+            Ok(OpKind::Neg) => false, // unary operation
+            Ok(OpKind::Bswap) => false, // unary operation
+            Ok(OpKind::Ctz) => false, // unary operation
+            Ok(OpKind::Clz) => false, // unary operation
+            Ok(OpKind::Pmovmskb) => false, // unary operation
+            Ok(OpKind::Zext) => false, // op2 is embedded constant (extension size)
+            Ok(OpKind::Sext) => false, // op2 is embedded constant (extension size)
+            Ok(OpKind::Extract8) => false, // op2 is embedded constant (byte index)
+            Ok(OpKind::Extract) => false, // op2 is embedded constant (bit range)
+            _ => self.op2_is_const == 0 && !self.op2.is_null()
+        }
+    }
+
+    /// Check if operand 3 should be treated as a valid node pointer for this opkind
+    pub fn has_valid_op3(&self) -> bool {
+        match self.try_opkind() {
+            Ok(OpKind::Deposit) => self.op3_is_const == 0 && !self.op3.is_null(),
+            Ok(OpKind::Ite) => self.op3_is_const == 0 && !self.op3.is_null(),
+            Ok(OpKind::IteEqZero) => self.op3_is_const == 0 && !self.op3.is_null(),
+            Ok(OpKind::IteNeZero) => self.op3_is_const == 0 && !self.op3.is_null(),
+            Ok(OpKind::Or3) => self.op3_is_const == 0 && !self.op3.is_null(),
+            Ok(OpKind::Xor3) => self.op3_is_const == 0 && !self.op3.is_null(),
+            Ok(OpKind::EflagsCAdcq) => self.op3_is_const == 0 && !self.op3.is_null(),
+            _ => false // Most operations don't use op3
+        }
+    }
+
+    /// Safe operand 1 reference - only returns Some if opkind expects op1 to be a valid pointer
+    #[inline]
+    pub fn safe_op1_ref(&self) -> Option<&Expr> {
+        if self.has_valid_op1() {
+            self.op1_ref()
+        } else {
+            None
+        }
+    }
+
+    /// Safe operand 2 reference - only returns Some if opkind expects op2 to be a valid pointer
+    #[inline]
+    pub fn safe_op2_ref(&self) -> Option<&Expr> {
+        if self.has_valid_op2() {
+            self.op2_ref()
+        } else {
+            None
+        }
+    }
+
+    /// Safe operand 3 reference - only returns Some if opkind expects op3 to be a valid pointer
+    #[inline]
+    pub fn safe_op3_ref(&self) -> Option<&Expr> {
+        if self.has_valid_op3() {
+            self.op3_ref()
+        } else {
+            None
+        }
     }
 }
 

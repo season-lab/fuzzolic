@@ -48,7 +48,9 @@ impl SMTSolver {
         // Perform full-tree simplification once to mirror C optimize_z3_query
         let _arena_scope = ArenaScope::enter();
         let mut simp = ExpressionSimplifier::new_conservative();
+        log::info!("[SOLVER] Starting expression simplification");
         let s = simp.simplify_recursive(expr).unwrap_or_else(|_| expr.clone());
+        log::info!("[SOLVER] Expression simplification completed");
         let d = Self::translate_expression_inner(ctx, &s, &mut cache)?;
         Ok(d)
         // Ok(d.simplify())
@@ -334,9 +336,19 @@ impl SMTSolver {
             OpKind::Extract => {
                 let v = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const, cache)?;
                 let bv = v.as_bv().ok_or_else(|| anyhow::anyhow!("Extract op1 not BV"))?;
-                if expr.op2_is_const == 0 || expr.op3_is_const == 0 { anyhow::bail!("Extract requires const high/low indices") }
-                let mut high = expr.op2 as u32;
-                let mut low = expr.op3 as u32;
+                // Accept either split (op2=high, op3=low) or packed in op2 (high,low)
+                let (mut high, mut low) = if expr.op2_is_const != 0 && expr.op3_is_const != 0 {
+                    (expr.op2 as u32, expr.op3 as u32)
+                } else if expr.op2_is_const != 0 {
+                    // Packed form
+                    let (h, l) = {
+                        // Reuse same packing as simplifier: upper 32 bits at higher address bits
+                        crate::expressions::expression::Expr::unpack_u32_pair_from_ptr(expr.op2)
+                    };
+                    (h, l)
+                } else {
+                    anyhow::bail!("Extract missing constant indices (neither split nor packed)")
+                };
                 let sz = bv.get_size();
                 if sz == 0 { anyhow::bail!("Extract on zero-width BV") }
                 if high >= sz { high = sz - 1; }
