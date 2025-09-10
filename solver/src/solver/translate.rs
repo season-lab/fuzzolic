@@ -236,15 +236,7 @@ impl SMTSolver {
                 match (l.as_bool(), r.as_bool(), l.as_bv(), r.as_bv()) {
                     (Some(lb), Some(rb), _, _) => Ok(lb._eq(&rb).into()),
                     (_, _, Some(lbv), Some(rbv)) => {
-                        let ls = lbv.get_size();
-                        let rs = rbv.get_size();
-                        let (lco, rco) = if ls == rs {
-                            (lbv, rbv)
-                        } else if ls < rs {
-                            (lbv.zero_ext(rs - ls), rbv)
-                        } else {
-                            (lbv, rbv.zero_ext(ls - rs))
-                        };
+                        let (lco, rco) = Self::coerce_bv_pair(lbv, rbv);
                         Ok(lco._eq(&rco).into())
                     }
                     (Some(lb), _, _, Some(rbv)) => {
@@ -266,15 +258,7 @@ impl SMTSolver {
                 let res_dyn = match (l.as_bool(), r.as_bool(), l.as_bv(), r.as_bv()) {
                     (Some(lb), Some(rb), _, _) => lb._eq(&rb).not().into(),
                     (_, _, Some(lbv), Some(rbv)) => {
-                        let ls = lbv.get_size();
-                        let rs = rbv.get_size();
-                        let (lco, rco) = if ls == rs {
-                            (lbv, rbv)
-                        } else if ls < rs {
-                            (lbv.zero_ext(rs - ls), rbv)
-                        } else {
-                            (lbv, rbv.zero_ext(ls - rs))
-                        };
+                        let (lco, rco) = Self::coerce_bv_pair(lbv, rbv);
                         lco._eq(&rco).not().into()
                     }
                     (Some(lb), _, _, Some(rbv)) => {
