@@ -2,12 +2,99 @@
 
 
 
+
+
+/// Double negation: not(not(x)) => x
+pub struct NotNotEliminateRule;
+
+impl SimplificationRule for NotNotEliminateRule {
+    fn name(&self) -> &str { "NotNotEliminate" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        if !expr.opkind_is(OpKind::Not) { return Ok(expr.clone()); }
+        let a = if let Some(x) = expr.op1_ref() { x } else { return Ok(expr.clone()); };
+        if a.opkind_is(OpKind::Not) {
+            if let Some(inner) = a.op1_ref() { return Ok(inner.clone()); }
+        }
+        Ok(expr.clone())
+    }
+
+    fn priority(&self) -> u32 { 119 }
+}
+
+/// Equality over zero-extend: simplifies eq(zext(x), 0) => eq(x, 0), and
+/// eq(zext(x), zext(y)) => eq(x, y) when widths match; also eq(zext(x), C) => eq(x, C) if C fits.
+pub struct EqOverZextRule;
+
+impl SimplificationRule for EqOverZextRule {
+    fn name(&self) -> &str { "EqOverZext" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        if !expr.opkind_is(OpKind::Eq) || expr.op1_ref().is_none() || expr.op2_ref().is_none() {
+            return Ok(expr.clone());
+        }
+        let a = expr.op1_ref().unwrap();
+        let b = expr.op2_ref().unwrap();
+
+        // Helper to build Eq with possibly constant rhs reused
+        let mk_eq = |lhs: &Expr, rhs: &Expr, rhs_is_const: u8| -> Expr {
+            Expr { op1: lhs as *const Expr as *mut Expr, op2: rhs as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: rhs_is_const, op3_is_const: 0 }
+        };
+
+        // eq(zext(x), 0) or eq(0, zext(x)) => eq(x, 0)
+        if a.opkind_is(OpKind::Zext) {
+            if get_const(b) == Some(0) {
+                if let Some(inner) = a.op1_ref() { return Ok(mk_eq(inner, b, 1)); }
+            }
+        }
+        if b.opkind_is(OpKind::Zext) {
+            if get_const(a) == Some(0) {
+                if let Some(inner) = b.op1_ref() { return Ok(mk_eq(inner, a, 1)); }
+            }
+        }
+
+        // eq(zext(x), zext(y)) => eq(x, y) if widths of x and y are equal and known
+        if a.opkind_is(OpKind::Zext) && b.opkind_is(OpKind::Zext) {
+            if let (Some(ax), Some(by)) = (a.op1_ref(), b.op1_ref()) {
+                if let (Some(wa), Some(wb)) = (infer_size(ax), infer_size(by)) {
+                    if wa == wb { return Ok(Expr { op1: ax as *const Expr as *mut Expr, op2: by as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 }); }
+                }
+            }
+        }
+
+        // eq(zext(x), C) when C fits into width(x) => eq(x, C)
+        if a.opkind_is(OpKind::Zext) {
+            if let Some(c) = get_const(b) {
+                if let Some(inner) = a.op1_ref() {
+                    if let Some(w) = infer_size(inner) {
+                        let fits = if w >= 64 { true } else { c < (1u64 << w) };
+                        if fits { return Ok(Expr { op1: inner as *const Expr as *mut Expr, op2: b as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 }); }
+                    }
+                }
+            }
+        }
+        if b.opkind_is(OpKind::Zext) {
+            if let Some(c) = get_const(a) {
+                if let Some(inner) = b.op1_ref() {
+                    if let Some(w) = infer_size(inner) {
+                        let fits = if w >= 64 { true } else { c < (1u64 << w) };
+                        if fits { return Ok(Expr { op1: inner as *const Expr as *mut Expr, op2: a as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 }); }
+                    }
+                }
+            }
+        }
+
+        Ok(expr.clone())
+    }
+
+    fn priority(&self) -> u32 { 129 }
+}
+
 /// Pack k adjacent 8-bit slices over the same structural base
 pub struct ConcatExtractPackGeneralRule;
 
 impl SimplificationRule for ConcatExtractPackGeneralRule {
     fn name(&self) -> &str { "ConcatExtractPackGeneral" }
-
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         use crate::expressions::expression::OpKind as K;
         if !expr.opkind_is(K::Concat) { return Ok(expr.clone()); }
@@ -416,6 +503,97 @@ impl SimplificationRule for ExtractThroughConcatRule {
     fn priority(&self) -> u32 { 129 }
 }
 
+/// Extract over a concat that is itself built from contiguous 8-bit extracts of the same base.
+/// Turns: Extract( Concat(Extract8/Extract(...8bits...) x N), high:low )
+///   into: Extract( base, (base_low + high) : (base_low + low) )
+pub struct ExtractOverPackedByteConcatRule;
+
+impl SimplificationRule for ExtractOverPackedByteConcatRule {
+    fn name(&self) -> &str { "ExtractOverPackedByteConcat" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        use crate::expressions::expression::OpKind as K;
+        if !expr.opkind_is(K::Extract) { return Ok(expr.clone()); }
+        let src = if let Some(s) = expr.op1_ref() { s } else { return Ok(expr.clone()); };
+        if !src.opkind_is(K::Concat) { return Ok(expr.clone()); }
+
+        // Flatten concat pieces
+        fn flatten_concat<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+            if e.opkind_is(K::Concat) {
+                if let Some(l) = e.op1_ref() { flatten_concat(l, out); }
+                if let Some(r) = e.op2_ref() { flatten_concat(r, out); }
+            } else {
+                out.push(e);
+            }
+        }
+        fn structural_eq(a: &Expr, b: &Expr, depth: usize) -> bool {
+            if std::ptr::eq(a, b) { return true; }
+            if depth > 64 { return false; }
+            if a.opkind != b.opkind || a.op1_is_const != b.op1_is_const || a.op2_is_const != b.op2_is_const || a.op3_is_const != b.op3_is_const { return false; }
+            if a.op1_is_const != 0 && a.op1 != b.op1 { return false; }
+            if a.op2_is_const != 0 && a.op2 != b.op2 { return false; }
+            if a.op3_is_const != 0 && a.op3 != b.op3 { return false; }
+            let ok1 = match (a.op1_ref(), b.op1_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
+            if !ok1 { return false; }
+            let ok2 = match (a.op2_ref(), b.op2_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
+            if !ok2 { return false; }
+            let ok3 = match (a.op3_ref(), b.op3_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
+            ok3
+        }
+        fn get_triplet<'a>(it: &'a Expr) -> Option<(&'a Expr, u32, u32)> {
+            if it.opkind_is(K::Extract8) {
+                let base = it.op1_ref()?;
+                let idx = it.op2 as u32;
+                let low = idx * 8; let high = low + 7;
+                Some((base, high, low))
+            } else if it.opkind_is(K::Extract) {
+                let base = it.op1_ref()?;
+                let (high, low) = Expr::unpack_u32_pair_from_ptr(it.op2);
+                if high + 1 != low + 8 { return None; }
+                if (low % 8) != 0 { return None; }
+                Some((base, high, low))
+            } else {
+                None
+            }
+        }
+
+        let mut items: Vec<&Expr> = Vec::new();
+        flatten_concat(src, &mut items);
+        if items.is_empty() { return Ok(expr.clone()); }
+
+        // All items must be 8-bit extracts from the same base and contiguous descending in order
+        let mut triplets: Vec<(&Expr, u32, u32)> = Vec::with_capacity(items.len());
+        for it in &items {
+            if let Some(t) = get_triplet(it) { triplets.push(t); } else { return Ok(expr.clone()); }
+        }
+        let base0 = triplets[0].0;
+        for (b, _, _) in &triplets { if !structural_eq(base0, b, 0) { return Ok(expr.clone()); } }
+        // Verify order matches left-to-right high-to-low and contiguous by 8 bits
+        for k in 0..triplets.len()-1 {
+            let (_, h1, l1) = triplets[k];
+            let (_, h2, l2) = triplets[k+1];
+            if l1 != l2 + 8 || h1 != h2 + 8 { return Ok(expr.clone()); }
+        }
+        let base_low = triplets.last().unwrap().2; // lowest bit index in base for the rightmost byte
+        let bytes = triplets.len() as u32;
+        let assembled_width = bytes * 8;
+
+        // Unpack requested extract range
+        let (mut high, mut low) = Expr::unpack_u32_pair_from_ptr(expr.op2);
+        if high < low { return Ok(expr.clone()); }
+        if high >= assembled_width { return Ok(expr.clone()); } // out of range; be conservative
+
+        // Map to base indices by offsetting by base_low
+        low = base_low + low;
+        high = base_low + high;
+
+        let packed = Expr::pack_u32_pair_to_ptr(high, low);
+        Ok(Expr { op1: base0 as *const Expr as *mut Expr, op2: packed, op3: std::ptr::null_mut(), opkind: K::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 })
+    }
+
+    fn priority(&self) -> u32 { 129 }
+}
+
 /// Pack four adjacent Extract8 on the same base into a single 32-bit slice
 /// Concat(Extract8(x,3), Extract8(x,2), Extract8(x,1), Extract8(x,0))
 ///   => x                         if width(x) == 32
@@ -562,7 +740,7 @@ impl ExpressionSimplifier {
         let mut simplifier = Self {
             simplification_cache: HashMap::new(),
             optimization_rules: Vec::new(),
-            max_simplification_depth: 30,
+            max_simplification_depth: 50,
         };
         
         // Add built-in simplification rules
@@ -575,16 +753,19 @@ impl ExpressionSimplifier {
         simplifier.add_rule(Box::new(ArithmeticSimplificationRule));
         simplifier.add_rule(Box::new(BitvectorSimplificationRule));
         simplifier.add_rule(Box::new(ExtractOptimizationRule));
-        // Byte-wise normalization then push extracts, then pack
+        // Byte-wise normalization, then PACK runs before pushing through concat
         simplifier.add_rule(Box::new(ExtractByteToExtract8Rule));
-        simplifier.add_rule(Box::new(ExtractThroughConcatRule));
-        // Pack contiguous byte extracts into a single slice
+        // Pack contiguous byte extracts into a single slice (do this BEFORE pushing extracts)
         simplifier.add_rule(Box::new(ConcatExtractPackGeneralRule));
         simplifier.add_rule(Box::new(ConcatExtractPackRunsRule));
         simplifier.add_rule(Box::new(ConcatExtract8PackRule));
+        // Now push extracts through concat for remaining cases
+        simplifier.add_rule(Box::new(ExtractThroughConcatRule));
+        simplifier.add_rule(Box::new(ExtractOverPackedByteConcatRule));
         simplifier.add_rule(Box::new(ExtractIdentityRule));
         simplifier.add_rule(Box::new(Extract8OverZextRule));
         simplifier.add_rule(Box::new(ExtractOverZextClampRule));
+        simplifier.add_rule(Box::new(EqOverZextRule));
         simplifier.add_rule(Box::new(ConcatenationOptimizationRule));
         simplifier.add_rule(Box::new(SubtractionTransformRule));
         simplifier.add_rule(Box::new(ZeroExtensionRule));
@@ -592,6 +773,7 @@ impl ExpressionSimplifier {
         simplifier.add_rule(Box::new(BitwiseOptimizationRule));
         simplifier.add_rule(Box::new(ArithmeticExtractRule));
         simplifier.add_rule(Box::new(ConditionalOptimizationRule));
+        simplifier.add_rule(Box::new(NotNotEliminateRule));
         simplifier.add_rule(Box::new(BitwiseOrOptimizationRule));
         simplifier.add_rule(Box::new(ConcatenationAdvancedRule));
         simplifier.add_rule(Box::new(SignExtensionRule));
@@ -615,7 +797,7 @@ impl ExpressionSimplifier {
         let mut simplifier = Self {
             simplification_cache: HashMap::new(),
             optimization_rules: Vec::new(),
-            max_simplification_depth: 40,
+            max_simplification_depth: 50,
         };
         // Safe subset mirroring C peepholes
         simplifier.add_rule(Box::new(ConstantFoldingRule));
@@ -625,18 +807,22 @@ impl ExpressionSimplifier {
         // Extract optimization only for constant source and constant indices
         simplifier.add_rule(Box::new(ExtractOptimizationRule));
         simplifier.add_rule(Box::new(ExtractByteToExtract8Rule));
-        simplifier.add_rule(Box::new(ExtractThroughConcatRule));
+        // Pack first, then push
         simplifier.add_rule(Box::new(ConcatExtractPackGeneralRule));
         simplifier.add_rule(Box::new(ConcatExtractPackRunsRule));
         simplifier.add_rule(Box::new(ConcatExtract8PackRule));
+        simplifier.add_rule(Box::new(ExtractThroughConcatRule));
+        simplifier.add_rule(Box::new(ExtractOverPackedByteConcatRule));
         simplifier.add_rule(Box::new(ExtractIdentityRule));
         simplifier.add_rule(Box::new(Extract8OverZextRule));
         simplifier.add_rule(Box::new(ExtractOverZextClampRule));
+        simplifier.add_rule(Box::new(EqOverZextRule));
         // Additional low-risk rules to reduce verbosity
         simplifier.add_rule(Box::new(ZeroExtensionRule));
         simplifier.add_rule(Box::new(ConcatenationOptimizationRule));
         simplifier.add_rule(Box::new(ShiftOptimizationRule));
         simplifier.add_rule(Box::new(NotSimplificationRule));
+        simplifier.add_rule(Box::new(NotNotEliminateRule));
         simplifier.add_rule(Box::new(EqIdentityRule));
         simplifier
     }
@@ -718,8 +904,8 @@ impl ExpressionSimplifier {
             return Ok(expr.clone());
         }
 
-        // First simplify child expressions (best-effort; we keep original structure)
-        let simplified = expr.clone();
+        // First simplify child expressions and rebuild node if children changed
+        let mut simplified = expr.clone();
         if let Ok(opk) = expr.try_opkind() {
             debug!(
                 "[SOLVER] simpl: node 0x{:x} opkind={:?} op1=0x{:x}({}) op2=0x{:x}({}) op3=0x{:x}({})",
@@ -769,6 +955,9 @@ impl ExpressionSimplifier {
             // Default: conservative fallback — use any non-const, non-null child refs
             _ => (true, true, true),
         };
+        // Track whether any child changed structurally to decide if we rebuild
+        let mut need_rebuild = false;
+
         if use_op1 {
             if expr.op1_is_const == 0 && (expr.op1 as usize) < 0x10000 {
                 debug!("[SOLVER] simpl: WARNING tiny op1 ptr (0x{:x}) not marked const at 0x{:x}", expr.op1 as usize, key);
@@ -776,7 +965,12 @@ impl ExpressionSimplifier {
 
             if let Some(op1_ref) = expr.op1_ref() {
                 debug!("[SOLVER] simpl: recurse op1 from 0x{:x} -> 0x{:x}", key, op1_ref as *const Expr as usize);
-                let _ = self.simplify_recursive(op1_ref)?;
+                let new1 = self.simplify_recursive(op1_ref)?;
+                if !self.expressions_equal(op1_ref, &new1) {
+                    if let Some(p) = tls_alloc_opt(new1) {
+                        simplified.op1 = p; simplified.op1_is_const = 0; need_rebuild = true;
+                    }
+                }
             }
         }
         if use_op2 {
@@ -786,7 +980,12 @@ impl ExpressionSimplifier {
 
             if let Some(op2_ref) = expr.op2_ref() {
                 debug!("[SOLVER] simpl: recurse op2 from 0x{:x} -> 0x{:x}", key, op2_ref as *const Expr as usize);
-                let _ = self.simplify_recursive(op2_ref)?;
+                let new2 = self.simplify_recursive(op2_ref)?;
+                if !self.expressions_equal(op2_ref, &new2) {
+                    if let Some(p) = tls_alloc_opt(new2) {
+                        simplified.op2 = p; simplified.op2_is_const = 0; need_rebuild = true;
+                    }
+                }
             }
         }
         if use_op3 {
@@ -796,12 +995,17 @@ impl ExpressionSimplifier {
 
             if let Some(op3_ref) = expr.op3_ref() {
                 debug!("[SOLVER] simpl: recurse op3 from 0x{:x} -> 0x{:x}", key, op3_ref as *const Expr as usize);
-                let _ = self.simplify_recursive(op3_ref)?;
+                let new3 = self.simplify_recursive(op3_ref)?;
+                if !self.expressions_equal(op3_ref, &new3) {
+                    if let Some(p) = tls_alloc_opt(new3) {
+                        simplified.op3 = p; simplified.op3_is_const = 0; need_rebuild = true;
+                    }
+                }
             }
         }
 
-        // Then simplify the current expression
-        let res = self.simplify(&simplified);
+        // Then simplify the current expression (rebuilt if children changed)
+        let res = if need_rebuild { self.simplify(&simplified) } else { self.simplify(expr) };
 
         // Pop from visiting set
         SIMPL_VISITING.with(|vis| {
