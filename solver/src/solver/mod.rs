@@ -162,6 +162,7 @@ impl SMTSolver {
         println!("  UNSAT count: {}", self.statistics.unsat_count);
         println!("  Timeout count: {}", self.statistics.timeout_count);
         println!("  Translation time: {}ms", self.statistics.translation_time);
+        println!("  Simplification time: {}μs", self.statistics.simplification_time);
         println!("  Solving time: {}ms", self.statistics.solving_time);
         println!("  Cache hits: {}", self.statistics.cache_hits);
         println!("  Cache misses: {}", self.statistics.cache_misses);

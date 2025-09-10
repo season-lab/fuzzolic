@@ -42,6 +42,15 @@ impl SMTSolver {
 
     /// Top-level translator. Clears simplifier visit state ONCE per translation, then delegates.
     pub fn translate_expression_static<'a>(ctx: &'a z3::Context, expr: &Expr) -> Result<z3::ast::Dynamic<'a>> {
+        Self::translate_expression_static_with_stats(ctx, expr, None)
+    }
+
+    /// Top-level translator with optional statistics tracking
+    pub fn translate_expression_static_with_stats<'a>(
+        ctx: &'a z3::Context, 
+        expr: &Expr, 
+        stats: Option<&mut crate::utils::statistics::Statistics>
+    ) -> Result<z3::ast::Dynamic<'a>> {
         // One-time init for this translation pass
         ExpressionSimplifier::clear_visit_state();
         let mut cache: HashMap<usize, z3::ast::Dynamic<'a>> = HashMap::new();
@@ -49,7 +58,13 @@ impl SMTSolver {
         let _arena_scope = ArenaScope::enter();
         let mut simp = ExpressionSimplifier::new();
         log::info!("[SOLVER] Starting expression simplification");
-        let s = simp.simplify_recursive(expr).unwrap_or_else(|_| expr.clone());
+        
+        let s = if let Some(stats) = stats {
+            simp.simplify_with_stats(expr, stats).unwrap_or_else(|_| expr.clone())
+        } else {
+            simp.simplify_recursive(expr).unwrap_or_else(|_| expr.clone())
+        };
+        
         log::info!("[SOLVER] Expression simplification completed");
         let d = Self::translate_expression_inner(ctx, &s, &mut cache)?;
         Ok(d)

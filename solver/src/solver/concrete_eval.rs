@@ -337,7 +337,7 @@ impl ConcreteEvaluator {
     }
 
     /// Evaluate binary operations
-    fn eval_binary_op(&self, op: BinaryOp, left: u64, right: u64) -> Result<u64> {
+    pub fn eval_binary_op(&self, op: BinaryOp, left: u64, right: u64) -> Result<u64> {
         let result = match op {
             BinaryOp::Add => left.wrapping_add(right),
             BinaryOp::Sub => left.wrapping_sub(right),
@@ -370,7 +370,7 @@ impl ConcreteEvaluator {
 
     /// Evaluate bit extraction
     #[allow(dead_code)]
-    fn eval_extract(&self, value: u64, high: u32, low: u32) -> Result<u64> {
+    pub fn eval_extract(&self, value: u64, high: u32, low: u32) -> Result<u64> {
         if high < low {
             return Ok(0);
         }
@@ -425,7 +425,7 @@ enum ExprKind<'a> {
 /// Binary operations
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
-enum BinaryOp {
+pub enum BinaryOp {
     Add, Sub, Mul, Div, Mod,
     And, Or, Xor, Shl, Shr,
     Eq, Ne, Lt, Le, Gt, Ge,
@@ -453,30 +453,3 @@ impl std::fmt::Display for EvalStats {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_binary_operations() {
-        let evaluator = ConcreteEvaluator::new();
-        
-        assert_eq!(evaluator.eval_binary_op(BinaryOp::Add, 5, 3).unwrap(), 8);
-        assert_eq!(evaluator.eval_binary_op(BinaryOp::Sub, 5, 3).unwrap(), 2);
-        assert_eq!(evaluator.eval_binary_op(BinaryOp::Mul, 5, 3).unwrap(), 15);
-        assert_eq!(evaluator.eval_binary_op(BinaryOp::Div, 15, 3).unwrap(), 5);
-        assert_eq!(evaluator.eval_binary_op(BinaryOp::And, 0b1010, 0b1100).unwrap(), 0b1000);
-        assert_eq!(evaluator.eval_binary_op(BinaryOp::Or, 0b1010, 0b1100).unwrap(), 0b1110);
-    }
-
-    #[test]
-    fn test_extract() {
-        let evaluator = ConcreteEvaluator::new();
-        
-        // Extract bits [7:4] from 0xFF (should be 0xF)
-        assert_eq!(evaluator.eval_extract(0xFF, 7, 4).unwrap(), 0xF);
-        
-        // Extract bits [3:0] from 0xFF (should be 0xF)
-        assert_eq!(evaluator.eval_extract(0xFF, 3, 0).unwrap(), 0xF);
-    }
-}

@@ -39,7 +39,7 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
             let ctx = &solver.ctx;
             println!("[SOLVER] Z3: translating branch condition at 0x{:x}", addr_conc);
             let translate_start = std::time::Instant::now();
-            let z3_cond = SMTSolver::translate_expression_static(ctx, cond_expr)?;
+            let z3_cond = SMTSolver::translate_expression_static_with_stats(ctx, cond_expr, Some(&mut solver.statistics))?;
             let translate_elapsed = translate_start.elapsed();
             let translate_us = translate_elapsed.as_micros() as u64;
             let translate_ms = (translate_us + 999) / 1000; // Round up to nearest millisecond
@@ -188,7 +188,7 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
                 let ctx = &solver.ctx;
                 // Translate condition to Z3
                 let translate_start = std::time::Instant::now();
-                let z3_condition = SMTSolver::translate_expression_static(ctx, cond_expr)?;
+                let z3_condition = SMTSolver::translate_expression_static_with_stats(ctx, cond_expr, Some(&mut solver.statistics))?;
                 let translate_elapsed = translate_start.elapsed();
                 let translate_us = translate_elapsed.as_micros() as u64;
                 let translate_ms = (translate_us + 999) / 1000; // Round up to nearest millisecond

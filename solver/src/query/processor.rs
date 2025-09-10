@@ -250,9 +250,9 @@ impl QueryProcessor {
         // Record dependencies for target expression
         let _ = self.solver.add_dependency_for_expr(target);
 
-        // Track translation time - use microseconds for better precision
+        // Track translation time (including simplification) - use microseconds for better precision
         let translate_start = Instant::now();
-        let z3_dyn = SMTSolver::translate_expression_static(&self.solver.ctx, target)?;
+        let z3_dyn = SMTSolver::translate_expression_static_with_stats(&self.solver.ctx, target, Some(&mut self.solver.statistics))?;
         let translate_elapsed = translate_start.elapsed();
         let translate_us = translate_elapsed.as_micros() as u64;
         let translate_ms = (translate_us + 999) / 1000; // Round up to nearest millisecond
@@ -474,21 +474,3 @@ impl QueryProcessor {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_query_processor_creation() {
-        let _ = Config {
-            testcase_path: Some("test.dat".into()),
-            output_dir: Some("/tmp/output".into()),
-            timeout: Some(5000),
-            ..Default::default()
-        };
-        
-        // This test would require proper shared memory setup
-        // let processor = QueryProcessor::new(config);
-        // assert!(processor.is_ok());
-    }
-}

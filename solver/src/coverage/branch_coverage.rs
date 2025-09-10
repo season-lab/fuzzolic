@@ -7,7 +7,7 @@ use std::path::Path;
 use xxhash_rust::xxh32::xxh32;
 use log::{info, warn};
 
-const BRANCH_BITMAP_SIZE: usize = 65536;
+pub const BRANCH_BITMAP_SIZE: usize = 65536;
 
 pub struct BranchCoverage {
     pub branch_bitmap: Vec<u8>,
@@ -272,48 +272,3 @@ const COUNT_CLASS_BINARY: [u8; 257] = [
     128,
 ];
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_branch_coverage_creation() {
-        let config = Config {
-            testcase_path: Some("test.dat".into()),
-            testcase_dir: Some("test_dir".into()),
-            output_dir: Some("output".into()),
-            memory_bitmap_path: Some("memory.bitmap".into()),
-            branch_bitmap_path: Some("test_branch.bitmap".into()),
-            context_bitmap_path: Some("test_branch_context.bitmap".into()),
-            ..Default::default()
-        };
-        
-        let coverage = BranchCoverage::new(&config).unwrap();
-        assert_eq!(coverage.branch_bitmap.len(), BRANCH_BITMAP_SIZE);
-    }
-    
-    #[test]
-    fn test_interesting_branch() {
-        let config = Config {
-            branch_bitmap_path: Some("test_branch.bitmap".into()),
-            context_bitmap_path: Some("test_branch_context.bitmap".into()),
-            testcase_path: Some("test.dat".into()),
-            testcase_dir: Some("test_dir".into()),
-            output_dir: Some("output".into()),
-            memory_bitmap_path: Some("memory.bitmap".into()),
-            ..Default::default()
-        };
-        
-        let mut coverage = BranchCoverage::new(&config).unwrap();
-        
-        // First time should be interesting (count 0 -> 1)
-        assert!(coverage.record_branch(0x1000, true, false));
-        
-        // Second time should also be interesting (count 1 -> 2, power of 2)
-        assert!(coverage.record_branch(0x1000, true, false));
-        
-        // Third time should not be interesting (count 2 -> 3, not power of 2)
-        // But record_branch returns true if it's a new transition, so we expect true here
-        assert!(coverage.record_branch(0x1000, true, false));
-    }
-}

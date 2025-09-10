@@ -12,6 +12,7 @@ pub struct Statistics {
     pub cache_hits: u64,
     pub cache_misses: u64,
     pub optimization_count: u64,
+    pub simplification_time: u64, // Time spent on expression simplification in microseconds
     // Fuzzy-side statistics pulled from the C fuzzy solver
     pub fuzzy_num_evaluate: u64,
     pub fuzzy_num_sat: u64,

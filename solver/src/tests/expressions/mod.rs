@@ -1,0 +1,16 @@
+pub mod test_dependency;
+pub mod test_arithmetic_simplifications;
+pub mod test_bitvector_simplifications;
+pub mod test_boolean_simplifications;
+pub mod test_comparison_simplifications;
+pub mod test_concat_extract_simplifications;
+pub mod test_constant_folding_simplifications;
+pub mod test_expression_simplifier_core;
+pub mod test_expression_simplifier_integration;
+pub mod test_extract_concat;
+pub mod test_extract_simplifications;
+pub mod test_identity_simplifications;
+pub mod test_nested_simplify;
+pub mod test_safe_optimizations;
+pub mod test_simplification_framework;
+pub mod test_simplification_timing;
