@@ -50,7 +50,8 @@ impl SMTSolver {
         let mut simp = ExpressionSimplifier::new_conservative();
         let s = simp.simplify_recursive(expr).unwrap_or_else(|_| expr.clone());
         let d = Self::translate_expression_inner(ctx, &s, &mut cache)?;
-        Ok(d.simplify())
+        Ok(d)
+        // Ok(d.simplify())
     }
     /// Helper: translate an operand that can be either a constant (embedded in the pointer)
     /// or a pointer to another Expr node. Mirrors the C-side encoding using op*_is_const flags.
@@ -408,16 +409,22 @@ impl SMTSolver {
                 let bv = v.as_bv().ok_or_else(|| anyhow::anyhow!("Zext op1 not BV"))?;
                 let target_bits = expr.op2 as u32;
                 let cur = bv.get_size();
-                let extend_by = if target_bits > cur { target_bits - cur } else { 0 };
-                Ok(bv.zero_ext(extend_by).into())
+                if target_bits > cur {
+                    Ok(bv.zero_ext(target_bits - cur).into())
+                } else {
+                    Ok(bv.into())
+                }
             }
             OpKind::Sext => {
                 let v = Self::translate_operand_static(ctx, expr.op1, expr.op1_is_const, cache)?;
                 let bv = v.as_bv().ok_or_else(|| anyhow::anyhow!("Sext op1 not BV"))?;
                 let target_bits = expr.op2 as u32;
                 let cur = bv.get_size();
-                let extend_by = if target_bits > cur { target_bits - cur } else { 0 };
-                Ok(bv.sign_ext(extend_by).into())
+                if target_bits > cur {
+                    Ok(bv.sign_ext(target_bits - cur).into())
+                } else {
+                    Ok(bv.into())
+                }
             }
             // Memory/symbolic ops: model as fresh Z3 symbols to decouple from
             // concrete memory reasoning. Higher layers (MemorySliceReasoner) can

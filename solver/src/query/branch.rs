@@ -7,6 +7,9 @@ use crate::solver::SMTSolver;
 use crate::coverage::branch_coverage::BranchCoverage;
 use crate::utils::config::Config;
 use crate::expressions::expression;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
 
 pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, config: &Config, query: &Query) -> Result<()> {
     let addr_conc = query.address as u64;
@@ -87,6 +90,36 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
                         info!("Opposite branch at 0x{:x} is SAT", addr_conc);
                         println!("[SOLVER] Opposite branch at 0x{:x} is SAT (Z3)", addr_conc);
                         branch_cov.mark_sat_branch();
+                        // Dump model to disk (C parity)
+                        if let Some(model) = s.get_model() {
+                            let qidx = query.get_index();
+                            // Determine testcase size: prefer current testcase, else based on max input id
+                            let tc_size = solver.get_current_testcase().map(|v| v.len());
+                            let max_id = inputs_vec.iter().copied().max().unwrap_or(0) as usize;
+                            let size = tc_size.unwrap_or(max_id + 1);
+                            let mut bytes: Vec<u8> = vec![0u8; size];
+                            // If we have a current testcase, initialize with its data
+                            if let Some(tc) = solver.get_current_testcase() {
+                                for i in 0..bytes.len().min(tc.len()) { bytes[i] = tc[i]; }
+                            }
+                            // Evaluate model for each input_i symbol in range
+                            for i in 0..size {
+                                let name = format!("input_{}", i);
+                                let sym = z3::ast::BV::new_const(ctx, name, 8);
+                                if let Some(val_bv) = model.eval(&sym, true) {
+                                    if let Some(v) = val_bv.as_u64() { bytes[i] = v as u8; }
+                                }
+                            }
+                            // Build path
+                            let mut path: PathBuf = if let Some(ref dir) = config.output_dir { dir.clone() } else { PathBuf::from(".") };
+                            // Mirror C naming: test_case_<idx>_<subidx>.dat (subidx fixed to 0)
+                            path.push(format!("test_case_{}_{}.dat", qidx, 0));
+                            if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+                            match File::create(&path) {
+                                Ok(mut f) => { let _ = f.write_all(&bytes); }
+                                Err(e) => { println!("[SOLVER] Failed to write model to {}: {}", path.display(), e); }
+                            }
+                        }
                     }
                     z3::SatResult::Unsat => {
                         debug!("Opposite branch at 0x{:x} is UNSAT", addr_conc);

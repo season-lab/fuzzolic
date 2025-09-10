@@ -44,6 +44,77 @@ impl SimplificationRule for BandMaskRule {
 
     fn priority(&self) -> u32 { 126 }
 }
+
+/// Extract8 over Zext: pull Extract8 through zero-extend when safe.
+///
+/// Patterns handled:
+///   Extract8( Zext(x, target_bits), idx ) =>
+///       - 0x00 if idx*8 >= width(x)
+///       - Extract8(x, idx) otherwise
+pub struct Extract8OverZextRule;
+
+impl SimplificationRule for Extract8OverZextRule {
+    fn name(&self) -> &str { "Extract8OverZext" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        use crate::expressions::expression::OpKind as K;
+        if !expr.opkind_is(K::Extract8) { return Ok(expr.clone()); }
+        let src = if let Some(s) = expr.op1_ref() { s } else { return Ok(expr.clone()); };
+        if !src.opkind_is(K::Zext) { return Ok(expr.clone()); }
+        // Inner value being extended
+        let inner = if let Some(i) = src.op1_ref() { i } else { return Ok(expr.clone()); };
+        // Compute original width of inner; fall back conservatively if unknown
+        if let Some(orig_bits) = infer_size(inner) {
+            // Extract8 index is stored in op2 immediate (as in translator)
+            let idx: u32 = expr.op2 as u32;
+            let low_bit = idx.saturating_mul(8);
+            if low_bit >= orig_bits {
+                // Index beyond inner width => 0 byte
+                return Ok(Expr { op1: 0usize as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: K::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 });
+            }
+            // Safe to extract directly from inner
+            return Ok(Expr { op1: inner as *const Expr as *mut Expr, op2: expr.op2, op3: std::ptr::null_mut(), opkind: K::Extract8 as u8, op1_is_const: 0, op2_is_const: expr.op2_is_const, op3_is_const: 0 });
+        }
+        Ok(expr.clone())
+    }
+
+    fn priority(&self) -> u32 { 130 }
+}
+
+/// Extract over Zext: clamp range into the original width or fold to zero.
+///
+/// Patterns handled:
+///   Extract( Zext(x, target_bits), high:low ) =>
+///       - 0 if low >= width(x)
+///       - Extract(x, min(high, width(x)-1) : low)
+pub struct ExtractOverZextClampRule;
+
+impl SimplificationRule for ExtractOverZextClampRule {
+    fn name(&self) -> &str { "ExtractOverZextClamp" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        use crate::expressions::expression::OpKind as K;
+        if !expr.opkind_is(K::Extract) { return Ok(expr.clone()); }
+        let src = if let Some(s) = expr.op1_ref() { s } else { return Ok(expr.clone()); };
+        if !src.opkind_is(K::Zext) { return Ok(expr.clone()); }
+        let inner = if let Some(i) = src.op1_ref() { i } else { return Ok(expr.clone()); };
+        if let Some(orig_bits) = infer_size(inner) {
+            // Unpack high/low from op2 immediate (as per pack_u32_pair_to_ptr)
+            let (mut high, mut low) = Expr::unpack_u32_pair_from_ptr(expr.op2);
+            if low >= orig_bits { // selecting bits entirely above inner width
+                return Ok(Expr { op1: 0usize as *mut Expr, op2: std::ptr::null_mut(), op3: std::ptr::null_mut(), opkind: K::IsConst as u8, op1_is_const: 1, op2_is_const: 0, op3_is_const: 0 });
+            }
+            if high >= orig_bits { high = orig_bits - 1; }
+            // Rebuild Extract directly on inner with clamped range
+            let packed = Expr::pack_u32_pair_to_ptr(high, low);
+            return Ok(Expr { op1: inner as *const Expr as *mut Expr, op2: packed, op3: std::ptr::null_mut(), opkind: K::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 });
+        }
+        Ok(expr.clone())
+    }
+
+    fn priority(&self) -> u32 { 131 }
+}
+
 use anyhow::Result;
 use log::debug;
 use std::collections::{HashMap, HashSet};
@@ -77,6 +148,8 @@ impl ExpressionSimplifier {
         simplifier.add_rule(Box::new(ArithmeticSimplificationRule));
         simplifier.add_rule(Box::new(BitvectorSimplificationRule));
         simplifier.add_rule(Box::new(ExtractOptimizationRule));
+        simplifier.add_rule(Box::new(Extract8OverZextRule));
+        simplifier.add_rule(Box::new(ExtractOverZextClampRule));
         simplifier.add_rule(Box::new(ConcatenationOptimizationRule));
         simplifier.add_rule(Box::new(SubtractionTransformRule));
         simplifier.add_rule(Box::new(ZeroExtensionRule));
@@ -116,6 +189,14 @@ impl ExpressionSimplifier {
         simplifier.add_rule(Box::new(BitvectorSimplificationRule));
         // Extract optimization only for constant source and constant indices
         simplifier.add_rule(Box::new(ExtractOptimizationRule));
+        simplifier.add_rule(Box::new(Extract8OverZextRule));
+        simplifier.add_rule(Box::new(ExtractOverZextClampRule));
+        // Additional low-risk rules to reduce verbosity
+        simplifier.add_rule(Box::new(ZeroExtensionRule));
+        simplifier.add_rule(Box::new(ConcatenationOptimizationRule));
+        simplifier.add_rule(Box::new(ShiftOptimizationRule));
+        simplifier.add_rule(Box::new(NotSimplificationRule));
+        simplifier.add_rule(Box::new(EqIdentityRule));
         simplifier
     }
     

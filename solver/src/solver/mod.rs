@@ -82,7 +82,8 @@ impl SMTSolver {
             Some(BranchCoverage::new(config)?)
         } else { None };
 
-        Ok(SMTSolver {
+        // Initialize solver and optionally load current testcase bytes
+        let mut solver = SMTSolver {
             ctx,
             branch_coverage,
             statistics: Statistics::default(),
@@ -95,7 +96,13 @@ impl SMTSolver {
             fuzzy_ctx: std::ptr::null_mut(),
             constraints_by_input: RefCell::new(HashMap::new()),
             constraints_by_query: RefCell::new(HashMap::new()),
-        })
+        };
+        if let Some(ref path) = config.testcase_path {
+            if let Ok(tc) = crate::utils::testcase::Testcase::from_file(path) {
+                solver.current_testcase = Some(tc);
+            }
+        }
+        Ok(solver)
     }
 
     pub fn initialize(&mut self) -> Result<()> {
