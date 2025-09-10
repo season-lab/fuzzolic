@@ -1,15 +1,15 @@
 use anyhow::Result;
 use std::os::raw::c_void;
 use log::{info, debug, warn};
-use crate::expressions::expression::Query;
+use crate::expressions::expression::{self, Query, Expr, OpKind};
 use crate::solver::concrete_eval::ConcreteEvaluator;
 use crate::solver::SMTSolver;
 use crate::coverage::branch_coverage::BranchCoverage;
-use crate::utils::config::Config;
-use crate::expressions::expression;
+use crate::Config;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::collections::HashMap;
 
 pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, config: &Config, query: &Query) -> Result<()> {
     let addr_conc = query.address as u64;
@@ -42,7 +42,28 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
             let z3_cond = SMTSolver::translate_expression_static(ctx, cond_expr)?;
             println!("[SOLVER] Z3: condition AST: {}", z3_cond.to_string());
             if let Some(cond_bool) = z3_cond.as_bool() {
-                let neg_cond = cond_bool.not();
+                // Create negated expression at Expr level, simplify it, then translate
+                let neg_expr = if taken {
+                    // Create NOT expression in our Expr system
+                    let neg_expr = Expr::new_unary(OpKind::Not, cond_expr as *const Expr as *mut Expr);
+                    
+                    // Simplify the negated expression before translation
+                    println!("[SOLVER] Branch: Created NOT expression, now simplifying...");
+                    let mut simplifier = crate::expressions::expression_simplifier::ExpressionSimplifier::new();
+                    let simplified = simplifier.simplify(&neg_expr)?;
+                    println!("[SOLVER] Branch: Simplification completed");
+                    
+                    // Translate the simplified expression to Z3
+                    SMTSolver::translate_expression_static(ctx, &simplified)?
+                } else {
+                    z3_cond.clone()
+                };
+                
+                let main_assertion = if let Some(bool_expr) = neg_expr.as_bool() {
+                    bool_expr
+                } else {
+                    cond_bool.clone()
+                };
                 // Gather input IDs from the condition and fetch dependency expressions
                 let mut evaluator = ConcreteEvaluator::new();
                 let inputs_vec = evaluator.get_inputs_expr(&z3_cond);
@@ -68,11 +89,10 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
                          dep_bools.len(), taken);
                 // Keep ASTs alive for the duration of the check and assert individually (C parity)
                 let mut keep_alive: Vec<z3::ast::Bool> = Vec::with_capacity(dep_bools.len() + 2);
-                let main = if taken { neg_cond.clone() } else { cond_bool.clone() };
-                println!("[SOLVER] Z3: main assertion: {}", main.to_string());
+                println!("[SOLVER] Z3: main assertion: {}", main_assertion.to_string());
                 keep_alive.push(cond_bool.clone());
-                keep_alive.push(neg_cond.clone());
-                s.assert(&main);
+                keep_alive.push(main_assertion.clone());
+                s.assert(&main_assertion);
                 for b in &dep_bools {
                     println!("[SOLVER] Z3: dep asserted: {}", b.to_string());
                     s.assert(b);

@@ -47,7 +47,7 @@ impl SMTSolver {
         let mut cache: HashMap<usize, z3::ast::Dynamic<'a>> = HashMap::new();
         // Perform full-tree simplification once to mirror C optimize_z3_query
         let _arena_scope = ArenaScope::enter();
-        let mut simp = ExpressionSimplifier::new_conservative();
+        let mut simp = ExpressionSimplifier::new();
         log::info!("[SOLVER] Starting expression simplification");
         let s = simp.simplify_recursive(expr).unwrap_or_else(|_| expr.clone());
         log::info!("[SOLVER] Expression simplification completed");

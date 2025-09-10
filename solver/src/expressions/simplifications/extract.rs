@@ -13,7 +13,7 @@ impl SimplificationRule for ExtractOptimizationRule {
             return Ok(expr.clone());
         }
         
-        let op1 = if let Some(op) = expr.op1_ref() { op } else { return Ok(expr.clone()); };
+        let op1 = if let Some(op) = expr.safe_op1_ref() { op } else { return Ok(expr.clone()); };
         let (high, low) = Expr::unpack_u32_pair_from_ptr(expr.op2);
         
         // Extract from constant
@@ -36,7 +36,7 @@ impl SimplificationRule for ExtractOptimizationRule {
         
         // Extract of Extract - combine ranges
         if op1.opkind_is(OpKind::Extract) && op1.op2_is_const != 0 {
-            let inner = op1.op1_ref().unwrap();
+            let inner = op1.safe_op1_ref().unwrap();
             let (_inner_high, inner_low) = Expr::unpack_u32_pair_from_ptr(op1.op2);
             let new_high = inner_low + high;
             let new_low = inner_low + low;
@@ -69,7 +69,7 @@ impl SimplificationRule for ExtractIdentityRule {
             return Ok(expr.clone());
         }
         
-        let op1 = if let Some(op) = expr.op1_ref() { op } else { return Ok(expr.clone()); };
+        let op1 = if let Some(op) = expr.safe_op1_ref() { op } else { return Ok(expr.clone()); };
         let (high, low) = Expr::unpack_u32_pair_from_ptr(expr.op2);
         
         // Check if this is a full-width extract
@@ -96,7 +96,7 @@ impl SimplificationRule for ExtractByteToExtract8Rule {
             return Ok(expr.clone());
         }
         
-        let op1 = if let Some(op) = expr.op1_ref() { op } else { return Ok(expr.clone()); };
+        let op1 = if let Some(op) = expr.safe_op1_ref() { op } else { return Ok(expr.clone()); };
         let (high, low) = Expr::unpack_u32_pair_from_ptr(expr.op2);
         
         // Check if this is an 8-bit aligned extract
@@ -130,12 +130,12 @@ impl SimplificationRule for Extract8OverZextRule {
             return Ok(expr.clone());
         }
         
-        let op1 = if let Some(op) = expr.op1_ref() { op } else { return Ok(expr.clone()); };
+        let op1 = if let Some(op) = expr.safe_op1_ref() { op } else { return Ok(expr.clone()); };
         let byte_idx = expr.op2 as u32;
         
         // Extract8 over Zext
         if op1.opkind_is(OpKind::Zext) {
-            if let Some(inner) = op1.op1_ref() {
+            if let Some(inner) = op1.safe_op1_ref() {
                 if let Some(inner_width) = infer_size(inner) {
                     let inner_bytes = (inner_width + 7) / 8;
                     if byte_idx < inner_bytes {
@@ -182,12 +182,12 @@ impl SimplificationRule for ExtractOverZextClampRule {
             return Ok(expr.clone());
         }
         
-        let op1 = if let Some(op) = expr.op1_ref() { op } else { return Ok(expr.clone()); };
+        let op1 = if let Some(op) = expr.safe_op1_ref() { op } else { return Ok(expr.clone()); };
         let (high, low) = Expr::unpack_u32_pair_from_ptr(expr.op2);
         
         // Extract over Zext
         if op1.opkind_is(OpKind::Zext) {
-            if let Some(inner) = op1.op1_ref() {
+            if let Some(inner) = op1.safe_op1_ref() {
                 if let Some(inner_width) = infer_size(inner) {
                     if high < inner_width {
                         // Extract entirely within original width
@@ -234,14 +234,14 @@ impl SimplificationRule for ExtractThroughConcatRule {
             return Ok(expr.clone());
         }
         
-        let concat = if let Some(op) = expr.op1_ref() { op } else { return Ok(expr.clone()); };
+        let concat = if let Some(op) = expr.safe_op1_ref() { op } else { return Ok(expr.clone()); };
         if !concat.opkind_is(OpKind::Concat) {
             return Ok(expr.clone());
         }
         
         let (high, low) = Expr::unpack_u32_pair_from_ptr(expr.op2);
         
-        if let (Some(left), Some(right)) = (concat.op1_ref(), concat.op2_ref()) {
+        if let (Some(left), Some(right)) = (concat.safe_op1_ref(), concat.safe_op2_ref()) {
             if let (Some(left_width), Some(right_width)) = (infer_size(left), infer_size(right)) {
                 let _total_width = left_width + right_width;
                 

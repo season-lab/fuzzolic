@@ -9,9 +9,10 @@ impl SimplificationRule for BitvectorSimplificationRule {
     fn name(&self) -> &str { "BitvectorSimplification" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
+        log::debug!("BitvectorSimplificationRule: Processing opkind {:?}", expr.try_opkind());
         match expr.try_opkind().ok() {
             Some(OpKind::And) => {
-                if let (Some(a), Some(b)) = (expr.op1_ref(), expr.op2_ref()) {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
                     // X & 0 = 0
                     if get_const(a) == Some(0) || get_const(b) == Some(0) {
                         return Ok(Expr {
@@ -44,12 +45,14 @@ impl SimplificationRule for BitvectorSimplificationRule {
                 }
             }
             Some(OpKind::Or) => {
-                if let (Some(a), Some(b)) = (expr.op1_ref(), expr.op2_ref()) {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
                     // X | 0 = X
                     if get_const(a) == Some(0) {
+                        log::debug!("BitvectorSimplificationRule: Applying 0 | X = X");
                         return Ok(b.clone());
                     }
                     if get_const(b) == Some(0) {
+                        log::debug!("BitvectorSimplificationRule: Applying X | 0 = X");
                         return Ok(a.clone());
                     }
                     // X | X = X
@@ -72,7 +75,7 @@ impl SimplificationRule for BitvectorSimplificationRule {
                 }
             }
             Some(OpKind::Xor) => {
-                if let (Some(a), Some(b)) = (expr.op1_ref(), expr.op2_ref()) {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
                     // X ^ 0 = X
                     if get_const(a) == Some(0) {
                         return Ok(b.clone());
@@ -156,7 +159,7 @@ impl SimplificationRule for ShiftOptimizationRule {
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         match expr.try_opkind().ok() {
             Some(OpKind::Shl) | Some(OpKind::Shr) | Some(OpKind::Sar) => {
-                if let (Some(a), Some(b)) = (expr.op1_ref(), expr.op2_ref()) {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
                     // X << 0 = X, X >> 0 = X
                     if get_const(b) == Some(0) {
                         return Ok(a.clone());
@@ -184,7 +187,7 @@ impl SimplificationRule for ShiftByConstRule {
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         match expr.try_opkind().ok() {
             Some(OpKind::Shl) | Some(OpKind::Shr) | Some(OpKind::Sar) => {
-                if let (Some(a), Some(b)) = (expr.op1_ref(), expr.op2_ref()) {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
                     // Constant folding for shifts
                     if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
                         let result = match expr.try_opkind().ok().unwrap() {

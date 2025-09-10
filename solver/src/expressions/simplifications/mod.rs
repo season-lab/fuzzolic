@@ -34,8 +34,8 @@ pub fn infer_size(expr: &Expr) -> Option<u32> {
         }
         OpKind::IsConst => Some(64), // Constants are 64-bit
         OpKind::Concat => {
-            let left_size = expr.op1_ref().and_then(infer_size)?;
-            let right_size = expr.op2_ref().and_then(infer_size)?;
+            let left_size = expr.safe_op1_ref().and_then(infer_size)?;
+            let right_size = expr.safe_op2_ref().and_then(infer_size)?;
             Some(left_size + right_size)
         }
         OpKind::Extract => {
@@ -62,6 +62,7 @@ pub mod comparison;
 pub mod concat_extract;
 pub mod constant_folding;
 pub mod extract;
+pub mod extract_concat_collapse;
 pub mod identity;
 
 // Re-export all rules for convenience
@@ -72,4 +73,5 @@ pub use comparison::*;
 pub use concat_extract::*;
 pub use constant_folding::*;
 pub use extract::*;
+pub use extract_concat_collapse::*;
 pub use identity::*;

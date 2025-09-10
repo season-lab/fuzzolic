@@ -10,14 +10,17 @@ impl SimplificationRule for NotNotEliminateRule {
 
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         if !expr.opkind_is(OpKind::Not) { return Ok(expr.clone()); }
-        let a = if let Some(x) = expr.op1_ref() { x } else { return Ok(expr.clone()); };
+        let a = if let Some(x) = expr.safe_op1_ref() { x } else { return Ok(expr.clone()); };
         if a.opkind_is(OpKind::Not) {
-            if let Some(inner) = a.op1_ref() { return Ok(inner.clone()); }
+            if let Some(inner) = a.safe_op1_ref() { 
+                log::debug!("NotNotEliminateRule: Eliminating double NOT, returning inner expression");
+                return Ok(inner.clone()); 
+            }
         }
         Ok(expr.clone())
     }
 
-    fn priority(&self) -> u32 { 119 }
+    fn priority(&self) -> u32 { 150 } // Higher priority to apply early
 }
 
 /// Boolean simplification rule - handles NOT operations on constants
@@ -29,7 +32,7 @@ impl SimplificationRule for BooleanSimplificationRule {
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         match expr.try_opkind().ok() {
             Some(OpKind::Not) => {
-                if let Some(op1) = expr.op1_ref() {
+                if let Some(op1) = expr.safe_op1_ref() {
                     if let Some(val) = get_const(op1) {
                         let result = if val == 0 { 1u64 } else { 0u64 };
                         return Ok(Expr {
@@ -59,11 +62,11 @@ impl SimplificationRule for NotSimplificationRule {
     fn name(&self) -> &str { "NotSimplification" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        if !expr.opkind_is(OpKind::Not) || expr.op1_ref().is_none() {
+        if !expr.opkind_is(OpKind::Not) || expr.safe_op1_ref().is_none() {
             return Ok(expr.clone());
         }
         
-        let a = expr.op1_ref().unwrap();
+        let a = expr.safe_op1_ref().unwrap();
         if let Some(v) = get_const(a) {
             let r = if v == 0 { 1u64 } else { 0u64 };
             return Ok(Expr {

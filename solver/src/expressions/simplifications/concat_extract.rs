@@ -14,8 +14,8 @@ impl SimplificationRule for ConcatExtractPackGeneralRule {
 
         fn flatten_concat<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
             if e.opkind_is(K::Concat) {
-                if let Some(l) = e.op1_ref() { flatten_concat(l, out); }
-                if let Some(r) = e.op2_ref() { flatten_concat(r, out); }
+                if let Some(l) = e.safe_op1_ref() { flatten_concat(l, out); }
+                if let Some(r) = e.safe_op2_ref() { flatten_concat(r, out); }
             } else {
                 out.push(e);
             }
@@ -29,11 +29,11 @@ impl SimplificationRule for ConcatExtractPackGeneralRule {
             if a.op2_is_const != 0 && a.op2 != b.op2 { return false; }
             if a.op3_is_const != 0 && a.op3 != b.op3 { return false; }
             // Recurse on node children
-            let ok1 = match (a.op1_ref(), b.op1_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
+            let ok1 = match (a.safe_op1_ref(), b.safe_op1_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
             if !ok1 { return false; }
-            let ok2 = match (a.op2_ref(), b.op2_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
+            let ok2 = match (a.safe_op2_ref(), b.safe_op2_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
             if !ok2 { return false; }
-            let ok3 = match (a.op3_ref(), b.op3_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
+            let ok3 = match (a.safe_op3_ref(), b.safe_op3_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
             ok3
         }
 
@@ -45,12 +45,12 @@ impl SimplificationRule for ConcatExtractPackGeneralRule {
         let mut triplets: Vec<(&Expr, u32, u32)> = Vec::with_capacity(items.len());
         for (i, it) in items.iter().enumerate() {
             if it.opkind_is(K::Extract8) {
-                let base = if let Some(b) = it.op1_ref() { b } else { return Ok(expr.clone()); };
+                let base = if let Some(b) = it.safe_op1_ref() { b } else { return Ok(expr.clone()); };
                 let idx = it.op2 as u32; // immediate index
                 let low = idx * 8; let high = low + 7;
                 triplets.push((base, high, low));
             } else if it.opkind_is(K::Extract) {
-                let base = if let Some(b) = it.op1_ref() { b } else { return Ok(expr.clone()); };
+                let base = if let Some(b) = it.safe_op1_ref() { b } else { return Ok(expr.clone()); };
                 let (high, low) = Expr::unpack_u32_pair_from_ptr(it.op2);
                 if high + 1 != low + 8 { return Ok(expr.clone()); } // only accept 8-bit chunks
                 triplets.push((base, high, low));
@@ -104,8 +104,8 @@ impl SimplificationRule for ConcatExtractPackRunsRule {
         // Flatten concat tree in-order
         fn flatten_concat<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
             if e.opkind_is(K::Concat) {
-                if let Some(l) = e.op1_ref() { flatten_concat(l, out); }
-                if let Some(r) = e.op2_ref() { flatten_concat(r, out); }
+                if let Some(l) = e.safe_op1_ref() { flatten_concat(l, out); }
+                if let Some(r) = e.safe_op2_ref() { flatten_concat(r, out); }
             } else {
                 out.push(e);
             }
@@ -119,11 +119,11 @@ impl SimplificationRule for ConcatExtractPackRunsRule {
             if a.op1_is_const != 0 && a.op1 != b.op1 { return false; }
             if a.op2_is_const != 0 && a.op2 != b.op2 { return false; }
             if a.op3_is_const != 0 && a.op3 != b.op3 { return false; }
-            let ok1 = match (a.op1_ref(), b.op1_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
+            let ok1 = match (a.safe_op1_ref(), b.safe_op1_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
             if !ok1 { return false; }
-            let ok2 = match (a.op2_ref(), b.op2_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
+            let ok2 = match (a.safe_op2_ref(), b.safe_op2_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
             if !ok2 { return false; }
-            let ok3 = match (a.op3_ref(), b.op3_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
+            let ok3 = match (a.safe_op3_ref(), b.safe_op3_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
             ok3
         }
 
@@ -257,7 +257,7 @@ impl SimplificationRule for ConcatExtractPackRunsRule {
 fn extract_8bit_info(expr: &Expr) -> Option<(&Expr, u32, u32)> {
     use crate::expressions::expression::OpKind as K;
     if expr.opkind_is(K::Extract8) {
-        if let Some(base) = expr.op1_ref() {
+        if let Some(base) = expr.safe_op1_ref() {
             let idx = expr.op2 as u32;
             let low = idx * 8;
             let high = low + 7;
@@ -266,7 +266,7 @@ fn extract_8bit_info(expr: &Expr) -> Option<(&Expr, u32, u32)> {
             None
         }
     } else if expr.opkind_is(K::Extract) {
-        if let Some(base) = expr.op1_ref() {
+        if let Some(base) = expr.safe_op1_ref() {
             let (high, low) = Expr::unpack_u32_pair_from_ptr(expr.op2);
             if (high - low + 1) == 8 && (low % 8) == 0 {
                 Some((base, high, low))
@@ -627,12 +627,12 @@ impl SimplificationRule for RecursiveConcatExtractSimplifyRule {
         log::info!("RecursiveConcatExtractSimplifyRule: Processing concat expression");
 
         // Check if this is a concat of 4 extracts from the same nested base
-        if let (Some(left), Some(right)) = (expr.op1_ref(), expr.op2_ref()) {
+        if let (Some(left), Some(right)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
             // Try to match pattern: concat(concat(concat(e1, e2), e3), e4)
             if left.opkind_is(OpKind::Concat) || left.opkind_is(OpKind::Concat8R) {
-                if let (Some(ll), Some(lr)) = (left.op1_ref(), left.op2_ref()) {
+                if let (Some(ll), Some(lr)) = (left.safe_op1_ref(), left.safe_op2_ref()) {
                     if ll.opkind_is(OpKind::Concat) || ll.opkind_is(OpKind::Concat8R) {
-                        if let (Some(lll), Some(llr)) = (ll.op1_ref(), ll.op2_ref()) {
+                        if let (Some(lll), Some(llr)) = (ll.safe_op1_ref(), ll.safe_op2_ref()) {
                             // We have concat(concat(concat(lll, llr), lr), right)
                             // Check if all 4 are extracts: lll, llr, lr, right
                             let candidates = [lll, llr, lr, right];
@@ -640,7 +640,7 @@ impl SimplificationRule for RecursiveConcatExtractSimplifyRule {
                             
                             for candidate in &candidates {
                                 if candidate.opkind_is(OpKind::Extract) {
-                                    if let Some(base) = candidate.op1_ref() {
+                                    if let Some(base) = candidate.safe_op1_ref() {
                                         let (high, low) = Expr::unpack_u32_pair_from_ptr(candidate.op2);
                                         if (high - low + 1) == 8 && (low % 8) == 0 {
                                             extract_info.push((base, high, low));
@@ -712,21 +712,21 @@ impl RecursiveConcatExtractSimplifyRule {
         if a.op2_is_const != 0 && a.op2 != b.op2 { return false; }
         if a.op3_is_const != 0 && a.op3 != b.op3 { return false; }
         
-        let op1_eq = match (a.op1_ref(), b.op1_ref()) {
+        let op1_eq = match (a.safe_op1_ref(), b.safe_op1_ref()) {
             (Some(ax), Some(bx)) => self.deep_structural_eq(ax, bx, depth + 1),
             (None, None) => true,
             _ => false,
         };
         if !op1_eq { return false; }
         
-        let op2_eq = match (a.op2_ref(), b.op2_ref()) {
+        let op2_eq = match (a.safe_op2_ref(), b.safe_op2_ref()) {
             (Some(ax), Some(bx)) => self.deep_structural_eq(ax, bx, depth + 1),
             (None, None) => true,
             _ => false,
         };
         if !op2_eq { return false; }
         
-        let op3_eq = match (a.op3_ref(), b.op3_ref()) {
+        let op3_eq = match (a.safe_op3_ref(), b.safe_op3_ref()) {
             (Some(ax), Some(bx)) => self.deep_structural_eq(ax, bx, depth + 1),
             (None, None) => true,
             _ => false,
@@ -745,7 +745,7 @@ impl SimplificationRule for ExtractOverPackedByteConcatRule {
         use crate::expressions::expression::OpKind as K;
         if !expr.opkind_is(K::Extract) { return Ok(expr.clone()); }
 
-        let concat = if let Some(c) = expr.op1_ref() { c } else { return Ok(expr.clone()); };
+        let concat = if let Some(c) = expr.safe_op1_ref() { c } else { return Ok(expr.clone()); };
         if !concat.opkind_is(K::Concat) { return Ok(expr.clone()); }
 
         let (extract_high, extract_low) = Expr::unpack_u32_pair_from_ptr(expr.op2);
@@ -753,8 +753,8 @@ impl SimplificationRule for ExtractOverPackedByteConcatRule {
         // Flatten concat and check if all items are 8-bit extracts from same base
         fn flatten_concat<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
             if e.opkind_is(K::Concat) {
-                if let Some(l) = e.op1_ref() { flatten_concat(l, out); }
-                if let Some(r) = e.op2_ref() { flatten_concat(r, out); }
+                if let Some(l) = e.safe_op1_ref() { flatten_concat(l, out); }
+                if let Some(r) = e.safe_op2_ref() { flatten_concat(r, out); }
             } else {
                 out.push(e);
             }

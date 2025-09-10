@@ -10,11 +10,11 @@ impl SimplificationRule for EqOverZextRule {
     fn name(&self) -> &str { "EqOverZext" }
 
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        if !expr.opkind_is(OpKind::Eq) || expr.op1_ref().is_none() || expr.op2_ref().is_none() {
+        if !expr.opkind_is(OpKind::Eq) || expr.safe_op1_ref().is_none() || expr.safe_op2_ref().is_none() {
             return Ok(expr.clone());
         }
-        let a = expr.op1_ref().unwrap();
-        let b = expr.op2_ref().unwrap();
+        let a = expr.safe_op1_ref().unwrap();
+        let b = expr.safe_op2_ref().unwrap();
 
         // Helper to build Eq with possibly constant rhs reused
         let mk_eq = |lhs: &Expr, rhs: &Expr, rhs_is_const: u8| -> Expr {
@@ -24,18 +24,18 @@ impl SimplificationRule for EqOverZextRule {
         // eq(zext(x), 0) or eq(0, zext(x)) => eq(x, 0)
         if a.opkind_is(OpKind::Zext) {
             if get_const(b) == Some(0) {
-                if let Some(inner) = a.op1_ref() { return Ok(mk_eq(inner, b, 1)); }
+                if let Some(inner) = a.safe_op1_ref() { return Ok(mk_eq(inner, b, 1)); }
             }
         }
         if b.opkind_is(OpKind::Zext) {
             if get_const(a) == Some(0) {
-                if let Some(inner) = b.op1_ref() { return Ok(mk_eq(inner, a, 1)); }
+                if let Some(inner) = b.safe_op1_ref() { return Ok(mk_eq(inner, a, 1)); }
             }
         }
 
         // eq(zext(x), zext(y)) => eq(x, y) if widths of x and y are equal and known
         if a.opkind_is(OpKind::Zext) && b.opkind_is(OpKind::Zext) {
-            if let (Some(ax), Some(by)) = (a.op1_ref(), b.op1_ref()) {
+            if let (Some(ax), Some(by)) = (a.safe_op1_ref(), b.safe_op1_ref()) {
                 if let (Some(wa), Some(wb)) = (infer_size(ax), infer_size(by)) {
                     if wa == wb { return Ok(Expr { op1: ax as *const Expr as *mut Expr, op2: by as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 }); }
                 }
@@ -45,7 +45,7 @@ impl SimplificationRule for EqOverZextRule {
         // eq(zext(x), C) when C fits into width(x) => eq(x, C)
         if a.opkind_is(OpKind::Zext) {
             if let Some(c) = get_const(b) {
-                if let Some(inner) = a.op1_ref() {
+                if let Some(inner) = a.safe_op1_ref() {
                     if let Some(w) = infer_size(inner) {
                         let fits = if w >= 64 { true } else { c < (1u64 << w) };
                         if fits { return Ok(Expr { op1: inner as *const Expr as *mut Expr, op2: b as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 }); }
@@ -55,7 +55,7 @@ impl SimplificationRule for EqOverZextRule {
         }
         if b.opkind_is(OpKind::Zext) {
             if let Some(c) = get_const(a) {
-                if let Some(inner) = b.op1_ref() {
+                if let Some(inner) = b.safe_op1_ref() {
                     if let Some(w) = infer_size(inner) {
                         let fits = if w >= 64 { true } else { c < (1u64 << w) };
                         if fits { return Ok(Expr { op1: inner as *const Expr as *mut Expr, op2: a as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 }); }
@@ -77,12 +77,12 @@ impl SimplificationRule for EqIdentityRule {
     fn name(&self) -> &str { "EqIdentity" }
     
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        if !expr.opkind_is(OpKind::Eq) || expr.op1_ref().is_none() || expr.op2_ref().is_none() {
+        if !expr.opkind_is(OpKind::Eq) || expr.safe_op1_ref().is_none() || expr.safe_op2_ref().is_none() {
             return Ok(expr.clone());
         }
         
-        let a = expr.op1_ref().unwrap();
-        let b = expr.op2_ref().unwrap();
+        let a = expr.safe_op1_ref().unwrap();
+        let b = expr.safe_op2_ref().unwrap();
         
         // Check if operands are identical (same pointer and opkind)
         if (expr.op1 as usize) == (expr.op2 as usize) && a.opkind == b.opkind {
@@ -126,10 +126,10 @@ impl SimplificationRule for ComparisonOptimizationRule {
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         match expr.try_opkind().ok() {
             Some(OpKind::Eq) => {
-                if let (Some(a), Some(b)) = (expr.op1_ref(), expr.op2_ref()) {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
                     // Sub(x, y) == 0 => x == y
                     if a.opkind_is(OpKind::Sub) && get_const(b) == Some(0) {
-                        if let (Some(x), Some(y)) = (a.op1_ref(), a.op2_ref()) {
+                        if let (Some(x), Some(y)) = (a.safe_op1_ref(), a.safe_op2_ref()) {
                             return Ok(Expr {
                                 op1: x as *const Expr as *mut Expr,
                                 op2: y as *const Expr as *mut Expr,
@@ -143,7 +143,7 @@ impl SimplificationRule for ComparisonOptimizationRule {
                     }
                     // 0 == Sub(x, y) => x == y
                     if b.opkind_is(OpKind::Sub) && get_const(a) == Some(0) {
-                        if let (Some(x), Some(y)) = (b.op1_ref(), b.op2_ref()) {
+                        if let (Some(x), Some(y)) = (b.safe_op1_ref(), b.safe_op2_ref()) {
                             return Ok(Expr {
                                 op1: x as *const Expr as *mut Expr,
                                 op2: y as *const Expr as *mut Expr,

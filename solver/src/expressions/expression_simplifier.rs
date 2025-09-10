@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::collections::HashMap;
-use crate::expressions::expression::{Expr, OpKind};
+use crate::expressions::expression::Expr;
 use crate::expressions::arena::{tls_alloc_opt};
 use log::debug;
 
@@ -55,6 +55,7 @@ impl ExpressionSimplifier {
         simplifier.add_rule(Box::new(IdenticalBaseExtractCollapseRule));
         simplifier.add_rule(Box::new(RecursiveConcatExtractSimplifyRule));
         simplifier.add_rule(Box::new(NestedConcatExtractCollapseRule));
+        simplifier.add_rule(Box::new(ExtractConcatCollapseRule));
         // Now push extracts through concat for remaining cases
         simplifier.add_rule(Box::new(ExtractThroughConcatRule));
         simplifier.add_rule(Box::new(ExtractOverPackedByteConcatRule));
@@ -104,9 +105,12 @@ impl ExpressionSimplifier {
         simplifier.add_rule(Box::new(ConcatExtractPackRunsRule));
         simplifier.add_rule(Box::new(ConcatExtract8PackRule));
         // Specialized rules for nested patterns (high priority, low risk)
-        simplifier.add_rule(Box::new(IdenticalBaseExtractCollapseRule));
-        simplifier.add_rule(Box::new(RecursiveConcatExtractSimplifyRule));
-        simplifier.add_rule(Box::new(NestedConcatExtractCollapseRule));
+        simplifier.add_rule(Box::new(ExtractOptimizationRule));
+        simplifier.add_rule(Box::new(ExtractByteToExtract8Rule));
+        simplifier.add_rule(Box::new(ExtractConcatCollapseRule)); // New high-priority rule
+        simplifier.add_rule(Box::new(ConcatExtractPackGeneralRule));
+        simplifier.add_rule(Box::new(ConcatExtractPackRunsRule));
+        simplifier.add_rule(Box::new(ConcatExtract8PackRule));
         simplifier.add_rule(Box::new(ExtractThroughConcatRule));
         simplifier.add_rule(Box::new(ExtractOverPackedByteConcatRule));
         simplifier.add_rule(Box::new(ExtractIdentityRule));
@@ -150,30 +154,32 @@ impl ExpressionSimplifier {
             return Ok(expr.clone());
         }
         
-        log::info!("[SOLVER] simpl: visiting expr_ptr=0x{:x}", key);
+        log::debug!("[SOLVER] simpl: visiting expr_ptr=0x{:x} opkind={:?}", key, expr.opkind);
         
         // Mark as visited
         SIMPL_VISITED.with(|vis| { vis.borrow_mut().insert(key); });
 
         // FIRST: Apply high-priority top-down rules that need to see the full pattern
-        let mut current_expr = expr.clone();
+        let mut current = expr.clone();
         for rule in &self.optimization_rules {
-            if rule.priority() >= 140 { // High priority rules (our nested pattern rules)
-                let simplified = rule.apply(&current_expr)?;
-                if !self.expressions_equal(&current_expr, &simplified) {
-                    log::info!("[SOLVER] simpl: TOP-DOWN rule '{}' applied at expr_ptr=0x{:x}", rule.name(), key);
-                    current_expr = simplified;
-                    // If a high-priority rule matched, return immediately to avoid breaking the pattern
-                    return Ok(current_expr);
-                }
+            let before = current.clone();
+            current = rule.apply(&current)?;
+            if !std::ptr::eq(&before as *const Expr, &current as *const Expr) {
+                log::debug!("TOP-DOWN rule '{}' applied to opkind={:?}", rule.name(), before.opkind);
             }
         }
         
-        // First, recursively simplify children
-        let mut changed = false;
+        // Recursively simplify operands
+        let simplified_operands = self.simplify_operands(&current)?;
+        Ok(simplified_operands)
+    }
+
+    /// Simplify operands of an expression
+    fn simplify_operands(&mut self, expr: &Expr) -> Result<Expr> {
         let mut new_op1 = expr.op1;
         let mut new_op2 = expr.op2;
         let mut new_op3 = expr.op3;
+        let mut changed = false;
         
         // Simplify op1 if it's a valid node pointer
         if let Some(child) = expr.safe_op1_ref() {
@@ -209,8 +215,8 @@ impl ExpressionSimplifier {
         }
         
         // Create new expression with simplified children if any changed
-        let mut current_expr = if changed {
-            Expr {
+        if changed {
+            Ok(Expr {
                 op1: new_op1,
                 op2: new_op2,
                 op3: new_op3,
@@ -218,24 +224,10 @@ impl ExpressionSimplifier {
                 op1_is_const: expr.op1_is_const,
                 op2_is_const: expr.op2_is_const,
                 op3_is_const: expr.op3_is_const,
-            }
+            })
         } else {
-            expr.clone()
-        };
-        
-        // Apply simplification rules to the current expression
-        for rule in &self.optimization_rules {
-            let simplified = rule.apply(&current_expr)?;
-            if !self.expressions_equal(&current_expr, &simplified) {
-                log::info!("[SOLVER] simpl: rule '{}' applied at expr_ptr=0x{:x}", rule.name(), key);
-                current_expr = simplified;
-            }
+            Ok(expr.clone())
         }
-        
-        let res = current_expr;
-        SIMPL_VISITED.with(|vis| { vis.borrow_mut().insert(key); });
-        debug!("[SOLVER] simpl: return expr_ptr=0x{:x}", key);
-        Ok(res)
     }
     
     /// Check if two expressions are structurally equal
@@ -308,7 +300,7 @@ mod tests {
             op1: left as *const Expr as *mut Expr,
             op2: right as *const Expr as *mut Expr,
             op3: ptr::null_mut(),
-            opkind: 9, // Or
+            opkind: 14, // Or
             op1_is_const: 0,
             op2_is_const: 0,
             op3_is_const: 0,
@@ -324,7 +316,7 @@ mod tests {
             op1: 5 as *mut Expr,
             op2: 3 as *mut Expr,
             op3: ptr::null_mut(),
-            opkind: 4, // Add
+            opkind: 5, // Add
             op1_is_const: 1,
             op2_is_const: 1,
             op3_is_const: 0,
@@ -345,6 +337,8 @@ mod tests {
         let or_expr = create_or_expr(&zero, &x);
         
         let result = rule.apply(&or_expr).unwrap();
+        
+        // The rule should simplify 0 | X to X, which should be a constant with value 42
         assert_eq!(result.opkind, 1); // Should be constant
         assert_eq!(result.op1 as u64, 42); // Should return X
         

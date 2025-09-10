@@ -107,7 +107,7 @@ impl SimplificationRule for ConstantFoldingRule {
                 }
             }
             Some(OpKind::Extract) => {
-                if let Some(op1) = expr.op1_ref() {
+                if let Some(op1) = expr.safe_op1_ref() {
                     if let Some(val) = get_const(op1) {
                         let (high, low) = Expr::unpack_u32_pair_from_ptr(expr.op2);
                         let width = high - low + 1;

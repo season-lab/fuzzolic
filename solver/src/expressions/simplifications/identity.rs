@@ -11,7 +11,7 @@ impl SimplificationRule for IdentityRule {
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         match expr.try_opkind().ok() {
             Some(OpKind::Zext) => {
-                if let Some(op1) = expr.op1_ref() {
+                if let Some(op1) = expr.safe_op1_ref() {
                     if expr.op2_is_const != 0 {
                         let target_width = expr.op2 as u32;
                         if let Some(current_width) = infer_size(op1) {
@@ -24,7 +24,7 @@ impl SimplificationRule for IdentityRule {
                 }
             }
             Some(OpKind::Sext) => {
-                if let Some(op1) = expr.op1_ref() {
+                if let Some(op1) = expr.safe_op1_ref() {
                     if expr.op2_is_const != 0 {
                         let target_width = expr.op2 as u32;
                         if let Some(current_width) = infer_size(op1) {

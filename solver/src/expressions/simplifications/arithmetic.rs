@@ -11,7 +11,7 @@ impl SimplificationRule for ArithmeticSimplificationRule {
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         match expr.try_opkind().ok() {
             Some(OpKind::Add) => {
-                if let (Some(a), Some(b)) = (expr.op1_ref(), expr.op2_ref()) {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
                     // 0 + X = X
                     if get_const(a) == Some(0) {
                         return Ok(b.clone());
@@ -36,7 +36,7 @@ impl SimplificationRule for ArithmeticSimplificationRule {
                 }
             }
             Some(OpKind::Sub) => {
-                if let (Some(a), Some(b)) = (expr.op1_ref(), expr.op2_ref()) {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
                     // X - 0 = X
                     if get_const(b) == Some(0) {
                         return Ok(a.clone());
@@ -69,7 +69,7 @@ impl SimplificationRule for ArithmeticSimplificationRule {
                 }
             }
             Some(OpKind::Mul) => {
-                if let (Some(a), Some(b)) = (expr.op1_ref(), expr.op2_ref()) {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
                     // 0 * X = 0
                     if get_const(a) == Some(0) || get_const(b) == Some(0) {
                         return Ok(Expr {
@@ -154,7 +154,7 @@ impl SimplificationRule for MulPow2Rule {
             return Ok(expr.clone());
         }
         
-        if let (Some(a), Some(b)) = (expr.op1_ref(), expr.op2_ref()) {
+        if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
             // Check if either operand is a power of 2 constant
             if let Some(val) = get_const(b) {
                 if val.is_power_of_two() && val > 0 {
@@ -201,7 +201,7 @@ impl SimplificationRule for DivRemPow2Rule {
     fn apply(&self, expr: &Expr) -> Result<Expr> {
         match expr.try_opkind().ok() {
             Some(OpKind::Divu) => {
-                if let (Some(a), Some(b)) = (expr.op1_ref(), expr.op2_ref()) {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
                     if let Some(val) = get_const(b) {
                         if val.is_power_of_two() && val > 0 {
                             let shift_amount = val.trailing_zeros() as u64;
@@ -219,7 +219,7 @@ impl SimplificationRule for DivRemPow2Rule {
                 }
             }
             Some(OpKind::Remu) => {
-                if let (Some(a), Some(b)) = (expr.op1_ref(), expr.op2_ref()) {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
                     if let Some(val) = get_const(b) {
                         if val.is_power_of_two() && val > 0 {
                             let mask = val - 1;
