@@ -90,6 +90,131 @@ impl SimplificationRule for ConcatExtractPackGeneralRule {
     fn priority(&self) -> u32 { 133 }
 }
 
+/// Pack runs of adjacent 8-bit Extract/Extract8 items over the same base within a Concat
+/// into a single wider Extract, preserving order and allowing other items between runs.
+pub struct ConcatExtractPackRunsRule;
+
+impl SimplificationRule for ConcatExtractPackRunsRule {
+    fn name(&self) -> &str { "ConcatExtractPackRuns" }
+
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        use crate::expressions::expression::OpKind as K;
+        if !expr.opkind_is(K::Concat) { return Ok(expr.clone()); }
+
+        // Flatten concat tree in-order
+        fn flatten_concat<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+            if e.opkind_is(K::Concat) {
+                if let Some(l) = e.op1_ref() { flatten_concat(l, out); }
+                if let Some(r) = e.op2_ref() { flatten_concat(r, out); }
+            } else {
+                out.push(e);
+            }
+        }
+        // Structural equality with bounded depth to avoid cycles
+        fn structural_eq(a: &Expr, b: &Expr, depth: usize) -> bool {
+            if std::ptr::eq(a, b) { return true; }
+            if depth > 64 { return false; }
+            if a.opkind != b.opkind || a.op1_is_const != b.op1_is_const || a.op2_is_const != b.op2_is_const || a.op3_is_const != b.op3_is_const { return false; }
+            if a.op1_is_const != 0 && a.op1 != b.op1 { return false; }
+            if a.op2_is_const != 0 && a.op2 != b.op2 { return false; }
+            if a.op3_is_const != 0 && a.op3 != b.op3 { return false; }
+            let ok1 = match (a.op1_ref(), b.op1_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
+            if !ok1 { return false; }
+            let ok2 = match (a.op2_ref(), b.op2_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
+            if !ok2 { return false; }
+            let ok3 = match (a.op3_ref(), b.op3_ref()) { (Some(x), Some(y)) => structural_eq(x, y, depth+1), (None, None) => true, _ => false };
+            ok3
+        }
+
+        // Parse item into (base, high, low) for 8-bit chunks
+        fn get_triplet<'a>(it: &'a Expr) -> Option<(&'a Expr, u32, u32)> {
+            if it.opkind_is(K::Extract8) {
+                let base = it.op1_ref()?;
+                let idx = it.op2 as u32;
+                let low = idx * 8; let high = low + 7;
+                Some((base, high, low))
+            } else if it.opkind_is(K::Extract) {
+                let base = it.op1_ref()?;
+                let (high, low) = Expr::unpack_u32_pair_from_ptr(it.op2);
+                if high + 1 != low + 8 { return None; }
+                if (low % 8) != 0 { return None; }
+                Some((base, high, low))
+            } else {
+                None
+            }
+        }
+
+        let mut items: Vec<&Expr> = Vec::new();
+        flatten_concat(expr, &mut items);
+        if items.len() < 2 { return Ok(expr.clone()); }
+
+        enum It<'a> { Old(&'a Expr), New(Expr) }
+        let mut planned: Vec<It> = Vec::with_capacity(items.len());
+        let mut changed = false;
+        let mut i = 0usize;
+        while i < items.len() {
+            if let Some((base0, mut h_prev, mut l_prev)) = get_triplet(items[i]) {
+                let mut j = i + 1;
+                while j < items.len() {
+                    if let Some((bj, hj, lj)) = get_triplet(items[j]) {
+                        if structural_eq(base0, bj, 0) && lj + 8 == l_prev && hj + 8 == h_prev {
+                            // Extend the run
+                            h_prev = hj; l_prev = lj; j += 1; continue;
+                        }
+                    }
+                    break;
+                }
+                let run_len = j - i;
+                if run_len >= 2 {
+                    // Pack [i..j) into a single Extract(base0, high_i : low_{j-1})
+                    let (high0, _low0) = if let Some((_, h0, l0)) = get_triplet(items[i]) { (h0, l0) } else { (h_prev, l_prev) };
+                    let packed = Expr::pack_u32_pair_to_ptr(high0, l_prev);
+                    let new_node = Expr { op1: base0 as *const Expr as *mut Expr, op2: packed, op3: std::ptr::null_mut(), opkind: K::Extract as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 };
+                    planned.push(It::New(new_node));
+                    changed = true;
+                    i = j;
+                    continue;
+                }
+            }
+            planned.push(It::Old(items[i]));
+            i += 1;
+        }
+
+        if !changed { return Ok(expr.clone()); }
+
+        // If only one item remains, return it directly
+        if planned.len() == 1 {
+            return match planned.pop().unwrap() {
+                It::Old(e) => Ok(e.clone()),
+                It::New(v) => Ok(v),
+            };
+        }
+
+        // Allocate new nodes as needed and rebuild concat chain
+        let mut ptrs: Vec<*mut Expr> = Vec::with_capacity(planned.len());
+        for it in planned.into_iter() {
+            match it {
+                It::Old(e) => { ptrs.push(e as *const Expr as *mut Expr); }
+                It::New(v) => {
+                    if let Some(p) = tls_alloc_opt(v) { ptrs.push(p); } else { return Ok(expr.clone()); }
+                }
+            }
+        }
+        // Build left-associated concat using allocated children; return final node by value
+        let mut cur_ptr = ptrs[0];
+        for k in 1..ptrs.len() {
+            let node = Expr { op1: cur_ptr, op2: ptrs[k], op3: std::ptr::null_mut(), opkind: K::Concat as u8, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 };
+            if k == ptrs.len() - 1 {
+                return Ok(node);
+            }
+            if let Some(p) = tls_alloc_opt(node) { cur_ptr = p; } else { return Ok(expr.clone()); }
+        }
+        Ok(expr.clone())
+    }
+
+    fn priority(&self) -> u32 { 133 }
+}
+
 /// BAND mask slicing rule: reduce AND with masks into extract/concat when possible
 pub struct BandMaskRule;
 
@@ -455,6 +580,7 @@ impl ExpressionSimplifier {
         simplifier.add_rule(Box::new(ExtractThroughConcatRule));
         // Pack contiguous byte extracts into a single slice
         simplifier.add_rule(Box::new(ConcatExtractPackGeneralRule));
+        simplifier.add_rule(Box::new(ConcatExtractPackRunsRule));
         simplifier.add_rule(Box::new(ConcatExtract8PackRule));
         simplifier.add_rule(Box::new(ExtractIdentityRule));
         simplifier.add_rule(Box::new(Extract8OverZextRule));
@@ -501,6 +627,7 @@ impl ExpressionSimplifier {
         simplifier.add_rule(Box::new(ExtractByteToExtract8Rule));
         simplifier.add_rule(Box::new(ExtractThroughConcatRule));
         simplifier.add_rule(Box::new(ConcatExtractPackGeneralRule));
+        simplifier.add_rule(Box::new(ConcatExtractPackRunsRule));
         simplifier.add_rule(Box::new(ConcatExtract8PackRule));
         simplifier.add_rule(Box::new(ExtractIdentityRule));
         simplifier.add_rule(Box::new(Extract8OverZextRule));
