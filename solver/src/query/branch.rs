@@ -9,7 +9,6 @@ use crate::Config;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use std::collections::HashMap;
 
 pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, config: &Config, query: &Query) -> Result<()> {
     let addr_conc = query.address as u64;

@@ -4,6 +4,27 @@ use std::path::PathBuf;
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     
+    // Source .exports file if it exists to set up Z3 library paths
+    let exports_file = PathBuf::from(&manifest_dir).join(".exports");
+    if exports_file.exists() {
+        if let Ok(exports_content) = std::fs::read_to_string(&exports_file) {
+            for line in exports_content.lines() {
+                if line.starts_with("export LD_LIBRARY_PATH=") {
+                    if let Some(path) = line.strip_prefix("export LD_LIBRARY_PATH=") {
+                        let path = path.trim_matches('"');
+                        println!("cargo:rustc-env=LD_LIBRARY_PATH={}", path);
+                        // Also add as link search path
+                        for dir in path.split(':') {
+                            if !dir.is_empty() && PathBuf::from(dir).exists() {
+                                println!("cargo:rustc-link-search=native={}", dir);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     // Configure Z3 to use the forked version from fuzzy-sat
     let z3_path = PathBuf::from(&manifest_dir).join("fuzzy-sat/fuzzolic-z3");
     let z3_build_path = z3_path.join("build");

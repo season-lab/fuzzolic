@@ -1,1 +1,11 @@
-pub mod shared_memory_tests;
+pub mod test_shared_memory;
+pub mod test_extract_concat;
+pub mod test_arithmetic_simplifications;
+pub mod test_boolean_simplifications;
+pub mod test_bitvector_simplifications;
+pub mod test_comparison_simplifications;
+pub mod test_constant_folding_simplifications;
+pub mod test_extract_simplifications;
+pub mod test_identity_simplifications;
+pub mod test_concat_extract_simplifications;
+pub mod test_simplification_framework;

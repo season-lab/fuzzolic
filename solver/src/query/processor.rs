@@ -17,7 +17,9 @@ use z3::ast::Ast;
 pub struct QueryProcessor {
     solver: SMTSolver,
     query_queue: QueryQueue,
+    #[allow(unused)]
     expr_pool: SharedExprPool,
+    #[allow(unused)]
     branch_bitmap_shm: Option<BranchBitmapShm>,
     branch_coverage: BranchCoverage,
     memory_slice_reasoner: MemorySliceReasoner,
@@ -411,6 +413,7 @@ impl QueryProcessor {
     }
     
     /// Process dependency queries
+    #[allow(unused)]
     fn process_dependency_query(&mut self, query: &Query) -> Result<()> {
         crate::query::dependency::handle_dependency(&mut self.solver, query)
     }

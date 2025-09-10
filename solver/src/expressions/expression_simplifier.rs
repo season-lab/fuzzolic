@@ -18,10 +18,12 @@ thread_local! {
     static WIDTH_CACHE: RefCell<HashMap<usize, u32>> = RefCell::new(HashMap::new());
 }
 
+#[allow(unused)]
 fn width_cache_get(key: usize) -> Option<u32> {
     WIDTH_CACHE.with(|cache| cache.borrow().get(&key).copied())
 }
 
+#[allow(unused)]
 fn width_cache_set(key: usize, value: u32) {
     WIDTH_CACHE.with(|cache| cache.borrow_mut().insert(key, value));
 }
@@ -243,6 +245,7 @@ impl ExpressionSimplifier {
     }
     
     /// Compute hash for expression caching
+    #[allow(unused)]
     fn compute_expression_hash(&self, expr: &Expr) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
