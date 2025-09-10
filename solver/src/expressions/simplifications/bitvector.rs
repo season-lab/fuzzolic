@@ -25,10 +25,7 @@ impl SimplificationRule for BitvectorSimplificationRule {
                             op3_is_const: 0,
                         });
                     }
-                    // X & X = X
-                    if std::ptr::eq(a, b) {
-                        return Ok(a.clone());
-                    }
+                    // REMOVED: X & X = X (unsafe with pointer equality)
                     // Constant folding
                     if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
                         let result = va & vb;
@@ -55,10 +52,7 @@ impl SimplificationRule for BitvectorSimplificationRule {
                         log::debug!("BitvectorSimplificationRule: Applying X | 0 = X");
                         return Ok(a.clone());
                     }
-                    // X | X = X
-                    if std::ptr::eq(a, b) {
-                        return Ok(a.clone());
-                    }
+                    // REMOVED: X | X = X (unsafe with pointer equality)
                     // Constant folding
                     if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
                         let result = va | vb;
@@ -83,18 +77,7 @@ impl SimplificationRule for BitvectorSimplificationRule {
                     if get_const(b) == Some(0) {
                         return Ok(a.clone());
                     }
-                    // X ^ X = 0
-                    if std::ptr::eq(a, b) {
-                        return Ok(Expr {
-                            op1: 0 as *mut Expr,
-                            op2: std::ptr::null_mut(),
-                            op3: std::ptr::null_mut(),
-                            opkind: OpKind::IsConst as u8,
-                            op1_is_const: 1,
-                            op2_is_const: 0,
-                            op3_is_const: 0,
-                        });
-                    }
+                    // REMOVED: X ^ X = 0 (unsafe with pointer equality)
                     // Constant folding
                     if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
                         let result = va ^ vb;

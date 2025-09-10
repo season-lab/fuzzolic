@@ -117,7 +117,8 @@ mod tests {
 
     #[test]
     fn test_sub_self() -> anyhow::Result<()> {
-        let rule = ArithmeticSimplificationRule;
+        use crate::expressions::simplifications::SafeStructuralEqualityRule;
+        let rule = SafeStructuralEqualityRule;
         let x = create_symbolic_expr();
         let sub_expr = create_sub_expr(&x, &x);
 

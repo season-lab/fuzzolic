@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::collections::HashMap;
-use crate::expressions::expression::Expr;
+use crate::expressions::expression::{Expr, OpKind};
 use crate::expressions::arena::{tls_alloc_opt};
 use log::debug;
 
@@ -34,98 +34,54 @@ pub struct ExpressionSimplifier {
 }
 
 impl ExpressionSimplifier {
-    /// Create a new simplifier with all optimization rules
+    /// Create a new simplifier with safe optimization rules
+    /// This is the single constructor that includes only verified-safe simplifications
     pub fn new() -> Self {
         let mut simplifier = ExpressionSimplifier {
             optimization_rules: Vec::new(),
         };
         
-        // Register rules in priority order
+        // SAFE RULES ONLY - Conservative simplifications that preserve semantics
+        
+        // Core constant folding and identity rules (always safe)
         simplifier.add_rule(Box::new(ConstantFoldingRule));
         simplifier.add_rule(Box::new(IdentityRule));
-        simplifier.add_rule(Box::new(ArithmeticSimplificationRule));
-        simplifier.add_rule(Box::new(BooleanSimplificationRule));
-        simplifier.add_rule(Box::new(BitvectorSimplificationRule));
-        simplifier.add_rule(Box::new(ExtractOptimizationRule));
-        // Byte-wise normalization, then PACK runs before pushing through concat
-        simplifier.add_rule(Box::new(ExtractByteToExtract8Rule));
-        // Pack contiguous byte extracts into a single slice (do this BEFORE pushing extracts)
-        simplifier.add_rule(Box::new(ConcatExtractPackGeneralRule));
-        simplifier.add_rule(Box::new(ConcatExtractPackRunsRule));
-        simplifier.add_rule(Box::new(ConcatExtract8PackRule));
-        // Specialized rules for nested patterns
-        simplifier.add_rule(Box::new(IdenticalBaseExtractCollapseRule));
-        simplifier.add_rule(Box::new(RecursiveConcatExtractSimplifyRule));
-        simplifier.add_rule(Box::new(NestedConcatExtractCollapseRule));
-        simplifier.add_rule(Box::new(ExtractConcatCollapseRule));
-        // Now push extracts through concat for remaining cases
-        simplifier.add_rule(Box::new(ExtractThroughConcatRule));
-        simplifier.add_rule(Box::new(ExtractOverPackedByteConcatRule));
-        simplifier.add_rule(Box::new(ExtractIdentityRule));
-        simplifier.add_rule(Box::new(Extract8OverZextRule));
-        simplifier.add_rule(Box::new(ExtractOverZextClampRule));
-        simplifier.add_rule(Box::new(EqOverZextRule));
-        simplifier.add_rule(Box::new(ConcatenationOptimizationRule));
-        simplifier.add_rule(Box::new(SubtractionTransformRule));
-        simplifier.add_rule(Box::new(ZeroExtensionRule));
-        simplifier.add_rule(Box::new(ShiftOptimizationRule));
-        simplifier.add_rule(Box::new(BitwiseOptimizationRule));
-        simplifier.add_rule(Box::new(ArithmeticExtractRule));
-        simplifier.add_rule(Box::new(ConditionalOptimizationRule));
-        simplifier.add_rule(Box::new(NotNotEliminateRule));
-        simplifier.add_rule(Box::new(BitwiseOrOptimizationRule));
-        simplifier.add_rule(Box::new(ConcatenationAdvancedRule));
-        simplifier.add_rule(Box::new(SignExtensionRule));
-        // New rules ported from C optimize_z3_query
-        simplifier.add_rule(Box::new(ComparisonOptimizationRule));
-        simplifier.add_rule(Box::new(AndIteMaskOptimizationRule));
-        simplifier.add_rule(Box::new(BandMaskRule));
-        simplifier.add_rule(Box::new(MulPow2Rule));
-        simplifier.add_rule(Box::new(DivRemPow2Rule));
-        simplifier.add_rule(Box::new(ShiftByConstRule));
-        simplifier.add_rule(Box::new(NotSimplificationRule));
-        simplifier.add_rule(Box::new(EqIdentityRule));
         
-        simplifier
-    }
-    
-    /// Create a conservative simplifier with fewer rules
-    pub fn new_conservative() -> Self {
-        let mut simplifier = ExpressionSimplifier {
-            optimization_rules: Vec::new(),
-        };
-        
-        simplifier.add_rule(Box::new(ConstantFoldingRule));
-        simplifier.add_rule(Box::new(IdentityRule));
+        // Boolean and bitvector rules with constants only (safe)
         simplifier.add_rule(Box::new(BooleanSimplificationRule));
-        simplifier.add_rule(Box::new(BitvectorSimplificationRule));
-        // Extract optimization only for constant source and constant indices
+        simplifier.add_rule(Box::new(SafeBitvectorSimplificationRule));
+        
+        // Extract optimization only for constant sources and indices (safe)
         simplifier.add_rule(Box::new(ExtractOptimizationRule));
         simplifier.add_rule(Box::new(ExtractByteToExtract8Rule));
-        // Pack first, then push
+        
+        // Safe arithmetic rules (no pointer equality, constants only)
+        simplifier.add_rule(Box::new(SafeArithmeticSimplificationRule));
+        
+        // Shift optimizations with constants (safe)
+        simplifier.add_rule(Box::new(SafeShiftOptimizationRule));
+        
+        // Safe extract/concat rules (verified patterns only)
         simplifier.add_rule(Box::new(ConcatExtractPackGeneralRule));
-        simplifier.add_rule(Box::new(ConcatExtractPackRunsRule));
-        simplifier.add_rule(Box::new(ConcatExtract8PackRule));
-        // Specialized rules for nested patterns (high priority, low risk)
-        simplifier.add_rule(Box::new(ExtractOptimizationRule));
-        simplifier.add_rule(Box::new(ExtractByteToExtract8Rule));
-        simplifier.add_rule(Box::new(ExtractConcatCollapseRule)); // New high-priority rule
-        simplifier.add_rule(Box::new(ConcatExtractPackGeneralRule));
-        simplifier.add_rule(Box::new(ConcatExtractPackRunsRule));
-        simplifier.add_rule(Box::new(ConcatExtract8PackRule));
-        simplifier.add_rule(Box::new(ExtractThroughConcatRule));
-        simplifier.add_rule(Box::new(ExtractOverPackedByteConcatRule));
         simplifier.add_rule(Box::new(ExtractIdentityRule));
-        simplifier.add_rule(Box::new(Extract8OverZextRule));
-        simplifier.add_rule(Box::new(ExtractOverZextClampRule));
-        simplifier.add_rule(Box::new(EqOverZextRule));
-        // Additional low-risk rules to reduce verbosity
-        simplifier.add_rule(Box::new(ZeroExtensionRule));
-        simplifier.add_rule(Box::new(ConcatenationOptimizationRule));
-        simplifier.add_rule(Box::new(ShiftOptimizationRule));
+        
+        // Conservative comparison rules (no zext assumptions)
+        simplifier.add_rule(Box::new(SafeEqIdentityRule));
+        
+        // NOT simplification (safe)
         simplifier.add_rule(Box::new(NotSimplificationRule));
         simplifier.add_rule(Box::new(NotNotEliminateRule));
-        simplifier.add_rule(Box::new(EqIdentityRule));
+        
+        // Safe structural equality rules
+        simplifier.add_rule(Box::new(SafeStructuralEqualityRule));
+        
+        // Safe power-of-2 optimizations (unsigned operations only)
+        simplifier.add_rule(Box::new(SafeMulPow2Rule));
+        simplifier.add_rule(Box::new(SafeDivRemPow2Rule));
+        
+        // Conservative zero-extension optimizations
+        simplifier.add_rule(Box::new(SafeZextEqualityRule));
+        
         simplifier
     }
     
@@ -267,6 +223,281 @@ impl Default for ExpressionSimplifier {
         Self::new()
     }
 }
+
+/// Safe bitvector simplification rule - only handles constant operands
+pub struct SafeBitvectorSimplificationRule;
+
+impl SimplificationRule for SafeBitvectorSimplificationRule {
+    fn name(&self) -> &str { "SafeBitvectorSimplification" }
+    
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        use crate::expressions::simplifications::{get_const};
+        match expr.try_opkind().ok() {
+            Some(OpKind::And) => {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
+                    // X & 0 = 0 (only with constants)
+                    if get_const(a) == Some(0) || get_const(b) == Some(0) {
+                        return Ok(Expr {
+                            op1: 0 as *mut Expr,
+                            op2: std::ptr::null_mut(),
+                            op3: std::ptr::null_mut(),
+                            opkind: OpKind::IsConst as u8,
+                            op1_is_const: 1,
+                            op2_is_const: 0,
+                            op3_is_const: 0,
+                        });
+                    }
+                    // Constant folding only
+                    if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
+                        let result = va & vb;
+                        return Ok(Expr {
+                            op1: result as *mut Expr,
+                            op2: std::ptr::null_mut(),
+                            op3: std::ptr::null_mut(),
+                            opkind: OpKind::IsConst as u8,
+                            op1_is_const: 1,
+                            op2_is_const: 0,
+                            op3_is_const: 0,
+                        });
+                    }
+                }
+            }
+            Some(OpKind::Or) => {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
+                    // X | 0 = X (only with constants)
+                    if get_const(a) == Some(0) {
+                        return Ok(b.clone());
+                    }
+                    if get_const(b) == Some(0) {
+                        return Ok(a.clone());
+                    }
+                    // Constant folding only
+                    if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
+                        let result = va | vb;
+                        return Ok(Expr {
+                            op1: result as *mut Expr,
+                            op2: std::ptr::null_mut(),
+                            op3: std::ptr::null_mut(),
+                            opkind: OpKind::IsConst as u8,
+                            op1_is_const: 1,
+                            op2_is_const: 0,
+                            op3_is_const: 0,
+                        });
+                    }
+                }
+            }
+            Some(OpKind::Xor) => {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
+                    // X ^ 0 = X (only with constants)
+                    if get_const(a) == Some(0) {
+                        return Ok(b.clone());
+                    }
+                    if get_const(b) == Some(0) {
+                        return Ok(a.clone());
+                    }
+                    // Constant folding only
+                    if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
+                        let result = va ^ vb;
+                        return Ok(Expr {
+                            op1: result as *mut Expr,
+                            op2: std::ptr::null_mut(),
+                            op3: std::ptr::null_mut(),
+                            opkind: OpKind::IsConst as u8,
+                            op1_is_const: 1,
+                            op2_is_const: 0,
+                            op3_is_const: 0,
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(expr.clone())
+    }
+    
+    fn priority(&self) -> u32 { 106 }
+}
+
+/// Safe arithmetic simplification rule - no pointer equality checks
+pub struct SafeArithmeticSimplificationRule;
+
+impl SimplificationRule for SafeArithmeticSimplificationRule {
+    fn name(&self) -> &str { "SafeArithmeticSimplification" }
+    
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        use crate::expressions::simplifications::{get_const};
+        match expr.try_opkind().ok() {
+            Some(OpKind::Add) => {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
+                    // 0 + X = X, X + 0 = X (constants only)
+                    if get_const(a) == Some(0) {
+                        return Ok(b.clone());
+                    }
+                    if get_const(b) == Some(0) {
+                        return Ok(a.clone());
+                    }
+                    // Constant folding
+                    if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
+                        let result = va.wrapping_add(vb);
+                        return Ok(Expr {
+                            op1: result as *mut Expr,
+                            op2: std::ptr::null_mut(),
+                            op3: std::ptr::null_mut(),
+                            opkind: OpKind::IsConst as u8,
+                            op1_is_const: 1,
+                            op2_is_const: 0,
+                            op3_is_const: 0,
+                        });
+                    }
+                }
+            }
+            Some(OpKind::Sub) => {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
+                    // X - 0 = X (constants only)
+                    if get_const(b) == Some(0) {
+                        return Ok(a.clone());
+                    }
+                    // Constant folding only - NO X - X = 0 (unsafe with pointer equality)
+                    if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
+                        let result = va.wrapping_sub(vb);
+                        return Ok(Expr {
+                            op1: result as *mut Expr,
+                            op2: std::ptr::null_mut(),
+                            op3: std::ptr::null_mut(),
+                            opkind: OpKind::IsConst as u8,
+                            op1_is_const: 1,
+                            op2_is_const: 0,
+                            op3_is_const: 0,
+                        });
+                    }
+                }
+            }
+            Some(OpKind::Mul) => {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
+                    // 0 * X = 0, X * 0 = 0 (constants only)
+                    if get_const(a) == Some(0) || get_const(b) == Some(0) {
+                        return Ok(Expr {
+                            op1: 0 as *mut Expr,
+                            op2: std::ptr::null_mut(),
+                            op3: std::ptr::null_mut(),
+                            opkind: OpKind::IsConst as u8,
+                            op1_is_const: 1,
+                            op2_is_const: 0,
+                            op3_is_const: 0,
+                        });
+                    }
+                    // 1 * X = X, X * 1 = X (constants only)
+                    if get_const(a) == Some(1) {
+                        return Ok(b.clone());
+                    }
+                    if get_const(b) == Some(1) {
+                        return Ok(a.clone());
+                    }
+                    // Constant folding
+                    if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
+                        let result = va.wrapping_mul(vb);
+                        return Ok(Expr {
+                            op1: result as *mut Expr,
+                            op2: std::ptr::null_mut(),
+                            op3: std::ptr::null_mut(),
+                            opkind: OpKind::IsConst as u8,
+                            op1_is_const: 1,
+                            op2_is_const: 0,
+                            op3_is_const: 0,
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(expr.clone())
+    }
+    
+    fn priority(&self) -> u32 { 105 }
+}
+
+/// Safe shift optimization rule - constants only
+pub struct SafeShiftOptimizationRule;
+
+impl SimplificationRule for SafeShiftOptimizationRule {
+    fn name(&self) -> &str { "SafeShiftOptimization" }
+    
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        use crate::expressions::simplifications::{get_const};
+        match expr.try_opkind().ok() {
+            Some(OpKind::Shl) | Some(OpKind::Shr) | Some(OpKind::Sar) => {
+                if let (Some(a), Some(b)) = (expr.safe_op1_ref(), expr.safe_op2_ref()) {
+                    // X << 0 = X, X >> 0 = X (constants only)
+                    if get_const(b) == Some(0) {
+                        return Ok(a.clone());
+                    }
+                    // 0 << X = 0, 0 >> X = 0 (constants only)
+                    if get_const(a) == Some(0) {
+                        return Ok(a.clone());
+                    }
+                    // Constant folding
+                    if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
+                        let result = match expr.try_opkind().ok().unwrap() {
+                            OpKind::Shl => va.wrapping_shl(vb as u32),
+                            OpKind::Shr => va.wrapping_shr(vb as u32),
+                            OpKind::Sar => (va as i64).wrapping_shr(vb as u32) as u64,
+                            _ => unreachable!(),
+                        };
+                        return Ok(Expr {
+                            op1: result as *mut Expr,
+                            op2: std::ptr::null_mut(),
+                            op3: std::ptr::null_mut(),
+                            opkind: OpKind::IsConst as u8,
+                            op1_is_const: 1,
+                            op2_is_const: 0,
+                            op3_is_const: 0,
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(expr.clone())
+    }
+    
+    fn priority(&self) -> u32 { 114 }
+}
+
+/// Safe equality identity rule - no pointer equality assumptions
+pub struct SafeEqIdentityRule;
+
+impl SimplificationRule for SafeEqIdentityRule {
+    fn name(&self) -> &str { "SafeEqIdentity" }
+    
+    fn apply(&self, expr: &Expr) -> Result<Expr> {
+        use crate::expressions::simplifications::{get_const};
+        if !expr.opkind_is(OpKind::Eq) || expr.safe_op1_ref().is_none() || expr.safe_op2_ref().is_none() {
+            return Ok(expr.clone());
+        }
+        
+        let a = expr.safe_op1_ref().unwrap();
+        let b = expr.safe_op2_ref().unwrap();
+        
+        // Handle constant comparisons only (safe)
+        if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
+            let r = if va == vb { 1u64 } else { 0u64 };
+            return Ok(Expr {
+                op1: r as *mut Expr,
+                op2: std::ptr::null_mut(),
+                op3: std::ptr::null_mut(),
+                opkind: OpKind::IsConst as u8,
+                op1_is_const: 1,
+                op2_is_const: 0,
+                op3_is_const: 0,
+            });
+        }
+        
+        Ok(expr.clone())
+    }
+    
+    fn priority(&self) -> u32 { 120 }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -418,8 +649,8 @@ mod tests {
     fn test_expression_simplifier_integration() {
         let mut simplifier = ExpressionSimplifier::new();
         
-        // Test that all rules are properly registered
-        assert!(simplifier.optimization_rules.len() >= 15); // Should have all our rules
+        // Test that safe rules are properly registered
+        assert!(simplifier.optimization_rules.len() >= 12); // Should have our enhanced safe rules
         
         // Test basic constant folding
         let const_expr = create_const_expr(42);
@@ -436,4 +667,5 @@ mod tests {
             assert_eq!(result.opkind, 38); // Should still be extract
         }
     }
+
 }

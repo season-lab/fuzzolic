@@ -64,6 +64,9 @@ pub mod constant_folding;
 pub mod extract;
 pub mod extract_concat_collapse;
 pub mod identity;
+pub mod structural_equality;
+pub mod power_of_two;
+pub mod extension_equality;
 
 // Re-export all rules for convenience
 pub use arithmetic::*;
@@ -75,3 +78,6 @@ pub use constant_folding::*;
 pub use extract::*;
 pub use extract_concat_collapse::*;
 pub use identity::*;
+pub use structural_equality::*;
+pub use power_of_two::*;
+pub use extension_equality::*;

@@ -94,7 +94,8 @@ mod tests {
 
     #[test]
     fn test_xor_self() -> anyhow::Result<()> {
-        let rule = BitvectorSimplificationRule;
+        use crate::expressions::simplifications::SafeStructuralEqualityRule;
+        let rule = SafeStructuralEqualityRule;
         let x = create_symbolic_expr();
         let xor_expr = create_xor_expr(&x, &x);
 

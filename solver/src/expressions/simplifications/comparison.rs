@@ -1,69 +1,17 @@
 use anyhow::Result;
 use crate::expressions::expression::{Expr, OpKind};
-use super::{SimplificationRule, get_const, infer_size};
+use super::{SimplificationRule, get_const};
 
-/// Equality over zero-extend: simplifies eq(zext(x), 0) => eq(x, 0), and
-/// eq(zext(x), zext(y)) => eq(x, y) when widths match; also eq(zext(x), C) => eq(x, C) if C fits.
+/// DEPRECATED: Equality over zero-extend rule - potentially unsafe
+/// This rule is disabled as it may not preserve semantics with signed/unsigned differences
 pub struct EqOverZextRule;
 
 impl SimplificationRule for EqOverZextRule {
     fn name(&self) -> &str { "EqOverZext" }
 
     fn apply(&self, expr: &Expr) -> Result<Expr> {
-        if !expr.opkind_is(OpKind::Eq) || expr.safe_op1_ref().is_none() || expr.safe_op2_ref().is_none() {
-            return Ok(expr.clone());
-        }
-        let a = expr.safe_op1_ref().unwrap();
-        let b = expr.safe_op2_ref().unwrap();
-
-        // Helper to build Eq with possibly constant rhs reused
-        let mk_eq = |lhs: &Expr, rhs: &Expr, rhs_is_const: u8| -> Expr {
-            Expr { op1: lhs as *const Expr as *mut Expr, op2: rhs as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: rhs_is_const, op3_is_const: 0 }
-        };
-
-        // eq(zext(x), 0) or eq(0, zext(x)) => eq(x, 0)
-        if a.opkind_is(OpKind::Zext) {
-            if get_const(b) == Some(0) {
-                if let Some(inner) = a.safe_op1_ref() { return Ok(mk_eq(inner, b, 1)); }
-            }
-        }
-        if b.opkind_is(OpKind::Zext) {
-            if get_const(a) == Some(0) {
-                if let Some(inner) = b.safe_op1_ref() { return Ok(mk_eq(inner, a, 1)); }
-            }
-        }
-
-        // eq(zext(x), zext(y)) => eq(x, y) if widths of x and y are equal and known
-        if a.opkind_is(OpKind::Zext) && b.opkind_is(OpKind::Zext) {
-            if let (Some(ax), Some(by)) = (a.safe_op1_ref(), b.safe_op1_ref()) {
-                if let (Some(wa), Some(wb)) = (infer_size(ax), infer_size(by)) {
-                    if wa == wb { return Ok(Expr { op1: ax as *const Expr as *mut Expr, op2: by as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 0, op3_is_const: 0 }); }
-                }
-            }
-        }
-
-        // eq(zext(x), C) when C fits into width(x) => eq(x, C)
-        if a.opkind_is(OpKind::Zext) {
-            if let Some(c) = get_const(b) {
-                if let Some(inner) = a.safe_op1_ref() {
-                    if let Some(w) = infer_size(inner) {
-                        let fits = if w >= 64 { true } else { c < (1u64 << w) };
-                        if fits { return Ok(Expr { op1: inner as *const Expr as *mut Expr, op2: b as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 }); }
-                    }
-                }
-            }
-        }
-        if b.opkind_is(OpKind::Zext) {
-            if let Some(c) = get_const(a) {
-                if let Some(inner) = b.safe_op1_ref() {
-                    if let Some(w) = infer_size(inner) {
-                        let fits = if w >= 64 { true } else { c < (1u64 << w) };
-                        if fits { return Ok(Expr { op1: inner as *const Expr as *mut Expr, op2: a as *const Expr as *mut Expr, op3: std::ptr::null_mut(), opkind: OpKind::Eq as u8, op1_is_const: 0, op2_is_const: 1, op3_is_const: 0 }); }
-                    }
-                }
-            }
-        }
-
+        // DISABLED: Zero-extension equality optimizations can be unsafe
+        // They may not preserve semantics when dealing with signed vs unsigned operations
         Ok(expr.clone())
     }
 
@@ -84,18 +32,7 @@ impl SimplificationRule for EqIdentityRule {
         let a = expr.safe_op1_ref().unwrap();
         let b = expr.safe_op2_ref().unwrap();
         
-        // Check if operands are identical (same pointer and opkind)
-        if (expr.op1 as usize) == (expr.op2 as usize) && a.opkind == b.opkind {
-            return Ok(Expr {
-                op1: 1usize as *mut Expr,
-                op2: std::ptr::null_mut(),
-                op3: std::ptr::null_mut(),
-                opkind: OpKind::IsConst as u8,
-                op1_is_const: 1,
-                op2_is_const: 0,
-                op3_is_const: 0,
-            });
-        }
+        // REMOVED: Pointer equality check (unsafe with structural equality)
         
         // Handle constant comparisons
         if let (Some(va), Some(vb)) = (get_const(a), get_const(b)) {
