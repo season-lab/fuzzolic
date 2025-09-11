@@ -796,9 +796,6 @@ impl Query {
         }
     }
     
-    pub fn get_index(&self) -> usize {
-        self.args64()
-    }
 
     /// Return the underlying expression pointer as an immutable reference if present.
     #[inline]

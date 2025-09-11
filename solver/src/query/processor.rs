@@ -121,16 +121,16 @@ impl QueryProcessor {
                 self.query_queue.get_stats().read_index,
                 peek_ptr
             );
-            match self.query_queue.next_query() {
-                Some(query) => {
+            match self.query_queue.next_query_with_index() {
+                Some((query, query_index)) => {
                     if self.is_final_query(&query) {
                         info!("Received final query, exiting");
                         self.save_results()?;
                         break;
                     }
                     
-                    // Process the query
-                    if let Err(e) = self.process_query(query) {
+                    // Process the query with its calculated index
+                    if let Err(e) = self.process_query_with_index(query, query_index) {
                         warn!("Failed to process query: {}", e);
                     }
                 }
@@ -152,8 +152,8 @@ impl QueryProcessor {
     }
     
     /// Process a single query
-    fn process_query(&mut self, query: Query) -> Result<()> {
-        let qidx = query.get_index();
+    fn process_query_with_index(&mut self, query: Query, query_index: usize) -> Result<()> {
+        let qidx = query_index;
         let a8 = query.args8_copy();
         println!(
             "[SOLVER] Processing query: idx={} addr=0x{:x} expr_ptr={:?} args8=[{:#04x},{:#04x},{:#04x},{:#04x}]",
@@ -172,7 +172,7 @@ impl QueryProcessor {
                 match op {
                     OpKind::SymbolicPc | OpKind::SymbolicJumpTableAccess | OpKind::SymbolicLoad | OpKind::SymbolicStore => {
                         println!("[SOLVER] Detected simple expr query kind: {:?}", op);
-                        self.process_expr_query_simple(&query, expr, op)?;
+                        self.process_expr_query_simple(&query, expr, op, query_index)?;
                         let elapsed = start_time.elapsed();
                         debug!("Query processed in {:?}", elapsed);
                         return Ok(());
@@ -200,7 +200,7 @@ impl QueryProcessor {
                     }
                     OpKind::Model => {
                         println!("[SOLVER] Detected model query");
-                        self.process_model_query(&query)?;
+                        self.process_model_query(&query, query_index)?;
                         let elapsed = start_time.elapsed();
                         debug!("Query processed in {:?}", elapsed);
                         return Ok(());
@@ -209,7 +209,7 @@ impl QueryProcessor {
                     OpKind::Eq | OpKind::Ne | OpKind::Lt | OpKind::Le | OpKind::Ge | OpKind::Gt
                     | OpKind::Ltu | OpKind::Leu | OpKind::Geu | OpKind::Gtu => {
                         println!("[SOLVER] Detected branch condition: {:?}", op);
-                        self.process_branch_query(&query)?;
+                        self.process_branch_query(&query, query_index)?;
                         let elapsed = start_time.elapsed();
                         debug!("Branch query processed in {:?}", elapsed);
                         return Ok(());
@@ -224,7 +224,7 @@ impl QueryProcessor {
 
         // Fallback: default to branch processing when we cannot infer from opkind
         println!("[SOLVER] Processing as branch query (fallback)");
-        let result = self.process_branch_query(&query);
+        let result = self.process_branch_query(&query, query_index);
         
         let elapsed = start_time.elapsed();
         debug!("Query processed in {:?}", elapsed);
@@ -239,7 +239,7 @@ impl QueryProcessor {
     }
 
     /// Simple expression satisfiability query (SYMBOLIC_PC, JUMP_TABLE, LOAD/STORE)
-    fn process_expr_query_simple(&mut self, query: &Query, expr: &Expr, op: OpKind) -> Result<()> {
+    fn process_expr_query_simple(&mut self, query: &Query, expr: &Expr, op: OpKind, query_index: usize) -> Result<()> {
         // In C: smt_expr_query(q, opkind) translates q->query->op1
         let target = expr.op1_ref().ok_or_else(|| anyhow::anyhow!("Expr {:?} missing op1 target", op))?;
         println!(
@@ -311,7 +311,7 @@ impl QueryProcessor {
                     // Store constraint and update dep-like caches akin to C
                     let input_set: std::collections::HashSet<usize> = input_ids_u64.iter().map(|&x| x as usize).collect();
                     let record = ConstraintRecord::EqBV { expr_ptr: target as *const Expr, value: solution };
-                    let qidx = query.get_index();
+                    let qidx = query_index;
                     self.solver.add_constraint_for_inputs(&input_set, qidx, record);
 
                     // Bounded enumeration of alternative solutions
@@ -428,8 +428,8 @@ impl QueryProcessor {
     
     
     /// Process branch queries (conditional branches)
-    fn process_branch_query(&mut self, query: &Query) -> Result<()> {
-        crate::query::branch::handle_branch(&mut self.solver, &mut self.branch_coverage, &self.config, query)
+    fn process_branch_query(&mut self, query: &Query, query_index: usize) -> Result<()> {
+        crate::query::branch::handle_branch(&mut self.solver, &mut self.branch_coverage, &self.config, query, query_index)
     }
     
     
@@ -442,8 +442,8 @@ impl QueryProcessor {
     }
     
     /// Process model queries
-    fn process_model_query(&mut self, query: &Query) -> Result<()> {
-        crate::query::model::handle_model(&mut self.solver, query)
+    fn process_model_query(&mut self, query: &Query, query_index: usize) -> Result<()> {
+        crate::query::model::handle_model(&mut self.solver, query, query_index)
     }
     
     /// Process dependency queries

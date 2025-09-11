@@ -310,6 +310,23 @@ impl QueryQueue {
         Some(q)
     }
 
+    /// Get the next query along with its calculated index (matching C GET_QUERY_IDX macro)
+    pub fn next_query_with_index(&mut self) -> Option<(Query, usize)> {
+        if self.read_index >= self.capacity { return None; }
+        let q = unsafe { ptr::read(self.queue.add(self.read_index)) };
+        // Stop when producer indicates end (NULL in C loop) — caller will sleep/retry
+        if q.query.is_null() {
+            return None;
+        }
+        // Calculate index matching C: GET_QUERY_IDX(q) = ((Query*)q - (Query*)query_queue) - 1
+        // In our case, this is simply (read_index - 1) since we start from index 1
+        let query_index = if self.read_index > 0 { self.read_index - 1 } else { 0 };
+        self.read_index = self.read_index + 1;
+        debug!("Retrieved query from index {} with calculated query_idx={} (query_ptr={:?} addr=0x{:x})", 
+               self.read_index - 1, query_index, q.query, q.address);
+        Some((q, query_index))
+    }
+
     /// Peek the current slot's query pointer (raw) without advancing, for diagnostics
     pub fn peek_current_ptr(&self) -> usize {
         if self.read_index >= self.capacity { return 0; }

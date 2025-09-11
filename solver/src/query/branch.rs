@@ -10,10 +10,11 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, config: &Config, query: &Query) -> Result<()> {
+pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, config: &Config, query: &Query, query_index: usize) -> Result<()> {
     let addr_conc = query.address as u64;
-    let taken = query.args8_copy().arg0 != 0;
     let a16 = query.args16_copy();
+    
+    let taken = query.args8_copy().arg0 != 0;
     println!(
         "[SOLVER] Branch query: addr=0x{:x} taken={} args16=[idx={},cnt={},idx_inv={},cnt_inv={}]",
         addr_conc, taken as u8, a16.index, a16.count, a16.index_inv, a16.count_inv
@@ -29,7 +30,9 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
         // Ensure latest writes from tracer are visible before deep traversal
         crate::shared_memory::shared_memory::memory_barrier();
         println!("[SOLVER] Branch handler: condition node acquired at ptr={:?}", cond_expr as *const crate::expressions::expression::Expr);
-        // 1) Update dependency graph before solving (C parity)
+        
+        // 1) Store original expression in dependency graph (C parity)
+        // C code stores Z3 ASTs and handles negation at Z3 level, not expression level
         println!("[SOLVER] Branch handler: adding dependency graph entries...");
         let _ = solver.add_dependency_for_expr(cond_expr);
         println!("[SOLVER] Branch handler: dependencies added");
@@ -47,7 +50,8 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
             println!("[SOLVER] Z3: condition AST: {}", z3_cond.to_string());
             if let Some(cond_bool) = z3_cond.as_bool() {
                 // Create negated expression at Expr level, simplify it, then translate
-                let neg_expr = if taken {
+                // Logic matches C code: if taken, use original condition; if not taken, use negated condition
+                let neg_expr = { 
                     // Create NOT expression in our Expr system
                     let neg_expr = Expr::new_unary(OpKind::Not, cond_expr as *const Expr as *mut Expr);
                     
@@ -65,15 +69,9 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
                     let simplify_translate_ms = (simplify_translate_us + 999) / 1000; // Round up to nearest millisecond
                     solver.statistics.translation_time += simplify_translate_ms;
                     result
-                } else {
-                    z3_cond.clone()
                 };
                 
-                let main_assertion = if let Some(bool_expr) = neg_expr.as_bool() {
-                    bool_expr
-                } else {
-                    cond_bool.clone()
-                };
+                let main_assertion = neg_expr.as_bool().unwrap();
                 // Gather input IDs from the condition and fetch dependency expressions
                 let mut evaluator = ConcreteEvaluator::new();
                 let inputs_vec = evaluator.get_inputs_expr(&z3_cond);
@@ -135,7 +133,7 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
                         branch_cov.mark_sat_branch();
                         // Dump model to disk (C parity)
                         if let Some(model) = s.get_model() {
-                            let qidx = query.get_index();
+                            let qidx = query_index;
                             // Determine testcase size: prefer current testcase, else based on max input id
                             let tc_size = solver.get_current_testcase().map(|v| v.len());
                             let max_id = inputs_vec.iter().copied().max().unwrap_or(0) as usize;
@@ -156,7 +154,9 @@ pub fn handle_branch(solver: &mut SMTSolver, branch_cov: &mut BranchCoverage, co
                             // Build path
                             let mut path: PathBuf = if let Some(ref dir) = config.output_dir { dir.clone() } else { PathBuf::from(".") };
                             // Mirror C naming: test_case_<idx>_<subidx>.dat (subidx fixed to 0)
+
                             path.push(format!("test_case_{}_{}.dat", qidx, 0));
+                            println!("[SOLVER] Branch: writing model to {}", path.display());
                             if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
                             match File::create(&path) {
                                 Ok(mut f) => { let _ = f.write_all(&bytes); }

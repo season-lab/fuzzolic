@@ -4,10 +4,10 @@ use crate::expressions::expression::{Query, Expr, ModelType};
 use crate::solver::{SMTSolver, ConstraintRecord};
 use crate::solver::concrete_eval::ConcreteEvaluator;
 
-pub fn handle_model(solver: &mut SMTSolver, query: &Query) -> Result<()> {
+pub fn handle_model(solver: &mut SMTSolver, query: &Query, query_index: usize) -> Result<()> {
     debug!("Processing model query");
     let expr = if let Some(e) = query.query_expr() { e } else { return Ok(()); };
-    let qidx = query.get_index();
+    let qidx = query_index;
 
     fn unpack4(x: u64) -> (u16, u16, u16, u16) {
         let a = (x & 0xFFFF) as u16;
